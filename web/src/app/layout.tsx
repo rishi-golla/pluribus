@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lattice | Borrow against everything you hold",
+  title: "Pluribus | Borrow against everything you hold",
   description:
     "One credit line for your SOL, LSTs, LP positions and tokenized stocks. Crash-tested valuation, no maturity, repaid by your LP fees.",
 };

@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { ArrowRight, MousePointerClick } from "lucide-react";
-import { BorrowPreview } from "@/components/dashboard/BorrowPreview";
+import { BorrowPreview } from "@/components/landing/BorrowPreview";
 import { Features } from "@/components/landing/Features";
 import { FadeUp, Num } from "@/components/motion";
 import { Brandmark, Button, Token } from "@/components/ui";
@@ -33,17 +34,17 @@ export default function Home() {
           <header className="flex h-[72px] items-center gap-10 px-10">
             <Brandmark />
             <nav className="flex gap-0.5">
-              {["Borrow", "Earn", "Risk", "Docs"].map((l) => (
-                <a key={l} href="#" className="rounded-[9px] px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
+              {[["Borrow", "/borrow"], ["Earn", "/earn"], ["Risk", "#"], ["Docs", "#"]].map(([l, href]) => (
+                <Link key={l} href={href} className="rounded-[9px] px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
                   {l}
-                </a>
+                </Link>
               ))}
             </nav>
             <div className="ml-auto flex items-center gap-2">
               <Button variant="ghost" href="#">
                 Architecture
               </Button>
-              <Button variant="white" href="#">
+              <Button variant="white" href="/borrow">
                 Launch app
               </Button>
             </div>
@@ -52,14 +53,14 @@ export default function Home() {
 
         <section className="pt-[92px] text-center">
           <FadeUp onMount delay={0.05}>
-            <a
-              href="#"
+            <Link
+              href="/borrow"
               className="inline-flex h-8 items-center gap-2 rounded-full border border-line-2 bg-white/[0.03] pl-1.5 pr-3 text-[13px] text-t2 transition-colors hover:border-white/20 hover:text-t1"
             >
               <span className="rounded-full bg-brand-dim px-2 py-0.5 text-xs font-medium text-brand">New</span>
               Tokenized stocks and CLMM LPs as collateral
               <ArrowRight size={14} strokeWidth={1.75} />
-            </a>
+            </Link>
           </FadeUp>
           <FadeUp onMount delay={0.12} y={20}>
             <h1 className="mt-7 text-[84px] font-medium leading-[0.98] tracking-[-0.055em]">
@@ -75,10 +76,10 @@ export default function Home() {
             </p>
           </FadeUp>
           <FadeUp onMount delay={0.28} className="mt-9 flex justify-center gap-3">
-            <Button variant="white" size="lg" href="#">
+            <Button variant="white" size="lg" href="/borrow">
               Open a credit line
             </Button>
-            <Button size="lg" href="#">
+            <Button size="lg" href="/earn">
               Earn up to 24.2% APY
               <ArrowRight size={15} strokeWidth={1.75} />
             </Button>

@@ -9,6 +9,9 @@
   - `npm run lint`
   - `npx tsc --noEmit` for typechecking
   - `npm run build` for a production build; the landing page should report as `(Static)`
+- Product name is Pluribus. Routes: `/` (landing), and `/borrow`, `/earn`, `/statements` inside the `(app)` route group, which shares the app nav and `AppProviders`.
+- `AppProviders` (`web/src/components/app/providers.tsx`) holds demo account state (debt, session events, lending positions) and toasts. Actions on one page show up on the others for the session. Demo data and statement math live in `web/src/lib/account.ts`.
+- Charts share `web/src/components/charts/LineChart.tsx` (hover crosshair, draw-in animation, overlays).
 - Design tokens live in the `@theme` block of `web/src/app/globals.css`. Tailwind's default `text-*` line heights are overridden to 1.4 to match the mockups.
 - Charts use a seeded, deterministic series generator so prerendered output is stable. Avoid `Math.random()` and `Date.now()` in rendered components.
 
