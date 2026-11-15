@@ -1,0 +1,39 @@
+web/package-lock.json
+  s_116c63d43bffbd::t_430e6418d0f1a1 12,3851-3877,5249-5289
+web/package.json
+  s_116c63d43bffbd::t_31f281880526cc 13
+web/src/app/globals.css
+  s_116c63d43bffbd::t_b5ce48119cadb9 42-45
+web/src/app/layout.tsx
+  s_116c63d43bffbd::t_3d43831837dfc1 3,25-27
+web/src/app/page.tsx
+  s_116c63d43bffbd::t_b6d4503e1b4c98 1,4,17-20,27-29,32-51,54-77,85,88-100,103,105,108,113,116,123,127,131-133,136
+web/src/components/dashboard/BorrowPreview.tsx
+  s_116c63d43bffbd::t_9a4ff1712c2f64 1-9,13-43,51,79-89,97,104-110,116-119,123-126,139,141,144-146,148-165,186-187,201-208,210-212,219-220,226-231,236-237,240,246-320,322-324,328-329,332-334,336-349,355-356,358-368,373,375,378-379,382-384,386-388,391-402,405,412-414,416-435,439-459,477,479-480
+web/src/components/dashboard/PortfolioChart.tsx
+  s_116c63d43bffbd::t_08543ebaafdfbb 1-4,7-12,19-31,33-37,39-43,49-72,74-84,86-87,101-102,106-107,109,111-145,148-159,161-169,174,177
+web/src/components/dashboard/Segmented.tsx
+  s_116c63d43bffbd::t_b85151ccf192ac 1-33
+web/src/components/landing/Features.tsx
+  s_116c63d43bffbd::t_e17927196b7da7 4-5,7,9-16,18,32,55,60,63,68,80,89
+web/src/components/landing/FeeBars.tsx
+  s_116c63d43bffbd::t_44f8cd71bc61d9 1-44
+web/src/components/motion.tsx
+  s_116c63d43bffbd::t_f2599123ac5aaa 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02cbd5e3db01a958ff371554db442e238da5426f",
+  "prompts": {},
+  "sessions": {
+    "s_116c63d43bffbd": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_116c63d43bffbd",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
