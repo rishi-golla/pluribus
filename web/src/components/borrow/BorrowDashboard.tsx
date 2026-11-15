@@ -726,11 +726,13 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
           </Chip>
         </div>
       </div>
-      <CreditHero debt={debt} p={form.projection} />
-      <section className="mt-4 grid grid-cols-[minmax(0,1fr)_384px] gap-4">
+      <section className="grid grid-cols-[minmax(0,1fr)_384px] gap-4">
         <PortfolioPanel debt={debt} />
         <DrawPanel debt={debt} form={form} onApply={onApply} />
       </section>
+      <div className="mt-4">
+        <CreditHero debt={debt} p={form.projection} />
+      </div>
       {full && (
         <>
           <CollateralPanel onStressTest={runStressTest} />
