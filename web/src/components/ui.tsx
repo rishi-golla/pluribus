@@ -75,27 +75,6 @@ export function StatusDot() {
   return <span className="inline-block size-1.5 rounded-full bg-current" />;
 }
 
-export function Segmented({ items, active, small = false }: { items: string[]; active: string; small?: boolean }) {
-  return (
-    <div className="flex rounded-[11px] border border-line bg-bg p-[3px]" role="tablist">
-      {items.map((it) => (
-        <div
-          key={it}
-          role="tab"
-          aria-selected={it === active}
-          className={cx(
-            "flex-1 whitespace-nowrap rounded-lg text-center font-medium",
-            small ? "px-[9px] py-1 text-xs" : "px-3 py-[7px] text-[13px]",
-            it === active ? "bg-s3 text-t1 shadow-[inset_0_0_0_1px_var(--color-line-2)]" : "text-t3",
-          )}
-        >
-          {it}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function Token({ src, size = 32, className }: { src: string; size?: number; className?: string }) {
   return (
     <span className={cx("relative inline-block shrink-0 rounded-full", className)} style={{ width: size, height: size }}>
