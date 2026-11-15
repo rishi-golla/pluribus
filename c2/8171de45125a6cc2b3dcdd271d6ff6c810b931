@@ -1,0 +1,19 @@
+.gitignore
+  s_e7ff04a51ee47b::t_d650c7f624ebfc 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c28171de45125a6cc2b3dcdd271d6ff6c810b931",
+  "prompts": {},
+  "sessions": {
+    "s_e7ff04a51ee47b": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_e7ff04a51ee47b",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
