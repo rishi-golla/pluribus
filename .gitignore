@@ -6,6 +6,15 @@ AGENTS.md
 mockups/
 .playwright-mcp/
 
+# Image assets (all formats, anywhere in the repo)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ico
+
 # OS noise
 .DS_Store
 Thumbs.db
