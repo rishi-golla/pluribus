@@ -1,0 +1,27 @@
+web/src/app/(app)/overview/page.tsx
+  s_4b4aa81d00c51d::t_c71363ee9b2a8f 1-8
+web/src/app/page.tsx
+  s_4b4aa81d00c51d::t_98699985d46a17 47
+web/src/components/app/AppNav.tsx
+  s_4b4aa81d00c51d::t_4b754caa1cfc5a 10
+web/src/components/overview/OverviewDashboard.tsx
+  s_4b4aa81d00c51d::t_5a1314414b08c3 1-452
+web/src/lib/markets.ts
+  s_4b4aa81d00c51d::t_0e9de6abf10097 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d08156571562307652213b2e1058e68ff4c97967",
+  "prompts": {},
+  "sessions": {
+    "s_4b4aa81d00c51d": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_4b4aa81d00c51d",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
