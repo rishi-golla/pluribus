@@ -1,0 +1,20 @@
+# Local architecture notes and agent instructions
+ARCHITECTURE.pdf
+AGENTS.md
+
+# Generated design mockups and reference screenshots
+mockups/
+.playwright-mcp/
+
+# Image assets (all formats, anywhere in the repo)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ico
+
+# OS noise
+.DS_Store
+Thumbs.db
