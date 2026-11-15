@@ -1,0 +1,19 @@
+web/src/components/borrow/BorrowDashboard.tsx
+  s_2e6b8c80821218::t_549564dc720985 729,733-735
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe7c1fd72c6f66f7f4d64468c295ac5047925f3b",
+  "prompts": {},
+  "sessions": {
+    "s_2e6b8c80821218": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_2e6b8c80821218",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
