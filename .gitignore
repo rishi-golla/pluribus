@@ -1,0 +1,11 @@
+# Local architecture notes and agent instructions
+ARCHITECTURE.pdf
+AGENTS.md
+
+# Generated design mockups and reference screenshots
+mockups/
+.playwright-mcp/
+
+# OS noise
+.DS_Store
+Thumbs.db
