@@ -1,0 +1,19 @@
+.gitignore
+  s_8368a965572711::t_c8879944f926d1 9-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d304aeaf132a88d1581cdd6ce4aef174c6bf987b",
+  "prompts": {},
+  "sessions": {
+    "s_8368a965572711": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_8368a965572711",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
