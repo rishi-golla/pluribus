@@ -7,6 +7,7 @@ import { Brandmark, Token } from "@/components/ui";
 
 const ic = { size: 16, strokeWidth: 1.75 };
 const LINKS = [
+  { href: "/overview", label: "Overview" },
   { href: "/borrow", label: "Borrow" },
   { href: "/earn", label: "Earn" },
   { href: "/statements", label: "Statements" },

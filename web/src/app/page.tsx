@@ -44,7 +44,7 @@ export default function Home() {
               <Button variant="ghost" href="#">
                 Architecture
               </Button>
-              <Button variant="white" href="/borrow">
+              <Button variant="white" href="/overview">
                 Launch app
               </Button>
             </div>
