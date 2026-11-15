@@ -1,0 +1,19 @@
+AGENTS.md
+  s_53c5e759bd6e3a::t_bbeb65795b9e5f 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c914a46e58df6e65780d0680c1a4d2f83aebafa",
+  "prompts": {},
+  "sessions": {
+    "s_53c5e759bd6e3a": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_53c5e759bd6e3a",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
