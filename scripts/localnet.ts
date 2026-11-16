@@ -24,6 +24,8 @@ const validator = spawn(
   [
     "--reset",
     "--quiet",
+    // Hours of history instead of about a minute, for the indexer and anything else that reads past transactions
+    ...["--limit-ledger-size", "2000000"],
     ...["--ledger", args.ledger ?? path.join(root, "test-ledger")],
     ...["--rpc-port", String(port), "--faucet-port", String(base + 1900)],
     ...["--gossip-port", String(base), "--dynamic-port-range", `${base}-${base + 2000}`],

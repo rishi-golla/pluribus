@@ -10,7 +10,7 @@ import { cluster, connection, key, me, root, url, wallet } from "./orca-common.t
 
 const DAY = 86_400;
 const SOL_FEED = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
-const SEED_USDC = 1_000_000;
+const SEED_USDC = { senior: 1_000_000, junior: 100_000 };
 
 const fixtureFile = path.join(root, "scripts/out", `${cluster}.json`);
 if (!fs.existsSync(fixtureFile)) throw new Error(`${fixtureFile} is missing, run orca:fixture first`);
@@ -43,10 +43,12 @@ const params: PoolParams = {
   kinkBps: 9000,
   reserveFactorBps: 1000,
   protocolFeeBps: 1000,
+  protectionFeeBps: 2000,
   tierDiscountBps: [0, 40, 80],
   tierMinHealthySecs: [0, 7 * DAY, 30 * DAY].map((s) => new BN(s)),
 };
 if (!(await exists(pda.pool()))) await send(await ix.initialize(program, me, usdc, params, true));
+if (!(await exists(pda.juniorMint()))) await send(await ix.initJunior(program, me));
 
 const asset = (group: number, oracle: number, feed: string, liqCostBps: number): AssetParams => ({
   group,
@@ -86,6 +88,7 @@ const d: Deployment = {
   solMint: NATIVE_MINT.toBase58(),
   stockMint: stock.toBase58(),
   shareMint: pda.shareMint().toBase58(),
+  juniorMint: pda.juniorMint().toBase58(),
   whirlpool: whirlpool.toBase58(),
   whirlpoolVaultA: fixture.tokenA.vault,
   whirlpoolVaultB: fixture.tokenB.vault,
@@ -108,9 +111,11 @@ const d: Deployment = {
   },
 };
 
-if ((await getMint(connection, pda.shareMint())).supply === 0n) {
-  await faucet(d, me, { usdc: SEED_USDC });
-  await send(await ix.lendDeposit(program, d, me, SEED_USDC * 1e6));
+for (const junior of [false, true]) {
+  const dollars = junior ? SEED_USDC.junior : SEED_USDC.senior;
+  if ((await getMint(connection, junior ? pda.juniorMint() : pda.shareMint())).supply > 0n) continue;
+  await faucet(d, me, { usdc: dollars });
+  await send(await ix.lendDeposit(program, d, me, dollars * 1e6, { junior }));
 }
 
 fs.mkdirSync(path.dirname(deploymentFile), { recursive: true });
