@@ -1,0 +1,37 @@
+{
+  "cluster": "devnet",
+  "rpcUrl": "https://api.devnet.solana.com",
+  "programId": "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT",
+  "whirlpoolProgramId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  "admin": "ppJdRigfa8zDA5tKKnS4GPP8j9aGP5o5CXxjstQDusQ",
+  "usdcMint": "dHFns1Zj3LkVzrBqxdw5hDMtF1DieM77m6ZMabwWpfP",
+  "solMint": "So11111111111111111111111111111111111111112",
+  "stockMint": "F4Xiwsc1wsf3jhPGvudesS4EJRVv6J6tTJcu2ZeooDuC",
+  "shareMint": "E6b8stgjMyxB5t7uHvssumxC7fMPbxMwgrduv6araHMZ",
+  "juniorMint": "DvnpmRnK8AEowyo7D9MRchpwQkvpKfMjsy1iUdEyfwef",
+  "whirlpool": "DM76wF2UTMDe6e52kU85yBLT6VHAJCfKM9gp8uS3sHgM",
+  "whirlpoolVaultA": "DCgLzT1t5r39NgWeFGZVWyZX4M5JmUk48VfAGfa3gePX",
+  "whirlpoolVaultB": "2mwtmsj2hgvz5pdRom9RWjgpV3UC5cFsnqhGKdSm6sLh",
+  "tickSpacing": 64,
+  "demoMode": true,
+  "assets": {
+    "dHFns1Zj3LkVzrBqxdw5hDMtF1DieM77m6ZMabwWpfP": {
+      "symbol": "USDC",
+      "name": "USD Coin (mock)",
+      "decimals": 6,
+      "priceAccount": null
+    },
+    "So11111111111111111111111111111111111111112": {
+      "symbol": "SOL",
+      "name": "Solana",
+      "decimals": 9,
+      "priceAccount": "7TZG5B6jEAerZ8wWAwBngLm3ehDCPuoY8wbbyMm8sadh"
+    },
+    "F4Xiwsc1wsf3jhPGvudesS4EJRVv6J6tTJcu2ZeooDuC": {
+      "symbol": "NVDAx",
+      "name": "NVIDIA tokenized stock (mock)",
+      "decimals": 6,
+      "priceAccount": "9rfuzXbpwYasPXNQNEbcvN2Db9MtxPA8eN4pwxr4jZRh"
+    }
+  }
+}

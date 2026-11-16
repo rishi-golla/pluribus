@@ -1,0 +1,3711 @@
+{
+  "address": "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT",
+  "metadata": {
+    "name": "pluribus",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "accrue",
+      "discriminator": [
+        23,
+        76,
+        128,
+        149,
+        229,
+        247,
+        72,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "autopay",
+      "discriminator": [
+        75,
+        61,
+        9,
+        69,
+        65,
+        194,
+        168,
+        229
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "whirlpool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "whirlpool",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                14,
+                3,
+                104,
+                95,
+                142,
+                144,
+                144,
+                83,
+                228,
+                88,
+                18,
+                28,
+                102,
+                245,
+                167,
+                106,
+                237,
+                199,
+                112,
+                106,
+                161,
+                28,
+                130,
+                248,
+                170,
+                149,
+                42,
+                143,
+                43,
+                120,
+                121,
+                169
+              ]
+            }
+          }
+        },
+        {
+          "name": "position_mint"
+        },
+        {
+          "name": "vault_nft"
+        },
+        {
+          "name": "tick_array_lower"
+        },
+        {
+          "name": "tick_array_upper"
+        },
+        {
+          "name": "base_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lp_market.base_mint",
+                "account": "LpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "whirlpool_vault_a",
+          "writable": true
+        },
+        {
+          "name": "usdc_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "whirlpool_vault_b",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "whirlpool_program",
+          "address": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "collect_protocol_fees",
+      "discriminator": [
+        22,
+        67,
+        23,
+        98,
+        150,
+        178,
+        70,
+        220
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "treasury_usdc",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "deposit_lp",
+      "discriminator": [
+        83,
+        107,
+        16,
+        26,
+        26,
+        20,
+        130,
+        56
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lp_market.whirlpool",
+                "account": "LpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                14,
+                3,
+                104,
+                95,
+                142,
+                144,
+                144,
+                83,
+                228,
+                88,
+                18,
+                28,
+                102,
+                245,
+                167,
+                106,
+                237,
+                199,
+                112,
+                106,
+                161,
+                28,
+                130,
+                248,
+                170,
+                149,
+                42,
+                143,
+                43,
+                120,
+                121,
+                169
+              ]
+            }
+          }
+        },
+        {
+          "name": "position_mint"
+        },
+        {
+          "name": "owner_nft",
+          "writable": true
+        },
+        {
+          "name": "vault_nft",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "position_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deposit_token",
+      "discriminator": [
+        11,
+        156,
+        96,
+        218,
+        39,
+        163,
+        180,
+        19
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "asset"
+          ]
+        },
+        {
+          "name": "owner_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "draw",
+      "discriminator": [
+        61,
+        40,
+        62,
+        184,
+        31,
+        176,
+        24,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "owner_usdc",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "health",
+      "discriminator": [
+        235,
+        42,
+        47,
+        99,
+        10,
+        7,
+        249,
+        16
+      ],
+      "accounts": [
+        {
+          "name": "credit",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [],
+      "returns": {
+        "defined": {
+          "name": "HealthView"
+        }
+      }
+    },
+    {
+      "name": "init_asset",
+      "discriminator": [
+        133,
+        1,
+        51,
+        41,
+        37,
+        45,
+        8,
+        38
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "AssetParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_junior",
+      "discriminator": [
+        200,
+        247,
+        76,
+        50,
+        200,
+        146,
+        120,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "junior_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_lp_market",
+      "discriminator": [
+        19,
+        77,
+        255,
+        166,
+        141,
+        227,
+        79,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "whirlpool"
+        },
+        {
+          "name": "base_asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "base_asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "whirlpool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "liq_cost_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "share_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  97,
+                  114,
+                  101,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "PoolParams"
+            }
+          }
+        },
+        {
+          "name": "demo_mode",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "lend_deposit",
+      "discriminator": [
+        200,
+        92,
+        164,
+        134,
+        219,
+        233,
+        129,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "lender",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "share_mint",
+          "docs": [
+            "The senior or junior share mint, checked against the pool in the handler"
+          ],
+          "writable": true
+        },
+        {
+          "name": "lender_usdc",
+          "writable": true
+        },
+        {
+          "name": "lender_shares",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "lend_withdraw",
+      "discriminator": [
+        240,
+        84,
+        185,
+        14,
+        212,
+        128,
+        52,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "lender",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "share_mint",
+          "docs": [
+            "The senior or junior share mint, checked against the pool in the handler"
+          ],
+          "writable": true
+        },
+        {
+          "name": "lender_usdc",
+          "writable": true
+        },
+        {
+          "name": "lender_shares",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "liquidate",
+      "discriminator": [
+        223,
+        179,
+        226,
+        125,
+        48,
+        46,
+        39,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "liquidator",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "liquidator_usdc",
+          "writable": true
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collateral_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "asset"
+          ]
+        },
+        {
+          "name": "liquidator_collateral",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "repay_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "liquidate_lp",
+      "discriminator": [
+        184,
+        134,
+        42,
+        9,
+        9,
+        99,
+        65,
+        25
+      ],
+      "accounts": [
+        {
+          "name": "liquidator",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "liquidator_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "position_mint"
+        },
+        {
+          "name": "vault_nft",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "nft_token_program"
+              },
+              {
+                "kind": "account",
+                "path": "position_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "liquidator_nft",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "nft_token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "open_account",
+      "discriminator": [
+        101,
+        152,
+        91,
+        243,
+        176,
+        36,
+        189,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "refresh_tier",
+      "discriminator": [
+        176,
+        222,
+        190,
+        38,
+        34,
+        114,
+        58,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "repay",
+      "discriminator": [
+        234,
+        103,
+        67,
+        82,
+        208,
+        234,
+        219,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "payer_usdc",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "repay_from_collateral",
+      "discriminator": [
+        18,
+        238,
+        49,
+        67,
+        209,
+        73,
+        127,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "CreditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_admin",
+      "discriminator": [
+        251,
+        163,
+        0,
+        52,
+        91,
+        194,
+        187,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_asset",
+      "discriminator": [
+        243,
+        216,
+        48,
+        30,
+        63,
+        58,
+        91,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "AssetParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_demo_price",
+      "discriminator": [
+        9,
+        174,
+        93,
+        13,
+        189,
+        204,
+        41,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "demo_price",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  109,
+                  111,
+                  95,
+                  112,
+                  114,
+                  105,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "price",
+          "type": "u64"
+        },
+        {
+          "name": "conf",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_flags",
+      "discriminator": [
+        199,
+        54,
+        111,
+        124,
+        87,
+        47,
+        217,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        },
+        {
+          "name": "demo_mode",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_lp_market",
+      "discriminator": [
+        195,
+        82,
+        227,
+        216,
+        135,
+        36,
+        129,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lp_market.whirlpool",
+                "account": "LpMarket"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "liq_cost_bps",
+          "type": "u16"
+        },
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_params",
+      "discriminator": [
+        27,
+        234,
+        178,
+        52,
+        147,
+        2,
+        187,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "PoolParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw_lp",
+      "discriminator": [
+        225,
+        221,
+        45,
+        211,
+        49,
+        60,
+        51,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_mint"
+        },
+        {
+          "name": "vault_nft",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "position_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "owner_nft",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_token",
+      "discriminator": [
+        136,
+        235,
+        181,
+        5,
+        101,
+        109,
+        57,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "asset"
+          ]
+        },
+        {
+          "name": "owner_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Asset",
+      "discriminator": [
+        234,
+        180,
+        241,
+        252,
+        139,
+        224,
+        160,
+        8
+      ]
+    },
+    {
+      "name": "CreditAccount",
+      "discriminator": [
+        196,
+        171,
+        234,
+        132,
+        239,
+        255,
+        21,
+        96
+      ]
+    },
+    {
+      "name": "DemoPrice",
+      "discriminator": [
+        219,
+        123,
+        184,
+        86,
+        216,
+        122,
+        223,
+        50
+      ]
+    },
+    {
+      "name": "LpMarket",
+      "discriminator": [
+        165,
+        11,
+        102,
+        186,
+        12,
+        218,
+        8,
+        106
+      ]
+    },
+    {
+      "name": "Pool",
+      "discriminator": [
+        241,
+        154,
+        109,
+        4,
+        17,
+        177,
+        109,
+        188
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AccountOpened",
+      "discriminator": [
+        250,
+        89,
+        39,
+        67,
+        35,
+        119,
+        126,
+        63
+      ]
+    },
+    {
+      "name": "BadDebt",
+      "discriminator": [
+        192,
+        33,
+        54,
+        41,
+        223,
+        158,
+        37,
+        34
+      ]
+    },
+    {
+      "name": "CollateralChanged",
+      "discriminator": [
+        172,
+        114,
+        48,
+        57,
+        98,
+        83,
+        95,
+        157
+      ]
+    },
+    {
+      "name": "DemoPriceSet",
+      "discriminator": [
+        119,
+        103,
+        177,
+        33,
+        71,
+        73,
+        51,
+        129
+      ]
+    },
+    {
+      "name": "Drawn",
+      "discriminator": [
+        87,
+        120,
+        94,
+        189,
+        167,
+        148,
+        44,
+        221
+      ]
+    },
+    {
+      "name": "LenderMoved",
+      "discriminator": [
+        147,
+        195,
+        149,
+        85,
+        203,
+        175,
+        52,
+        196
+      ]
+    },
+    {
+      "name": "Liquidated",
+      "discriminator": [
+        231,
+        57,
+        55,
+        75,
+        0,
+        170,
+        246,
+        68
+      ]
+    },
+    {
+      "name": "ProtocolFeesCollected",
+      "discriminator": [
+        165,
+        34,
+        125,
+        155,
+        15,
+        86,
+        99,
+        191
+      ]
+    },
+    {
+      "name": "Repaid",
+      "discriminator": [
+        38,
+        248,
+        231,
+        7,
+        150,
+        164,
+        172,
+        23
+      ]
+    },
+    {
+      "name": "TierChanged",
+      "discriminator": [
+        126,
+        9,
+        150,
+        127,
+        199,
+        123,
+        136,
+        1
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6001,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidParams",
+      "msg": "Invalid parameters"
+    },
+    {
+      "code": 6003,
+      "name": "Paused",
+      "msg": "Asset or pool is paused"
+    },
+    {
+      "code": 6004,
+      "name": "DepositCap",
+      "msg": "Deposit cap reached"
+    },
+    {
+      "code": 6005,
+      "name": "TooManyPositions",
+      "msg": "No free position slot"
+    },
+    {
+      "code": 6006,
+      "name": "PositionNotFound",
+      "msg": "Position not found"
+    },
+    {
+      "code": 6007,
+      "name": "InsufficientCollateral",
+      "msg": "Not enough collateral in the position"
+    },
+    {
+      "code": 6008,
+      "name": "MissingAccount",
+      "msg": "Missing account for the health check"
+    },
+    {
+      "code": 6009,
+      "name": "AccountMismatch",
+      "msg": "Account does not match the position"
+    },
+    {
+      "code": 6010,
+      "name": "WrongOwner",
+      "msg": "Account has the wrong owner program"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidPriceAccount",
+      "msg": "Price account is not valid for this asset"
+    },
+    {
+      "code": 6012,
+      "name": "StalePrice",
+      "msg": "Price is stale"
+    },
+    {
+      "code": 6013,
+      "name": "PriceTooUncertain",
+      "msg": "Price confidence interval is too wide"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidLpPosition",
+      "msg": "Not an Orca Whirlpool position"
+    },
+    {
+      "code": 6015,
+      "name": "PoolNotWhitelisted",
+      "msg": "Whirlpool is not whitelisted"
+    },
+    {
+      "code": 6016,
+      "name": "UnsupportedMint",
+      "msg": "Only classic SPL Token mints can be collateral"
+    },
+    {
+      "code": 6017,
+      "name": "ExceedsCreditLimit",
+      "msg": "Debt would exceed the credit limit"
+    },
+    {
+      "code": 6018,
+      "name": "NotLiquidatable",
+      "msg": "Account is healthy"
+    },
+    {
+      "code": 6019,
+      "name": "HealthNotImproved",
+      "msg": "Liquidation would not improve health"
+    },
+    {
+      "code": 6020,
+      "name": "InsufficientLiquidity",
+      "msg": "Not enough liquidity in the pool"
+    },
+    {
+      "code": 6021,
+      "name": "PoolInsolvent",
+      "msg": "Pool has no lender assets left"
+    },
+    {
+      "code": 6022,
+      "name": "DemoDisabled",
+      "msg": "Demo feed is disabled"
+    },
+    {
+      "code": 6023,
+      "name": "NotUpgradeAuthority",
+      "msg": "Only the program's upgrade authority can initialize the pool"
+    }
+  ],
+  "types": [
+    {
+      "name": "AccountOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Asset",
+      "docs": [
+        "A whitelisted collateral token"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "total_deposited",
+            "type": "u64"
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "AssetParams"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AssetParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "group",
+            "docs": [
+              "Column in the shock tables, where anything >= MAX_GROUPS is never shocked"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "oracle",
+            "type": "u8"
+          },
+          {
+            "name": "pyth_feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "liq_cost_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_price_age_secs",
+            "type": "u32"
+          },
+          {
+            "name": "max_conf_bps",
+            "type": "u16"
+          },
+          {
+            "name": "deposit_cap",
+            "type": "u64"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BadDebt",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "loss",
+            "type": "u64"
+          },
+          {
+            "name": "covered_by_reserves",
+            "type": "u64"
+          },
+          {
+            "name": "covered_by_protocol_fees",
+            "type": "u64"
+          },
+          {
+            "name": "covered_by_junior",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollateralChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreditAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "healthy_since",
+            "type": "i64"
+          },
+          {
+            "name": "debt_shares",
+            "type": "u128"
+          },
+          {
+            "name": "positions",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "Position"
+                  }
+                },
+                5
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "DemoPrice",
+      "docs": [
+        "Admin-written price that replaces Pyth while `Pool::demo_mode` is on"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "conf",
+            "type": "u64"
+          },
+          {
+            "name": "publish_time",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DemoPriceSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Drawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "debt",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HealthView",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "debt",
+            "type": "u64"
+          },
+          {
+            "name": "credit_limit",
+            "type": "u64"
+          },
+          {
+            "name": "liquidation_limit",
+            "type": "u64"
+          },
+          {
+            "name": "collateral_value",
+            "type": "u64"
+          },
+          {
+            "name": "borrow_rate_bps",
+            "type": "u16"
+          },
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "position_value",
+            "type": {
+              "array": [
+                "u64",
+                5
+              ]
+            }
+          },
+          {
+            "name": "position_price",
+            "type": {
+              "array": [
+                "u64",
+                5
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LenderMoved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lender",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "bool"
+          },
+          {
+            "name": "junior",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Liquidated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidator",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "repaid",
+            "type": "u64"
+          },
+          {
+            "name": "seized",
+            "type": "u64"
+          },
+          {
+            "name": "debt",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LpMarket",
+      "docs": [
+        "A whitelisted Orca Whirlpool whose positions count as collateral, always quoted in USDC"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "whirlpool",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "liq_cost_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pool",
+      "docs": [
+        "The single USDC lending pool plus protocol config"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "junior_mint",
+            "docs": [
+              "Share mint of the junior tranche, unset until the admin opens it"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "demo_mode",
+            "docs": [
+              "When set, prices come from admin-written demo accounts instead of Pyth"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "PoolParams"
+              }
+            }
+          },
+          {
+            "name": "cash",
+            "docs": [
+              "USDC held for lenders and reserves, tracked here so stray transfers cannot move the share price"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserves",
+            "docs": [
+              "Insurance fund: a claim on pool assets that absorbs bad debt before lenders"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fees",
+            "docs": [
+              "Protocol revenue the admin can collect, also a claim on pool assets"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bad_debt",
+            "type": "u64"
+          },
+          {
+            "name": "last_accrual",
+            "type": "i64"
+          },
+          {
+            "name": "min_liq_cost_bps",
+            "docs": [
+              "Lowest liquidation cost any priced asset or LP market has been given, which caps the liquidation bonus"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "usdc_group",
+            "docs": [
+              "Shock group of the USDC asset, applied to the USDC side of LP positions as well"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "junior_assets",
+            "docs": [
+              "Part of the lender assets that belongs to junior lenders, who absorb losses before senior ones"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dust",
+            "docs": [
+              "Fractions of a base unit still owed to reserves, protocol fees and junior lenders"
+            ],
+            "type": {
+              "array": [
+                "u32",
+                3
+              ]
+            }
+          },
+          {
+            "name": "borrow_index",
+            "docs": [
+              "One borrow index per loyalty tier, since a shared index cannot charge different rates"
+            ],
+            "type": {
+              "array": [
+                "u128",
+                3
+              ]
+            }
+          },
+          {
+            "name": "debt_shares",
+            "type": {
+              "array": [
+                "u128",
+                3
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolParams",
+      "docs": [
+        "Admin-set risk and rate parameters",
+        "Shocks are a scenario-by-group table in bps: row = scenario, column = risk group"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "num_scenarios",
+            "type": "u8"
+          },
+          {
+            "name": "init_shock_bps",
+            "docs": [
+              "Applied when debt grows or collateral leaves"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                16
+              ]
+            }
+          },
+          {
+            "name": "maint_shock_bps",
+            "docs": [
+              "Applied when deciding whether an account can be liquidated"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                16
+              ]
+            }
+          },
+          {
+            "name": "liq_bonus_bps",
+            "type": "u16"
+          },
+          {
+            "name": "close_factor_bps",
+            "type": "u16"
+          },
+          {
+            "name": "warn_health_bps",
+            "docs": [
+              "Health under this drops the account to the base rate tier"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "base_rate_bps",
+            "type": "u16"
+          },
+          {
+            "name": "slope1_bps",
+            "type": "u16"
+          },
+          {
+            "name": "slope2_bps",
+            "type": "u16"
+          },
+          {
+            "name": "kink_bps",
+            "type": "u16"
+          },
+          {
+            "name": "reserve_factor_bps",
+            "docs": [
+              "Share of borrower interest kept as the insurance reserve"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "docs": [
+              "Share of borrower interest the protocol keeps as revenue"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protection_fee_bps",
+            "docs": [
+              "Share of the senior lenders' interest paid to junior lenders for taking losses first"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "tier_discount_bps",
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "tier_min_healthy_secs",
+            "type": {
+              "array": [
+                "i64",
+                3
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Token mint, or the Orca position NFT mint"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Token base units, or 1 for an LP position"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump of Orca's address for an LP position, so the health check can confirm it cheaply"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolFeesCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Repaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "debt",
+            "type": "u64"
+          },
+          {
+            "name": "source",
+            "docs": [
+              "Where the USDC came from: 0 wallet, 1 autopay from LP fees, 2 the account's own USDC collateral"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TierChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "from",
+            "type": "u8"
+          },
+          {
+            "name": "to",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "ASSET_SEED",
+      "type": "bytes",
+      "value": "[97, 115, 115, 101, 116]"
+    },
+    {
+      "name": "CREDIT_SEED",
+      "type": "bytes",
+      "value": "[99, 114, 101, 100, 105, 116]"
+    },
+    {
+      "name": "DEMO_PRICE_SEED",
+      "type": "bytes",
+      "value": "[100, 101, 109, 111, 95, 112, 114, 105, 99, 101]"
+    },
+    {
+      "name": "JUNIOR_MINT_SEED",
+      "type": "bytes",
+      "value": "[106, 117, 110, 105, 111, 114, 95, 109, 105, 110, 116]"
+    },
+    {
+      "name": "LP_MARKET_SEED",
+      "type": "bytes",
+      "value": "[108, 112, 95, 109, 97, 114, 107, 101, 116]"
+    },
+    {
+      "name": "POOL_SEED",
+      "type": "bytes",
+      "value": "[112, 111, 111, 108]"
+    },
+    {
+      "name": "SHARE_MINT_SEED",
+      "type": "bytes",
+      "value": "[115, 104, 97, 114, 101, 95, 109, 105, 110, 116]"
+    },
+    {
+      "name": "USDC_VAULT_SEED",
+      "type": "bytes",
+      "value": "[117, 115, 100, 99, 95, 118, 97, 117, 108, 116]"
+    },
+    {
+      "name": "VAULT_SEED",
+      "type": "bytes",
+      "value": "[118, 97, 117, 108, 116]"
+    }
+  ]
+}
