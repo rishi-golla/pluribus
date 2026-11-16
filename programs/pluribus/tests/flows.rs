@@ -259,3 +259,32 @@ fn lent_out_usdc_cannot_be_withdrawn_and_the_rate_kinks() {
     expect_ok(env.send(&[env.lend_withdraw_ix(&lender.pubkey(), held / 20)], &[&lender]));
     expect_err(env.draw(&user, 1), PluribusError::InsufficientLiquidity);
 }
+
+#[test]
+fn the_usdc_side_of_an_lp_takes_the_usdc_shock() {
+    let mut env = Env::new();
+    let (usdc, admin) = (env.usdc, env.admin.insecure_clone());
+    let user = env.user();
+    // A range far under the price holds only USDC, and still does after every crash scenario
+    env.deposit_lp(&user, 50.0, 80.0, liquidity_for(10_000, 50.0, 80.0, 150));
+    let h = env.health(&user.pubkey());
+    // While USDC is never shocked there is no gap between the draw limit and the liquidation line
+    assert_eq!(h.credit_limit, h.liquidation_limit);
+    assert!(near(h.credit_limit, 9_500.0 * USDC as f64, 1e-6));
+
+    // USDC in a group of its own: 3% off for draws and 1% off for liquidation
+    let mut params = default_params();
+    for scenario in 0..3 {
+        params.init_shock_bps[scenario * pluribus::constants::MAX_GROUPS + 2] = 300;
+        params.maint_shock_bps[scenario * pluribus::constants::MAX_GROUPS + 2] = 100;
+    }
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin]));
+    let asset: pluribus::state::Asset = env.load(&env.asset_pda(&usdc));
+    let grouped = pluribus::state::AssetParams { group: 2, ..asset.params };
+    expect_ok(env.send(&[env.set_asset_ix(&admin.pubkey(), &usdc, grouped)], &[&admin]));
+
+    let h = env.health(&user.pubkey());
+    assert!(near(h.credit_limit, 10_000.0 * 0.97 * 0.95 * USDC as f64, 1e-6));
+    assert!(near(h.liquidation_limit, 10_000.0 * 0.99 * 0.95 * USDC as f64, 1e-6));
+    assert!(near(h.collateral_value, 10_000.0 * USDC as f64, 1e-6));
+}

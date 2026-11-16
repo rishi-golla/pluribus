@@ -52,11 +52,38 @@ enum Valuer {
     Lp { liquidity: u128, lower: u128, upper: u128, decimals: u8 },
 }
 
+/// Square roots of the prices already seen in this health check
+/// The root is the costly step, and every LP on the same asset asks for the same few crash prices
+#[derive(Default)]
+struct Roots {
+    seen: [(u128, u8, u128); 2 * MAX_SCENARIOS + 1],
+    len: usize,
+}
+
+impl Roots {
+    fn of(&mut self, price: u128, decimals: u8) -> Result<u128> {
+        if let Some(hit) = self.seen[..self.len].iter().find(|r| r.0 == price && r.1 == decimals) {
+            return Ok(hit.2);
+        }
+        let root = sqrt_price_x64(price, decimals)?;
+        if self.len < self.seen.len() {
+            self.seen[self.len] = (price, decimals, root);
+            self.len += 1;
+        }
+        Ok(root)
+    }
+}
+
 impl Valuer {
-    fn at(&self, price: u128) -> Result<u128> {
+    /// Value at `price`, with the USDC side of an LP position marked down by `usdc_shock`
+    /// A position that has gone all USDC would otherwise sail through every crash untouched
+    fn at(&self, price: u128, usdc_shock: u128, roots: &mut Roots) -> Result<u128> {
         match *self {
             Valuer::Token { amount, decimals } => token_value(amount, price, decimals),
-            Valuer::Lp { liquidity, lower, upper, decimals } => lp_value(liquidity, lower, upper, price, decimals),
+            Valuer::Lp { liquidity, lower, upper, decimals } => {
+                let (base, usdc) = lp_parts(liquidity, lower, upper, price, roots.of(price, decimals)?, decimals)?;
+                Ok(base + cut(usdc, usdc_shock)?)
+            }
         }
     }
 }
@@ -69,6 +96,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
     let n = params.num_scenarios as usize;
     let (want_init, want_maint) = (scope != Scope::Liquidation, scope != Scope::Draw);
     let mut h = Health { scenarios: n, ..Default::default() };
+    let mut roots = Roots::default();
     let mut accs = rem.iter();
     let mut next = || accs.next().ok_or_else(|| error!(PluribusError::MissingAccount));
 
@@ -106,17 +134,19 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
         };
 
         if want_maint {
-            h.market[i] = valuer.at(h.price[i])?;
+            h.market[i] = valuer.at(h.price[i], 0, &mut roots)?;
         }
         for s in 0..n {
             if want_maint {
-                let maint = cut(valuer.at(cut(h.price[i], params.shock(false, s, group))?)?, cost)?;
+                let shocked = cut(h.price[i], params.shock(false, s, group))?;
+                let maint = cut(valuer.at(shocked, params.shock(false, s, pool.usdc_group), &mut roots)?, cost)?;
                 h.pos_maint[i][s] = maint;
                 h.maint[s] += maint;
             }
             // Paused collateral stops backing new debt but keeps protecting what is already drawn
             if want_init && !paused {
-                h.init[s] += cut(valuer.at(cut(h.price[i], params.shock(true, s, group))?)?, cost)?;
+                let shocked = cut(h.price[i], params.shock(true, s, group))?;
+                h.init[s] += cut(valuer.at(shocked, params.shock(true, s, pool.usdc_group), &mut roots)?, cost)?;
             }
         }
     }

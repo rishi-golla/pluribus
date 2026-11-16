@@ -54,12 +54,27 @@ pub fn range_sqrt_prices(tick_lower: i32, tick_upper: i32) -> Result<(u128, u128
     Ok((tick_index_to_sqrt_price(tick_lower), tick_index_to_sqrt_price(tick_upper)))
 }
 
-/// What the position would pay out at `price`, in USDC base units, with fees left out
-pub fn lp_value(liquidity: u128, sqrt_lower: u128, sqrt_upper: u128, price: u128, base_decimals: u8) -> Result<u128> {
-    let s = sqrt_price_x64(price, base_decimals)?.clamp(sqrt_lower, sqrt_upper);
+/// What the position would pay out at `price`, with fees left out
+/// Returns the value of its base tokens and its USDC separately, both in USDC base units
+/// `sqrt_price` is `sqrt_price_x64` of the same price, passed in so callers can reuse it across positions
+pub fn lp_parts(
+    liquidity: u128,
+    sqrt_lower: u128,
+    sqrt_upper: u128,
+    price: u128,
+    sqrt_price: u128,
+    base_decimals: u8,
+) -> Result<(u128, u128)> {
+    let s = sqrt_price.clamp(sqrt_lower, sqrt_upper);
     let base = try_get_amount_delta_a(s, sqrt_upper, liquidity, false).map_err(|_| overflow())?;
     let usdc = try_get_amount_delta_b(sqrt_lower, s, liquidity, false).map_err(|_| overflow())?;
-    token_value(base, price, base_decimals)?.checked_add(usdc as u128).ok_or_else(overflow)
+    Ok((token_value(base, price, base_decimals)?, usdc as u128))
+}
+
+pub fn lp_value(liquidity: u128, sqrt_lower: u128, sqrt_upper: u128, price: u128, base_decimals: u8) -> Result<u128> {
+    let sqrt_price = sqrt_price_x64(price, base_decimals)?;
+    let (base, usdc) = lp_parts(liquidity, sqrt_lower, sqrt_upper, price, sqrt_price, base_decimals)?;
+    base.checked_add(usdc).ok_or_else(overflow)
 }
 
 #[cfg(test)]
