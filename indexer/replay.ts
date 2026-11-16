@@ -8,7 +8,8 @@ import { PROGRAM_ID } from "../sdk/index.ts";
 import { sign } from "./sign.ts";
 
 const PAGE = 1000;
-const BATCH = 50;
+// Small enough that a public RPC's rate limit lets a batch of transaction lookups through
+const BATCH = 5;
 const POLL_MS = 2000;
 
 const follow = process.argv.includes("--follow");
@@ -41,11 +42,23 @@ async function post(payload: unknown) {
   if (!res.ok) throw new Error(`Indexer at ${webhook} answered ${res.status}: ${await res.text()}`);
 }
 
+// Public RPCs throttle hard, so a failed call is retried with a growing pause before giving up
+async function patiently<T>(call: () => Promise<T>): Promise<T> {
+  for (let wait = 1000; ; wait *= 2) {
+    try {
+      return await call();
+    } catch (e) {
+      if (wait > 32_000) throw e;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+}
+
 // Sends every program transaction newer than `newest` and returns the latest signature sent
 async function replay(newest?: string): Promise<string | undefined> {
   const found = [];
   for (let before: string | undefined; ; ) {
-    const page = await connection.getSignaturesForAddress(PROGRAM_ID, { before, until: newest, limit: PAGE });
+    const page = await patiently(() => connection.getSignaturesForAddress(PROGRAM_ID, { before, until: newest, limit: PAGE }));
     found.push(...page);
     if (page.length < PAGE) break;
     before = page[page.length - 1].signature;
@@ -55,7 +68,7 @@ async function replay(newest?: string): Promise<string | undefined> {
   for (let i = 0; i < found.length; i += BATCH) {
     const batch = found.slice(i, i + BATCH);
     const txs = await Promise.all(
-      batch.map((s) => connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })),
+      batch.map((s) => patiently(() => connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 }))),
     );
     await post(
       batch.map(({ signature, slot, blockTime, err }, j) => {
