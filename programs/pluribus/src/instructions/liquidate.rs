@@ -171,6 +171,8 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
         a.credit.add_token(&a.usdc_mint.key(), excess)?;
         a.usdc_asset.total_deposited = a.usdc_asset.total_deposited.saturating_add(excess);
         pull(&a.token_program, &a.usdc_mint, &a.liquidator_usdc, &a.usdc_collateral_vault, &a.liquidator, excess)?;
+        // Without this the rest of the sale price would be invisible to anyone following events
+        emit!(CollateralChanged { account: a.credit.key(), mint: a.usdc_mint.key(), kind: KIND_TOKEN, amount: excess, deposit: true });
     }
     release_nft(&a.nft_token_program, &a.position_mint, &a.vault_nft, &a.liquidator_nft, &a.pool, a.owner.to_account_info())?;
     emit!(Liquidated {
