@@ -469,7 +469,7 @@ fn a_fake_usdc_vault_or_mint_is_rejected() {
     let fake_shares = env.new_mint(6, &TOKEN);
     env.fund(&fake_shares, &l, 1_000_000 * USDC);
     let redeem = swap(swap(env.lend_withdraw_ix(&l, 1_000 * USDC), shares, fake_shares), ata(&l, &shares, &TOKEN), ata(&l, &fake_shares, &TOKEN));
-    expect_anchor(env.send(&[redeem], &[&lender]), ErrorCode::ConstraintHasOne);
+    expect_err(env.send(&[redeem], &[&lender]), PluribusError::AccountMismatch);
 
     assert_eq!((env.debt(&me), env.pool_state().cash, env.balance(&shares, &l)), (debt, cash, held));
     assert_books_balance(&env, &[me]);
