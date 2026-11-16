@@ -92,6 +92,9 @@ pub struct DepositLp<'info> {
     #[account(seeds = [LP_MARKET_SEED, lp_market.whirlpool.as_ref()], bump = lp_market.bump)]
     pub lp_market: Box<Account<'info, LpMarket>>,
     /// CHECK: Owner program, discriminator, mint and pool are checked in the handler
+    // Orca keeps one position per NFT at this address
+    // A bundled position sits elsewhere and shares its mint with its siblings, so it is not accepted
+    #[account(seeds = [b"position", position_mint.key().as_ref()], seeds::program = WHIRLPOOL_PROGRAM_ID, bump)]
     pub position: UncheckedAccount<'info>,
     pub position_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut, token::mint = position_mint, token::token_program = token_program)]
@@ -116,6 +119,7 @@ pub fn handle_deposit_lp(ctx: Context<DepositLp>) -> Result<()> {
     // The NFT being handed over must be the one that controls this position
     require_keys_eq!(orca.position_mint, a.position_mint.key(), PluribusError::AccountMismatch);
     require_keys_eq!(orca.whirlpool, a.lp_market.whirlpool, PluribusError::PoolNotWhitelisted);
+    require!(orca.liquidity > 0, PluribusError::InvalidLpPosition);
 
     a.credit.add_lp(&a.position_mint.key())?;
     pull(&a.token_program, &a.position_mint, &a.owner_nft, &a.vault_nft, &a.owner, 1)?;
@@ -191,6 +195,10 @@ pub fn handle_draw(ctx: Context<Draw>, amount: u64) -> Result<()> {
     require!(amount > 0, PluribusError::ZeroAmount);
     require!(!a.pool.paused, PluribusError::Paused);
     a.pool.accrue(now)?;
+    // The loyalty clock only runs while something is owed
+    if a.credit.debt_shares == 0 {
+        a.credit.healthy_since = now;
+    }
     a.pool.borrow(&mut a.credit, amount)?;
     push(&a.token_program, &a.usdc_mint, &a.usdc_vault, &a.owner_usdc, &a.pool, amount)?;
     require_within_limit(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
@@ -218,6 +226,7 @@ pub fn handle_repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
     let a = ctx.accounts;
     require!(amount > 0, PluribusError::ZeroAmount);
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
+    require!(a.pool.retires_debt(&a.credit, amount)?, PluribusError::ZeroAmount);
     let paid = a.pool.repay(&mut a.credit, amount)?;
     pull(&a.token_program, &a.usdc_mint, &a.payer_usdc, &a.usdc_vault, &a.payer, paid)?;
     emit!(Repaid {

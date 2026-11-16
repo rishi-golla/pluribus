@@ -51,6 +51,7 @@ pub fn handle_lend_withdraw(ctx: Context<Lend>, shares: u64) -> Result<()> {
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
     require!(shares > 0 && shares <= a.share_mint.supply, PluribusError::ZeroAmount);
     let amount = to_u64(mul_div_floor(shares as u128, a.pool.lender_assets()?, a.share_mint.supply as u128)?)?;
+    require!(amount > 0, PluribusError::ZeroAmount);
     // Lent-out USDC cannot leave, and the rate kink is what pulls it back
     require!(amount <= a.pool.cash, PluribusError::InsufficientLiquidity);
 

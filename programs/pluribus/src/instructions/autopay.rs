@@ -27,7 +27,7 @@ pub struct Autopay<'info> {
     #[account(mut)]
     pub whirlpool: UncheckedAccount<'info>,
     /// CHECK: Owner program, discriminator, mint and pool are checked in the handler
-    #[account(mut)]
+    #[account(mut, seeds = [b"position", position_mint.key().as_ref()], seeds::program = WHIRLPOOL_PROGRAM_ID, bump)]
     pub position: UncheckedAccount<'info>,
     pub position_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(token::mint = position_mint, token::authority = pool)]
@@ -140,7 +140,7 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
 
     let owed = to_u64((usdc_fee as u128).min(a.pool.debt_of(&a.credit)?))?;
     // An amount too small to retire a debt share is kept as collateral instead
-    let paid = if owed > 0 { a.pool.repay(&mut a.credit, owed).unwrap_or(0) } else { 0 };
+    let paid = if owed > 0 && a.pool.retires_debt(&a.credit, owed)? { a.pool.repay(&mut a.credit, owed)? } else { 0 };
     if paid > 0 {
         push(&a.token_program, &a.usdc_mint, &a.usdc_collateral_vault, &a.usdc_vault, &a.pool, paid)?;
         emit!(Repaid {

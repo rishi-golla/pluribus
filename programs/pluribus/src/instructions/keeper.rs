@@ -38,7 +38,8 @@ pub fn handle_refresh_tier(ctx: Context<RefreshTier>) -> Result<()> {
         }
     }
     let healthy_for = now.saturating_sub(a.credit.healthy_since);
-    while (to as usize) + 1 < TIERS && healthy_for >= a.pool.params.tier_min_healthy_secs[to as usize + 1] {
+    // Tiers are earned by borrowing in good standing, so an idle account never moves up
+    while debt > 0 && (to as usize) + 1 < TIERS && healthy_for >= a.pool.params.tier_min_healthy_secs[to as usize + 1] {
         to += 1;
     }
     if to != from {
@@ -80,7 +81,7 @@ pub fn handle_health(ctx: Context<ViewHealth>) -> Result<HealthView> {
         credit_limit: to_u64(h.credit_limit())?,
         liquidation_limit: to_u64(h.liquidation_limit())?,
         collateral_value: to_u64(h.market.iter().sum())?,
-        borrow_rate_bps: pool.tier_rate_bps(credit.tier as usize)? as u16,
+        borrow_rate_bps: pool.tier_rate_bps(credit.tier as usize)?.min(u16::MAX as u128) as u16,
         tier: credit.tier,
         position_value: [0; MAX_POSITIONS],
         position_price: [0; MAX_POSITIONS],

@@ -88,6 +88,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let market: LpMarket = load(next()?)?;
                 let orca = read_position(next()?)?;
                 // The NFT in the vault must be this exact position, in the pool the market whitelists
+                // Deposits only take the position at Orca's own address for the mint, so no other can carry it
                 require_keys_eq!(orca.position_mint, pos.mint, PluribusError::AccountMismatch);
                 require_keys_eq!(orca.whirlpool, market.whirlpool, PluribusError::PoolNotWhitelisted);
                 let asset: Asset = load(next()?)?;
