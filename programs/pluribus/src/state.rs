@@ -285,6 +285,8 @@ pub struct Position {
     pub mint: Pubkey,
     /// Token base units, or 1 for an LP position
     pub amount: u64,
+    /// Bump of Orca's address for an LP position, so the health check can confirm it cheaply
+    pub bump: u8,
 }
 
 #[account]
@@ -323,7 +325,7 @@ impl CreditAccount {
             Err(_) => self.free_slot()?,
         };
         let p = &mut self.positions[i];
-        *p = Position { kind: KIND_TOKEN, mint: *mint, amount: p.amount.checked_add(amount).ok_or(PluribusError::MathOverflow)? };
+        *p = Position { kind: KIND_TOKEN, mint: *mint, amount: p.amount.checked_add(amount).ok_or(PluribusError::MathOverflow)?, bump: 0 };
         Ok(())
     }
 
@@ -336,9 +338,9 @@ impl CreditAccount {
         Ok(())
     }
 
-    pub fn add_lp(&mut self, mint: &Pubkey) -> Result<()> {
+    pub fn add_lp(&mut self, mint: &Pubkey, bump: u8) -> Result<()> {
         let i = self.free_slot()?;
-        self.positions[i] = Position { kind: KIND_LP, mint: *mint, amount: 1 };
+        self.positions[i] = Position { kind: KIND_LP, mint: *mint, amount: 1, bump };
         Ok(())
     }
 

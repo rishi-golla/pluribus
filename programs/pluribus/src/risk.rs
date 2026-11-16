@@ -86,9 +86,12 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
             }
             KIND_LP => {
                 let market: LpMarket = load(next()?)?;
-                let orca = read_position(next()?)?;
-                // The NFT in the vault must be this exact position, in the pool the market whitelists
-                // Deposits only take the position at Orca's own address for the mint, so no other can carry it
+                let account = next()?;
+                // Only the position at Orca's own address for this NFT counts, never another account naming the mint
+                let expected = Pubkey::create_program_address(&[b"position", pos.mint.as_ref(), &[pos.bump]], &WHIRLPOOL_PROGRAM_ID)
+                    .map_err(|_| error!(PluribusError::AccountMismatch))?;
+                require_keys_eq!(account.key(), expected, PluribusError::AccountMismatch);
+                let orca = read_position(account)?;
                 require_keys_eq!(orca.position_mint, pos.mint, PluribusError::AccountMismatch);
                 require_keys_eq!(orca.whirlpool, market.whirlpool, PluribusError::PoolNotWhitelisted);
                 let asset: Asset = load(next()?)?;

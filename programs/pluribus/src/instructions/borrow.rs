@@ -48,7 +48,7 @@ pub struct MoveToken<'info> {
     pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = mint)]
+    #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -113,6 +113,7 @@ pub struct DepositLp<'info> {
 }
 
 pub fn handle_deposit_lp(ctx: Context<DepositLp>) -> Result<()> {
+    let bump = ctx.bumps.position;
     let a = ctx.accounts;
     require!(!a.lp_market.paused, PluribusError::Paused);
     let orca = read_position(&a.position)?;
@@ -121,7 +122,7 @@ pub fn handle_deposit_lp(ctx: Context<DepositLp>) -> Result<()> {
     require_keys_eq!(orca.whirlpool, a.lp_market.whirlpool, PluribusError::PoolNotWhitelisted);
     require!(orca.liquidity > 0, PluribusError::InvalidLpPosition);
 
-    a.credit.add_lp(&a.position_mint.key())?;
+    a.credit.add_lp(&a.position_mint.key(), bump)?;
     pull(&a.token_program, &a.position_mint, &a.owner_nft, &a.vault_nft, &a.owner, 1)?;
     emit!(CollateralChanged { account: a.credit.key(), mint: a.position_mint.key(), kind: KIND_LP, amount: 1, deposit: true });
     Ok(())
@@ -184,7 +185,7 @@ pub struct Draw<'info> {
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, token::mint = usdc_mint)]
+    #[account(mut, token::mint = usdc_mint, token::authority = owner)]
     pub owner_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
