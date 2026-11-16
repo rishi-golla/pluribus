@@ -48,6 +48,7 @@ pub struct BadDebt {
     pub account: Pubkey,
     pub loss: u64,
     pub covered_by_reserves: u64,
+    pub covered_by_protocol_fees: u64,
 }
 
 #[event]

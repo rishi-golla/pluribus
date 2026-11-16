@@ -47,9 +47,15 @@ impl PoolParams {
             && self.tier_discount_bps[0] == 0
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
-            && self.tier_min_healthy_secs.windows(2).all(|w| w[0] <= w[1]);
+            && self.tier_min_healthy_secs.windows(2).all(|w| w[0] < w[1]);
         require!(ok, PluribusError::InvalidParams);
         Ok(())
+    }
+
+    /// A liquidator's bonus must be smaller than the haircut on what is seized
+    /// Otherwise taking collateral would deepen the shortfall and every liquidation would be refused
+    pub fn bonus_fits(&self, liq_cost_bps: u16) -> bool {
+        (BPS + self.liq_bonus_bps as u128) * BPS.saturating_sub(liq_cost_bps as u128) <= BPS * BPS
     }
 
     pub fn shock(&self, init: bool, scenario: usize, group: u8) -> u128 {
@@ -80,6 +86,8 @@ pub struct Pool {
     pub protocol_fees: u64,
     pub bad_debt: u64,
     pub last_accrual: i64,
+    /// Lowest liquidation cost any priced asset or LP market has been given, which caps the liquidation bonus
+    pub min_liq_cost_bps: u16,
     /// One borrow index per loyalty tier, since a shared index cannot charge different rates
     pub borrow_index: [u128; TIERS],
     pub debt_shares: [u128; TIERS],
@@ -162,7 +170,14 @@ impl Pool {
         Ok(())
     }
 
+    /// Whether paying `amount` would retire any of the account's debt shares
+    pub fn retires_debt(&self, credit: &CreditAccount, amount: u64) -> Result<bool> {
+        let whole = credit.debt_shares > 0 && amount as u128 >= self.debt_of(credit)?;
+        Ok(whole || mul_div_floor(amount as u128, INDEX_ONE, self.borrow_index[credit.tier as usize])? > 0)
+    }
+
     /// Applies up to `amount` to the account's debt and returns what was used
+    /// A payment too small to retire a share is still taken, which rounds against the borrower
     pub fn repay(&mut self, credit: &mut CreditAccount, amount: u64) -> Result<u64> {
         let t = credit.tier as usize;
         let debt = self.debt_of(credit)?;
@@ -171,7 +186,6 @@ impl Pool {
         } else {
             (amount, mul_div_floor(amount as u128, INDEX_ONE, self.borrow_index[t])?)
         };
-        require!(shares > 0, PluribusError::ZeroAmount);
         credit.debt_shares -= shares;
         self.debt_shares[t] -= shares;
         self.cash = self.cash.checked_add(paid).ok_or(PluribusError::MathOverflow)?;
@@ -187,15 +201,19 @@ impl Pool {
         Ok(())
     }
 
-    /// Drops debt that no collateral backs: reserves absorb it first and the rest lowers the share price
-    pub fn write_off(&mut self, credit: &mut CreditAccount) -> Result<(u64, u64)> {
+    /// Drops debt that no collateral backs and returns the loss with what reserves and protocol fees absorbed
+    /// Reserves pay first, then the protocol's uncollected cut, and only the rest lowers the share price
+    pub fn write_off(&mut self, credit: &mut CreditAccount) -> Result<(u64, u64, u64)> {
         let loss = to_u64(self.debt_of(credit)?)?;
         self.debt_shares[credit.tier as usize] -= credit.debt_shares;
         credit.debt_shares = 0;
-        let covered = loss.min(self.reserves);
-        self.reserves -= covered;
+        let from_reserves = loss.min(self.reserves);
+        self.reserves -= from_reserves;
+        // Interest that was never paid is not revenue, so it goes before lenders take a loss
+        let from_fees = (loss - from_reserves).min(self.protocol_fees);
+        self.protocol_fees -= from_fees;
         self.bad_debt = self.bad_debt.saturating_add(loss);
-        Ok((loss, covered))
+        Ok((loss, from_reserves, from_fees))
     }
 }
 
@@ -215,7 +233,11 @@ pub struct AssetParams {
 impl AssetParams {
     pub fn validate(&self) -> Result<()> {
         require!(
-            (self.liq_cost_bps as u128) < BPS && self.oracle <= ORACLE_PYTH && self.max_conf_bps as u128 <= BPS,
+            (self.liq_cost_bps as u128) < BPS
+                && self.oracle <= ORACLE_PYTH
+                // A zero age or band would make the asset unusable, and a band near 100% lets the price reach zero
+                && self.max_price_age_secs > 0
+                && (1..=2_000).contains(&self.max_conf_bps),
             PluribusError::InvalidParams
         );
         Ok(())

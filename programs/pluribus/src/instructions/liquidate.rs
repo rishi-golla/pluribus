@@ -21,9 +21,14 @@ fn settle(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i64) -> Res
         pool.move_tier(credit, 0)?;
         emit!(TierChanged { account: credit.key(), from, to: 0 });
     }
+    write_off_if_unbacked(pool, credit)
+}
+
+/// Debt with no collateral left behind it can never be repaid by a liquidation, so it is booked as a loss at once
+fn write_off_if_unbacked(pool: &mut Pool, credit: &mut Account<CreditAccount>) -> Result<()> {
     if !credit.has_collateral() && credit.debt_shares > 0 {
-        let (loss, covered_by_reserves) = pool.write_off(credit)?;
-        emit!(BadDebt { account: credit.key(), loss, covered_by_reserves });
+        let (loss, covered_by_reserves, covered_by_protocol_fees) = pool.write_off(credit)?;
+        emit!(BadDebt { account: credit.key(), loss, covered_by_reserves, covered_by_protocol_fees });
     }
     Ok(())
 }
@@ -227,8 +232,9 @@ pub fn handle_repay_from_collateral(ctx: Context<RepayFromCollateral>, amount: u
         debt: to_u64(a.pool.debt_of(&a.credit)?)?,
         source: 2,
     });
-    if !by_owner {
-        settle(&mut a.pool, &mut a.credit, now)?;
+    if by_owner {
+        write_off_if_unbacked(&mut a.pool, &mut a.credit)
+    } else {
+        settle(&mut a.pool, &mut a.credit, now)
     }
-    Ok(())
 }
