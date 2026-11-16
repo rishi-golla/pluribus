@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { AppNav } from "@/components/app/AppNav";
-import { AppProviders } from "@/components/app/providers";
+import { AppProviders, LiveGate } from "@/components/app/providers";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -9,7 +9,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="app-ambient pointer-events-none absolute inset-x-0 top-0 h-[520px]" />
         <div className="relative">
           <AppNav />
-          {children}
+          <LiveGate>{children}</LiveGate>
         </div>
       </div>
     </AppProviders>

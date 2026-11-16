@@ -7,11 +7,13 @@ export const COLLATERAL_VALUE = 48230;
 
 export const money = (v: number, decimals = 2) => v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 export const usd = (v: number, decimals = 2) => `$${money(v, decimals)}`;
-export const healthOf = (debt: number) => (debt > 0 ? CREDIT_LIMIT / debt : Infinity);
+/** Health is the liquidation limit over the debt, so liquidation starts at 1, and debt that rounds to no cents counts as none */
+export const healthOf = (debt: number, limit: number) => (debt >= 0.005 ? limit / debt : Infinity);
 export const healthTone = (h: number) => (h >= 1.5 ? "text-green" : h >= 1.2 ? "text-orange" : "text-red");
 /** Position (0-100) on the 1.00 / 1.50 / 2.00 / 3.00+ health scale, which is piecewise linear. */
 export const healthPos = (h: number) => (h <= 1 ? 0 : h <= 2 ? ((h - 1) / 0.5) * 33.333 : Math.min(100, 66.667 + (h - 2) * 33.333));
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const shortKey = (key: string) => `${key.slice(0, 4)}...${key.slice(-4)}`;
 
 /** Shows a raw numeric input string with thousands separators, keeping whatever decimals were typed. */
 export const displayAmount = (raw: string) => {

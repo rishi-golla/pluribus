@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, ChevronDown, Search } from "lucide-react";
-import { Brandmark, Token } from "@/components/ui";
+import { Brandmark, Tag, Token } from "@/components/ui";
+import { useAccount } from "@/components/app/providers";
+import { WalletButton } from "@/components/app/WalletButton";
+import { usd } from "@/lib/account";
+import { deployment } from "@/lib/cluster";
 
 const ic = { size: 16, strokeWidth: 1.75 };
 const LINKS = [
@@ -17,6 +21,7 @@ const LINKS = [
 export function AppNav({ active }: { active?: string }) {
   const pathname = usePathname();
   const current = active ?? pathname;
+  const { mode, loading, live } = useAccount();
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-10 border-b border-line bg-[rgb(7_8_10/0.7)] px-7 backdrop-blur-md">
       <Brandmark />
@@ -35,9 +40,16 @@ export function AppNav({ active }: { active?: string }) {
         </a>
       </nav>
       <div className="ml-auto flex items-center gap-2">
+        {!active && mode === "preview" && !loading && <Tag>Preview data</Tag>}
         <div className="flex items-center gap-1.5 px-2 text-[13px] text-t2">
           <Token src="/tokens/sol.webp" size={16} />
-          $150.12 <span className="text-green">+2.41%</span>
+          {live && deployment ? (
+            usd(live.prices[deployment.solMint])
+          ) : (
+            <>
+              $150.12 <span className="text-green">+2.41%</span>
+            </>
+          )}
         </div>
         <div className="flex h-9 w-[220px] items-center gap-2 rounded-[10px] border border-line bg-s1 pl-3 pr-2.5 text-[13px] text-t3">
           <Search {...ic} />
@@ -47,11 +59,15 @@ export function AppNav({ active }: { active?: string }) {
         <div className="grid size-9 place-items-center rounded-[10px] border border-line bg-s1 text-t2">
           <Bell {...ic} />
         </div>
-        <div className="flex h-9 items-center gap-2 rounded-[10px] border border-line bg-s1 pl-1.5 pr-2.5 text-[13px] font-medium">
-          <span className="wallet-avatar size-6 rounded-[7px]" />
-          7xKX...q9Fh
-          <ChevronDown {...ic} className="text-t3" />
-        </div>
+        {active ? (
+          <div className="flex h-9 items-center gap-2 rounded-[10px] border border-line bg-s1 pl-1.5 pr-2.5 text-[13px] font-medium">
+            <span className="wallet-avatar size-6 rounded-[7px]" />
+            7xKX...q9Fh
+            <ChevronDown {...ic} className="text-t3" />
+          </div>
+        ) : (
+          <WalletButton />
+        )}
       </div>
     </header>
   );
