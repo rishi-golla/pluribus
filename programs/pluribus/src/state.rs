@@ -112,7 +112,7 @@ impl Pool {
     pub fn total_debt(&self) -> Result<u128> {
         let mut total = 0u128;
         for t in 0..TIERS {
-            total += mul_div_ceil(self.debt_shares[t], self.borrow_index[t], INDEX_ONE)?;
+            total += mul_div_wide_ceil(self.debt_shares[t], self.borrow_index[t], INDEX_ONE)?;
         }
         Ok(total)
     }
@@ -200,16 +200,17 @@ impl Pool {
         let (lenders, junior, debt) = (self.lender_assets()?, self.tranche_assets(true)?, self.total_debt()?);
         for t in 0..TIERS {
             let rate = base.saturating_sub(self.params.tier_discount_bps[t] as u128);
-            let growth = mul_div_ceil(self.borrow_index[t], rate * dt as u128, BPS * SECONDS_PER_YEAR)?;
-            self.borrow_index[t] = self.borrow_index[t].checked_add(growth).ok_or(PluribusError::MathOverflow)?;
+            let growth = mul_div_wide_ceil(self.borrow_index[t], rate * dt as u128, BPS * SECONDS_PER_YEAR)?;
+            // Every instruction accrues first, so nothing here may fail however far the index has run
+            self.borrow_index[t] = self.borrow_index[t].saturating_add(growth);
         }
         // Interest is whatever the debt grew by, split at a finer scale than a base unit
         // A keeper accruing every few seconds would otherwise round the small cuts away
-        let interest = (self.total_debt()? - debt) * DUST;
-        let to_reserves = interest * self.params.reserve_factor_bps as u128 / BPS;
-        let to_protocol = interest * self.params.protocol_fee_bps as u128 / BPS;
-        self.reserves = Self::carry(self.reserves, &mut self.dust[0], to_reserves)?;
-        self.protocol_fees = Self::carry(self.protocol_fees, &mut self.dust[1], to_protocol)?;
+        let interest = self.total_debt()?.saturating_sub(debt).saturating_mul(DUST);
+        let to_reserves = mul_div_wide(interest, self.params.reserve_factor_bps as u128, BPS)?;
+        let to_protocol = mul_div_wide(interest, self.params.protocol_fee_bps as u128, BPS)?;
+        self.reserves = Self::carry(self.reserves, &mut self.dust[0], to_reserves);
+        self.protocol_fees = Self::carry(self.protocol_fees, &mut self.dust[1], to_protocol);
         if junior > 0 {
             // Junior lenders earn their own share of the interest plus a cut of the senior share
             let to_lenders = interest - to_reserves - to_protocol;
@@ -218,21 +219,21 @@ impl Pool {
             // Otherwise one unit of junior money would collect the whole fee from every senior lender
             let filled = (junior * BPS).min(lenders * JUNIOR_TARGET_BPS);
             let fee = mul_div_wide(to_lenders - own, self.params.protection_fee_bps as u128 * filled, BPS * lenders * JUNIOR_TARGET_BPS)?;
-            self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], own + fee)?;
+            self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], own + fee);
         }
         self.last_accrual = now;
         Ok(())
     }
 
     /// Adds a scaled amount to a balance, keeping the part under one base unit for the next accrual
-    fn carry(balance: u64, dust: &mut u32, scaled: u128) -> Result<u64> {
-        let total = scaled + *dust as u128;
+    fn carry(balance: u64, dust: &mut u32, scaled: u128) -> u64 {
+        let total = scaled.saturating_add(*dust as u128);
         *dust = (total % DUST) as u32;
-        balance.checked_add(to_u64(total / DUST)?).ok_or_else(|| error!(PluribusError::MathOverflow))
+        balance.saturating_add(u64::try_from(total / DUST).unwrap_or(u64::MAX))
     }
 
     pub fn debt_of(&self, credit: &CreditAccount) -> Result<u128> {
-        mul_div_ceil(credit.debt_shares, self.borrow_index[credit.tier as usize], INDEX_ONE)
+        mul_div_wide_ceil(credit.debt_shares, self.borrow_index[credit.tier as usize], INDEX_ONE)
     }
 
     pub fn borrow(&mut self, credit: &mut CreditAccount, amount: u64) -> Result<()> {
@@ -270,7 +271,7 @@ impl Pool {
     pub fn move_tier(&mut self, credit: &mut CreditAccount, to: u8) -> Result<()> {
         let debt = self.debt_of(credit)?;
         self.debt_shares[credit.tier as usize] -= credit.debt_shares;
-        credit.debt_shares = mul_div_ceil(debt, INDEX_ONE, self.borrow_index[to as usize])?;
+        credit.debt_shares = mul_div_wide_ceil(debt, INDEX_ONE, self.borrow_index[to as usize])?;
         self.debt_shares[to as usize] += credit.debt_shares;
         credit.tier = to;
         Ok(())

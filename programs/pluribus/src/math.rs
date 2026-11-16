@@ -23,6 +23,12 @@ pub fn mul_div_wide(a: u128, b: u128, d: u128) -> Result<u128> {
     u128::try_from(ethnum::U256::from(a) * ethnum::U256::from(b) / ethnum::U256::from(d)).map_err(|_| overflow())
 }
 
+pub fn mul_div_wide_ceil(a: u128, b: u128, d: u128) -> Result<u128> {
+    require!(d > 0, PluribusError::MathOverflow);
+    let (p, d) = (ethnum::U256::from(a) * ethnum::U256::from(b), ethnum::U256::from(d));
+    u128::try_from(p / d + ethnum::U256::from((p % d != 0) as u8)).map_err(|_| overflow())
+}
+
 pub fn to_u64(v: u128) -> Result<u64> {
     u64::try_from(v).map_err(|_| overflow())
 }
