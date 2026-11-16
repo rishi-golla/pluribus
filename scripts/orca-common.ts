@@ -25,6 +25,16 @@ export const { values: args } = parseArgs({
   options: {
     url: { type: "string", default: "http://127.0.0.1:8899" },
     usd: { type: "string", default: "10000" },
+    // Parsed here because every script imports this module, and each one applies its own defaults
+    ledger: { type: "string" },
+    to: { type: "string" },
+    sol: { type: "string" },
+    stock: { type: "string" },
+    usdc: { type: "string" },
+    lp: { type: "string" },
+    range: { type: "string" },
+    asset: { type: "string" },
+    price: { type: "string" },
   },
 });
 export const url = args.url;
