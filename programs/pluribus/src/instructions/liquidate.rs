@@ -32,21 +32,21 @@ fn settle(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i64) -> Res
 pub struct Liquidate<'info> {
     pub liquidator: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint)]
-    pub liquidator_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub liquidator_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, seeds = [ASSET_SEED, collateral_mint.key().as_ref()], bump = asset.bump, has_one = vault)]
-    pub asset: Account<'info, Asset>,
-    pub collateral_mint: InterfaceAccount<'info, Mint>,
+    pub asset: Box<Account<'info, Asset>>,
+    pub collateral_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = collateral_mint)]
-    pub liquidator_collateral: InterfaceAccount<'info, TokenAccount>,
+    pub liquidator_collateral: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
@@ -104,28 +104,28 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
 pub struct LiquidateLp<'info> {
     pub liquidator: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint)]
-    pub liquidator_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub liquidator_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, seeds = [ASSET_SEED, usdc_mint.key().as_ref()], bump = usdc_asset.bump)]
-    pub usdc_asset: Account<'info, Asset>,
+    pub usdc_asset: Box<Account<'info, Asset>>,
     #[account(mut, address = usdc_asset.vault)]
-    pub usdc_collateral_vault: InterfaceAccount<'info, TokenAccount>,
-    pub position_mint: InterfaceAccount<'info, Mint>,
+    pub usdc_collateral_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub position_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         mut,
         associated_token::mint = position_mint,
         associated_token::authority = pool,
         associated_token::token_program = nft_token_program,
     )]
-    pub vault_nft: InterfaceAccount<'info, TokenAccount>,
+    pub vault_nft: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = position_mint, token::token_program = nft_token_program)]
-    pub liquidator_nft: InterfaceAccount<'info, TokenAccount>,
+    pub liquidator_nft: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: Only receives the NFT vault's rent, and must be the account owner who paid it
     #[account(mut, address = credit.owner)]
     pub owner: UncheckedAccount<'info>,
@@ -184,16 +184,16 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
 pub struct RepayFromCollateral<'info> {
     pub caller: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, seeds = [ASSET_SEED, usdc_mint.key().as_ref()], bump = usdc_asset.bump)]
-    pub usdc_asset: Account<'info, Asset>,
+    pub usdc_asset: Box<Account<'info, Asset>>,
     #[account(mut, address = usdc_asset.vault)]
-    pub usdc_collateral_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_collateral_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 

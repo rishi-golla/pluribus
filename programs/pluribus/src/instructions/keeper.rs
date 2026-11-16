@@ -5,7 +5,7 @@ use crate::{constants::*, events::*, math::*, risk::*, state::*};
 #[derive(Accounts)]
 pub struct Accrue<'info> {
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
 }
 
 pub fn handle_accrue(ctx: Context<Accrue>) -> Result<()> {
@@ -15,9 +15,9 @@ pub fn handle_accrue(ctx: Context<Accrue>) -> Result<()> {
 #[derive(Accounts)]
 pub struct RefreshTier<'info> {
     #[account(mut, seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
 }
 
 /// Permissionless: moves an account up a loyalty tier once it has stayed healthy long enough
@@ -51,9 +51,9 @@ pub fn handle_refresh_tier(ctx: Context<RefreshTier>) -> Result<()> {
 #[derive(Accounts)]
 pub struct ViewHealth<'info> {
     #[account(seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(seeds = [POOL_SEED], bump = pool.bump)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
@@ -72,7 +72,7 @@ pub struct HealthView {
 pub fn handle_health(ctx: Context<ViewHealth>) -> Result<HealthView> {
     let now = Clock::get()?.unix_timestamp;
     let credit = &ctx.accounts.credit;
-    let mut pool = (*ctx.accounts.pool).clone();
+    let mut pool = Pool::clone(&ctx.accounts.pool);
     pool.accrue(now)?;
     let h = evaluate(&pool, credit, ctx.remaining_accounts, now, Scope::All)?;
     let mut view = HealthView {

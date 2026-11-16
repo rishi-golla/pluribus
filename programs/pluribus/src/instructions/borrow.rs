@@ -17,7 +17,7 @@ pub struct OpenAccount<'info> {
         seeds = [CREDIT_SEED, owner.key().as_ref()],
         bump,
     )]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -40,16 +40,16 @@ pub fn handle_open_account(ctx: Context<OpenAccount>) -> Result<()> {
 pub struct MoveToken<'info> {
     pub owner: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, owner.key().as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     #[account(mut, seeds = [ASSET_SEED, mint.key().as_ref()], bump = asset.bump, has_one = vault)]
-    pub asset: Account<'info, Asset>,
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub asset: Box<Account<'info, Asset>>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint)]
-    pub owner_token: InterfaceAccount<'info, TokenAccount>,
+    pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
@@ -86,16 +86,16 @@ pub struct DepositLp<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, owner.key().as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(seeds = [POOL_SEED], bump = pool.bump)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     #[account(seeds = [LP_MARKET_SEED, lp_market.whirlpool.as_ref()], bump = lp_market.bump)]
-    pub lp_market: Account<'info, LpMarket>,
+    pub lp_market: Box<Account<'info, LpMarket>>,
     /// CHECK: Owner program, discriminator, mint and pool are checked in the handler
     pub position: UncheckedAccount<'info>,
-    pub position_mint: InterfaceAccount<'info, Mint>,
+    pub position_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut, token::mint = position_mint, token::token_program = token_program)]
-    pub owner_nft: InterfaceAccount<'info, TokenAccount>,
+    pub owner_nft: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init_if_needed,
         payer = owner,
@@ -103,7 +103,7 @@ pub struct DepositLp<'info> {
         associated_token::authority = pool,
         associated_token::token_program = token_program,
     )]
-    pub vault_nft: InterfaceAccount<'info, TokenAccount>,
+    pub vault_nft: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -128,19 +128,19 @@ pub struct WithdrawLp<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, owner.key().as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
-    pub pool: Account<'info, Pool>,
-    pub position_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub position_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         mut,
         associated_token::mint = position_mint,
         associated_token::authority = pool,
         associated_token::token_program = token_program,
     )]
-    pub vault_nft: InterfaceAccount<'info, TokenAccount>,
+    pub vault_nft: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = position_mint, token::token_program = token_program)]
-    pub owner_nft: InterfaceAccount<'info, TokenAccount>,
+    pub owner_nft: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
@@ -174,14 +174,14 @@ pub fn release_nft<'info>(
 pub struct Draw<'info> {
     pub owner: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, owner.key().as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint)]
-    pub owner_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub owner_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
@@ -203,14 +203,14 @@ pub fn handle_draw(ctx: Context<Draw>, amount: u64) -> Result<()> {
 pub struct Repay<'info> {
     pub payer: Signer<'info>,
     #[account(mut, seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
-    pub credit: Account<'info, CreditAccount>,
+    pub credit: Box<Account<'info, CreditAccount>>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint)]
-    pub payer_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub payer_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 

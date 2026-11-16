@@ -9,9 +9,9 @@ pub struct Initialize<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     #[account(init, payer = admin, space = 8 + Pool::INIT_SPACE, seeds = [POOL_SEED], bump)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     #[account(constraint = usdc_mint.decimals == USDC_DECIMALS @ PluribusError::UnsupportedMint)]
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         init,
         payer = admin,
@@ -21,7 +21,7 @@ pub struct Initialize<'info> {
         token::authority = pool,
         token::token_program = token_program,
     )]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         init,
         payer = admin,
@@ -31,7 +31,7 @@ pub struct Initialize<'info> {
         mint::authority = pool,
         mint::token_program = token_program,
     )]
-    pub share_mint: InterfaceAccount<'info, Mint>,
+    pub share_mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -62,7 +62,7 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
 pub struct AdminPool<'info> {
     pub admin: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
 }
 
 pub fn handle_set_params(ctx: Context<AdminPool>, params: PoolParams) -> Result<()> {
@@ -90,12 +90,12 @@ pub struct InitAsset<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     // Token-2022 mints can carry transfer fees and hooks, which would break vault accounting
     #[account(constraint = *mint.to_account_info().owner == anchor_spl::token::ID @ PluribusError::UnsupportedMint)]
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(init, payer = admin, space = 8 + Asset::INIT_SPACE, seeds = [ASSET_SEED, mint.key().as_ref()], bump)]
-    pub asset: Account<'info, Asset>,
+    pub asset: Box<Account<'info, Asset>>,
     #[account(
         init,
         payer = admin,
@@ -105,7 +105,7 @@ pub struct InitAsset<'info> {
         token::authority = pool,
         token::token_program = token_program,
     )]
-    pub vault: InterfaceAccount<'info, TokenAccount>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -138,9 +138,9 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams) -> Result
 pub struct SetAsset<'info> {
     pub admin: Signer<'info>,
     #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
-    pub asset: Account<'info, Asset>,
+    pub asset: Box<Account<'info, Asset>>,
 }
 
 pub fn handle_set_asset(ctx: Context<SetAsset>, params: AssetParams) -> Result<()> {
@@ -154,11 +154,11 @@ pub struct InitLpMarket<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     /// CHECK: Owner, discriminator and mints are checked in the handler
     pub whirlpool: UncheckedAccount<'info>,
     #[account(seeds = [ASSET_SEED, base_asset.mint.as_ref()], bump = base_asset.bump)]
-    pub base_asset: Account<'info, Asset>,
+    pub base_asset: Box<Account<'info, Asset>>,
     #[account(
         init,
         payer = admin,
@@ -166,7 +166,7 @@ pub struct InitLpMarket<'info> {
         seeds = [LP_MARKET_SEED, whirlpool.key().as_ref()],
         bump,
     )]
-    pub lp_market: Account<'info, LpMarket>,
+    pub lp_market: Box<Account<'info, LpMarket>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -193,9 +193,9 @@ pub fn handle_init_lp_market(ctx: Context<InitLpMarket>, liq_cost_bps: u16) -> R
 pub struct SetLpMarket<'info> {
     pub admin: Signer<'info>,
     #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     #[account(mut, seeds = [LP_MARKET_SEED, lp_market.whirlpool.as_ref()], bump = lp_market.bump)]
-    pub lp_market: Account<'info, LpMarket>,
+    pub lp_market: Box<Account<'info, LpMarket>>,
 }
 
 pub fn handle_set_lp_market(ctx: Context<SetLpMarket>, liq_cost_bps: u16, paused: bool) -> Result<()> {
@@ -210,9 +210,9 @@ pub struct SetDemoPrice<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin, constraint = pool.demo_mode @ PluribusError::DemoDisabled)]
-    pub pool: Account<'info, Pool>,
+    pub pool: Box<Account<'info, Pool>>,
     #[account(seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
-    pub asset: Account<'info, Asset>,
+    pub asset: Box<Account<'info, Asset>>,
     #[account(
         init_if_needed,
         payer = admin,
@@ -220,7 +220,7 @@ pub struct SetDemoPrice<'info> {
         seeds = [DEMO_PRICE_SEED, asset.mint.as_ref()],
         bump,
     )]
-    pub demo_price: Account<'info, DemoPrice>,
+    pub demo_price: Box<Account<'info, DemoPrice>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -240,12 +240,12 @@ pub fn handle_set_demo_price(ctx: Context<SetDemoPrice>, price: u64, conf: u64) 
 pub struct CollectProtocolFees<'info> {
     pub admin: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin, has_one = usdc_mint, has_one = usdc_vault)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint)]
-    pub treasury_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub treasury_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 

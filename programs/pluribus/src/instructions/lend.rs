@@ -7,16 +7,16 @@ use crate::{constants::*, error::PluribusError, events::*, math::*, state::*, to
 pub struct Lend<'info> {
     pub lender: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault, has_one = share_mint)]
-    pub pool: Account<'info, Pool>,
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub pool: Box<Account<'info, Pool>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
-    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut)]
-    pub share_mint: InterfaceAccount<'info, Mint>,
+    pub share_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut, token::mint = usdc_mint)]
-    pub lender_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub lender_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = share_mint)]
-    pub lender_shares: InterfaceAccount<'info, TokenAccount>,
+    pub lender_shares: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
