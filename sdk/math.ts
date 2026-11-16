@@ -12,8 +12,7 @@ export type RiskPosition = {
 } & (
   | { amount: number }
   // `usdcGroup` is the pool's `usdcGroup`: the USDC side of an LP position takes that group's shock
-  // Leave it out for a program build that does not shock the USDC side
-  | { liquidity: Numeric; tickLower: number; tickUpper: number; usdcGroup?: number }
+  | { liquidity: Numeric; tickLower: number; tickUpper: number; usdcGroup: number }
 );
 
 export type ShockParams = { numScenarios: number; initShockBps: number[]; maintShockBps: number[] };
@@ -56,7 +55,7 @@ export function limits(positions: RiskPosition[], params: ShockParams, prices: R
   };
   const worst = (table: number[], init: boolean) => {
     // Groups past the table are never shocked
-    const kept = (s: number, group = MAX_GROUPS) => 1 - (group < MAX_GROUPS ? table[s * MAX_GROUPS + group] : 0) / BPS;
+    const kept = (s: number, group: number) => 1 - (group < MAX_GROUPS ? table[s * MAX_GROUPS + group] : 0) / BPS;
     const sums = Array.from({ length: params.numScenarios }, (_, s) =>
       positions.reduce((sum, p) => {
         // Paused collateral stops backing new debt but still counts against liquidation
@@ -80,30 +79,55 @@ type PoolLike = {
   cash: Numeric;
   reserves: Numeric;
   protocolFees: Numeric;
+  juniorAssets: Numeric;
   borrowIndex: Numeric[];
   debtShares: Numeric[];
-  params: { baseRateBps: number; slope1Bps: number; slope2Bps: number; kinkBps: number };
+  params: {
+    baseRateBps: number;
+    slope1Bps: number;
+    slope2Bps: number;
+    kinkBps: number;
+    reserveFactorBps: number;
+    protocolFeeBps: number;
+    protectionFeeBps: number;
+  };
 };
 
-// Pool totals in USDC as of the last accrual, plus the base borrow rate
-// Lender share price is lenderAssets over the share supply
-export function poolStats(pool: PoolLike) {
+// Pool totals in USDC as of the last accrual, with rates in bps a year
+// Give each share mint's supply in base units to get what one share of that tranche is worth
+export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: Numeric } = {}) {
   const debt = pool.debtShares.reduce((sum: number, s, t) => sum + (num(s) * num(pool.borrowIndex[t])) / 1e18, 0) / 1e6;
   const [cash, reserves, protocolFees] = [pool.cash, pool.reserves, pool.protocolFees].map((x) => num(x) / 1e6);
   const utilization = cash + debt > 0 ? debt / (cash + debt) : 0;
-  const { baseRateBps, slope1Bps, slope2Bps, kinkBps } = pool.params;
-  const kink = kinkBps / BPS;
+  const p = pool.params;
+  const kink = p.kinkBps / BPS;
   const borrowRateBps =
     utilization <= kink
-      ? baseRateBps + (slope1Bps * utilization) / kink
-      : baseRateBps + slope1Bps + (slope2Bps * (utilization - kink)) / (1 - kink);
+      ? p.baseRateBps + (p.slope1Bps * utilization) / kink
+      : p.baseRateBps + p.slope1Bps + (p.slope2Bps * (utilization - kink)) / (1 - kink);
+  const lenderAssets = Math.max(cash + debt - reserves - protocolFees, 0);
+  const juniorAssets = Math.min(num(pool.juniorAssets) / 1e6, lenderAssets);
+  const seniorAssets = lenderAssets - juniorAssets;
+  // What borrowers pay, spread over everything lent, after the reserve and protocol cuts
+  const lenderYield = borrowRateBps * utilization * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
+  // Senior lenders pay the protection fee only while there are junior lenders to pay it to
+  const fee = juniorAssets > 0 ? p.protectionFeeBps / BPS : 0;
+  const perShare = (assets: number, units?: Numeric) =>
+    units !== undefined && num(units) > 0 ? assets / (num(units) / 1e6) : null;
   return {
     cash,
     debt,
     reserves,
     protocolFees,
-    lenderAssets: Math.max(cash + debt - reserves - protocolFees, 0),
+    lenderAssets,
+    seniorAssets,
+    juniorAssets,
     utilization,
     borrowRateBps,
+    seniorShareValue: perShare(seniorAssets, supply.senior),
+    juniorShareValue: perShare(juniorAssets, supply.junior),
+    seniorApyBps: lenderYield * (1 - fee),
+    // Not defined for an empty tranche, where the first dollar would collect the whole fee
+    juniorApyBps: juniorAssets > 0 ? lenderYield * (1 + (fee * seniorAssets) / juniorAssets) : null,
   };
 }

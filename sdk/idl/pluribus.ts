@@ -932,6 +932,78 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "initJunior",
+      "discriminator": [
+        200,
+        247,
+        76,
+        50,
+        200,
+        146,
+        120,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "juniorMint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initLpMarket",
       "discriminator": [
         19,
@@ -1191,10 +1263,10 @@ export type Pluribus = {
         },
         {
           "name": "shareMint",
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
+          "docs": [
+            "The senior or junior share mint, checked against the pool in the handler"
+          ],
+          "writable": true
         },
         {
           "name": "lenderUsdc",
@@ -1264,10 +1336,10 @@ export type Pluribus = {
         },
         {
           "name": "shareMint",
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
+          "docs": [
+            "The senior or junior share mint, checked against the pool in the handler"
+          ],
+          "writable": true
         },
         {
           "name": "lenderUsdc",
@@ -2959,6 +3031,10 @@ export type Pluribus = {
           {
             "name": "coveredByProtocolFees",
             "type": "u64"
+          },
+          {
+            "name": "coveredByJunior",
+            "type": "u64"
           }
         ]
       }
@@ -3169,6 +3245,10 @@ export type Pluribus = {
           {
             "name": "deposit",
             "type": "bool"
+          },
+          {
+            "name": "junior",
+            "type": "bool"
           }
         ]
       }
@@ -3265,6 +3345,13 @@ export type Pluribus = {
             "type": "pubkey"
           },
           {
+            "name": "juniorMint",
+            "docs": [
+              "Share mint of the junior tranche, unset until the admin opens it"
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -3322,6 +3409,32 @@ export type Pluribus = {
               "Lowest liquidation cost any priced asset or LP market has been given, which caps the liquidation bonus"
             ],
             "type": "u16"
+          },
+          {
+            "name": "usdcGroup",
+            "docs": [
+              "Shock group of the USDC asset, applied to the USDC side of LP positions as well"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "juniorAssets",
+            "docs": [
+              "Part of the lender assets that belongs to junior lenders, who absorb losses before senior ones"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dust",
+            "docs": [
+              "Fractions of a base unit still owed to reserves, protocol fees and junior lenders"
+            ],
+            "type": {
+              "array": [
+                "u32",
+                3
+              ]
+            }
           },
           {
             "name": "borrowIndex",
@@ -3426,6 +3539,13 @@ export type Pluribus = {
             "name": "protocolFeeBps",
             "docs": [
               "Share of borrower interest the protocol keeps as revenue"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protectionFeeBps",
+            "docs": [
+              "Share of the senior lenders' interest paid to junior lenders for taking losses first"
             ],
             "type": "u16"
           },
@@ -3562,6 +3682,11 @@ export type Pluribus = {
       "name": "demoPriceSeed",
       "type": "bytes",
       "value": "[100, 101, 109, 111, 95, 112, 114, 105, 99, 101]"
+    },
+    {
+      "name": "juniorMintSeed",
+      "type": "bytes",
+      "value": "[106, 117, 110, 105, 111, 114, 95, 109, 105, 110, 116]"
     },
     {
       "name": "lpMarketSeed",

@@ -34,6 +34,7 @@ export type Deployment = {
   solMint: string;
   stockMint: string;
   shareMint: string;
+  juniorMint: string;
   whirlpool: string;
   // Token A is wSOL and token B is USDC
   whirlpoolVaultA: string;
@@ -78,6 +79,7 @@ export const pda = {
   pool: () => find(PROGRAM_ID, "pool"),
   usdcVault: () => find(PROGRAM_ID, "usdc_vault"),
   shareMint: () => find(PROGRAM_ID, "share_mint"),
+  juniorMint: () => find(PROGRAM_ID, "junior_mint"),
   asset: (mint: PublicKey) => find(PROGRAM_ID, "asset", mint),
   vault: (mint: PublicKey) => find(PROGRAM_ID, "vault", mint),
   lpMarket: (whirlpool: PublicKey) => find(PROGRAM_ID, "lp_market", whirlpool),
@@ -193,8 +195,7 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
   const [assets, market, pool, orca] = await Promise.all([
     program.account.asset.fetchMultiple(priced.map((m) => pda.asset(new PublicKey(m)))),
     lps.length ? fetchLpMarket(program, new PublicKey(d.whirlpool)) : null,
-    // Read loosely because only newer program builds have the field
-    lps.length ? (fetchPool(program) as Promise<{ usdcGroup?: number }>) : null,
+    lps.length ? fetchPool(program) : null,
     program.provider.connection.getMultipleAccountsInfo(lps.map((p) => pda.orcaPosition(p.mint))),
   ]);
   return held.map((p) => {
@@ -206,14 +207,14 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
     let risk: RiskPosition;
     if (lp) {
       const data = orca[lps.indexOf(p)]?.data;
-      if (!data || !market) throw new Error(`Orca position for ${p.mint.toBase58()} is missing`);
+      if (!data || !market || !pool) throw new Error(`Orca position for ${p.mint.toBase58()} is missing`);
       const { liquidity, tickLower, tickUpper } = decodeOrcaPosition(data);
       risk = {
         ...base,
         liquidity,
         tickLower,
         tickUpper,
-        usdcGroup: pool?.usdcGroup,
+        usdcGroup: pool.usdcGroup,
         liqCostBps: market.liqCostBps,
         paused: base.paused || market.paused,
       };

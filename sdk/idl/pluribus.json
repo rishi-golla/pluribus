@@ -926,6 +926,78 @@
       ]
     },
     {
+      "name": "init_junior",
+      "discriminator": [
+        200,
+        247,
+        76,
+        50,
+        200,
+        146,
+        120,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "junior_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "init_lp_market",
       "discriminator": [
         19,
@@ -1185,10 +1257,10 @@
         },
         {
           "name": "share_mint",
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
+          "docs": [
+            "The senior or junior share mint, checked against the pool in the handler"
+          ],
+          "writable": true
         },
         {
           "name": "lender_usdc",
@@ -1258,10 +1330,10 @@
         },
         {
           "name": "share_mint",
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
+          "docs": [
+            "The senior or junior share mint, checked against the pool in the handler"
+          ],
+          "writable": true
         },
         {
           "name": "lender_usdc",
@@ -2953,6 +3025,10 @@
           {
             "name": "covered_by_protocol_fees",
             "type": "u64"
+          },
+          {
+            "name": "covered_by_junior",
+            "type": "u64"
           }
         ]
       }
@@ -3163,6 +3239,10 @@
           {
             "name": "deposit",
             "type": "bool"
+          },
+          {
+            "name": "junior",
+            "type": "bool"
           }
         ]
       }
@@ -3259,6 +3339,13 @@
             "type": "pubkey"
           },
           {
+            "name": "junior_mint",
+            "docs": [
+              "Share mint of the junior tranche, unset until the admin opens it"
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -3316,6 +3403,32 @@
               "Lowest liquidation cost any priced asset or LP market has been given, which caps the liquidation bonus"
             ],
             "type": "u16"
+          },
+          {
+            "name": "usdc_group",
+            "docs": [
+              "Shock group of the USDC asset, applied to the USDC side of LP positions as well"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "junior_assets",
+            "docs": [
+              "Part of the lender assets that belongs to junior lenders, who absorb losses before senior ones"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dust",
+            "docs": [
+              "Fractions of a base unit still owed to reserves, protocol fees and junior lenders"
+            ],
+            "type": {
+              "array": [
+                "u32",
+                3
+              ]
+            }
           },
           {
             "name": "borrow_index",
@@ -3420,6 +3533,13 @@
             "name": "protocol_fee_bps",
             "docs": [
               "Share of borrower interest the protocol keeps as revenue"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protection_fee_bps",
+            "docs": [
+              "Share of the senior lenders' interest paid to junior lenders for taking losses first"
             ],
             "type": "u16"
           },
@@ -3556,6 +3676,11 @@
       "name": "DEMO_PRICE_SEED",
       "type": "bytes",
       "value": "[100, 101, 109, 111, 95, 112, 114, 105, 99, 101]"
+    },
+    {
+      "name": "JUNIOR_MINT_SEED",
+      "type": "bytes",
+      "value": "[106, 117, 110, 105, 111, 114, 95, 109, 105, 110, 116]"
     },
     {
       "name": "LP_MARKET_SEED",

@@ -78,12 +78,16 @@ const moveToken = (owner: PublicKey, mint: PublicKey) => ({
   tokenProgram,
 });
 
-const lend = (d: Deployment, lender: PublicKey) => ({
+// The share mint passed in decides the tranche
+type Tranche = { junior?: boolean };
+const shareMint = (t: Tranche) => (t.junior ? pda.juniorMint() : pda.shareMint());
+
+const lend = (d: Deployment, lender: PublicKey, t: Tranche) => ({
   ...usdcAccounts(d),
   lender,
-  shareMint: pda.shareMint(),
+  shareMint: shareMint(t),
   lenderUsdc: ata(key(d.usdcMint), lender),
-  lenderShares: ata(pda.shareMint(), lender),
+  lenderShares: ata(shareMint(t), lender),
 });
 
 export async function openAccount(program: PluribusProgram, owner: PublicKey): Ixs {
@@ -238,17 +242,30 @@ export async function repayFromCollateral(
   ];
 }
 
-export async function lendDeposit(program: PluribusProgram, d: Deployment, lender: PublicKey, amount: Amount): Ixs {
+// Junior lenders earn part of the senior interest and take losses first
+export async function lendDeposit(
+  program: PluribusProgram,
+  d: Deployment,
+  lender: PublicKey,
+  amount: Amount,
+  tranche: Tranche = {},
+): Ixs {
   return [
-    createAta(lender, pda.shareMint()),
-    await program.methods.lendDeposit(bn(amount)).accountsStrict(lend(d, lender)).instruction(),
+    createAta(lender, shareMint(tranche)),
+    await program.methods.lendDeposit(bn(amount)).accountsStrict(lend(d, lender, tranche)).instruction(),
   ];
 }
 
-export async function lendWithdraw(program: PluribusProgram, d: Deployment, lender: PublicKey, shares: Amount): Ixs {
+export async function lendWithdraw(
+  program: PluribusProgram,
+  d: Deployment,
+  lender: PublicKey,
+  shares: Amount,
+  tranche: Tranche = {},
+): Ixs {
   return [
     createAta(lender, key(d.usdcMint)),
-    await program.methods.lendWithdraw(bn(shares)).accountsStrict(lend(d, lender)).instruction(),
+    await program.methods.lendWithdraw(bn(shares)).accountsStrict(lend(d, lender, tranche)).instruction(),
   ];
 }
 
@@ -473,4 +490,42 @@ export async function setParams(program: PluribusProgram, admin: PublicKey, para
 
 export async function setFlags(program: PluribusProgram, admin: PublicKey, paused: boolean, demoMode: boolean): Ixs {
   return [await program.methods.setFlags(paused, demoMode).accountsStrict({ admin, pool: pda.pool() }).instruction()];
+}
+
+export async function setAdmin(program: PluribusProgram, admin: PublicKey, newAdmin: PublicKey): Ixs {
+  return [await program.methods.setAdmin(newAdmin).accountsStrict({ admin, pool: pda.pool() }).instruction()];
+}
+
+// Opens the junior tranche
+export async function initJunior(program: PluribusProgram, admin: PublicKey): Ixs {
+  return [
+    await program.methods
+      .initJunior()
+      .accountsStrict({ admin, pool: pda.pool(), juniorMint: pda.juniorMint(), tokenProgram, systemProgram })
+      .instruction(),
+  ];
+}
+
+export async function setAsset(program: PluribusProgram, admin: PublicKey, mint: PublicKey, params: AssetParams): Ixs {
+  return [
+    await program.methods
+      .setAsset(params)
+      .accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) })
+      .instruction(),
+  ];
+}
+
+export async function setLpMarket(
+  program: PluribusProgram,
+  admin: PublicKey,
+  whirlpool: PublicKey,
+  liqCostBps: number,
+  paused: boolean,
+): Ixs {
+  return [
+    await program.methods
+      .setLpMarket(liqCostBps, paused)
+      .accountsStrict({ admin, pool: pda.pool(), lpMarket: pda.lpMarket(whirlpool) })
+      .instruction(),
+  ];
 }
