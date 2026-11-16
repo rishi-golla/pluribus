@@ -110,7 +110,12 @@ impl Env {
     }
 
     pub fn with(params: PoolParams, demo_mode: bool) -> Self {
-        let mut svm = LiteSVM::new();
+        Self::on(LiteSVM::new(), params, demo_mode, None)
+    }
+
+    /// Same setup on a chain that may already hold a real Orca pool
+    /// `real` names that pool's USDC mint, SOL mint and Whirlpool so they are used instead of stand-ins
+    pub fn on(mut svm: LiteSVM, params: PoolParams, demo_mode: bool, real: Option<(Pubkey, Pubkey, Pubkey)>) -> Self {
         svm.add_program(pluribus::ID, include_bytes!(concat!(env!("CARGO_TARGET_TMPDIR"), "/../deploy/pluribus.so"))).unwrap();
         let mut clock: Clock = svm.get_sysvar();
         clock.unix_timestamp = 1_800_000_000;
@@ -129,8 +134,15 @@ impl Env {
             usdc_vault: pda(&[USDC_VAULT_SEED]),
             share_mint: pda(&[SHARE_MINT_SEED]),
         };
-        env.usdc = env.new_mint(6, &TOKEN);
-        env.sol = env.new_mint(9, &TOKEN);
+        match real {
+            Some((usdc, sol, whirlpool)) => (env.usdc, env.sol, env.whirlpool) = (usdc, sol, whirlpool),
+            None => {
+                env.usdc = env.new_mint(6, &TOKEN);
+                env.sol = env.new_mint(9, &TOKEN);
+                let (whirlpool, sol, usdc) = (env.whirlpool, env.sol, env.usdc);
+                env.set_whirlpool(&whirlpool, &sol, &usdc);
+            }
+        }
         env.stock = env.new_mint(6, &TOKEN);
 
         let admin = env.admin.insecure_clone();
@@ -154,7 +166,6 @@ impl Env {
         env.send(&[env.init_asset_ix(&sol, asset_params(GROUP_SOL, ORACLE_PYTH, SOL_FEED, 500))], &[&admin]).expect("sol asset");
         env.send(&[env.init_asset_ix(&stock, asset_params(GROUP_STOCK, ORACLE_PYTH, STOCK_FEED, 1000))], &[&admin]).expect("stock asset");
         let whirlpool = env.whirlpool;
-        env.set_whirlpool(&whirlpool, &sol, &usdc);
         env.send(&[env.init_lp_market_ix(&whirlpool, &sol, 500)], &[&admin]).expect("lp market");
         if demo_mode {
             env.set_price(&sol, 150 * USDC);
@@ -509,6 +520,12 @@ impl Env {
 
     pub fn deposit_lp_ix(&self, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey) -> Instruction {
         let program = self.svm.get_account(nft).unwrap().owner;
+        self.deposit_lp_from_ix(owner, whirlpool, nft, &ata(owner, nft, &program))
+    }
+
+    /// For an NFT held in a token account that is not the owner's associated one
+    pub fn deposit_lp_from_ix(&self, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey, owner_nft: &Pubkey) -> Instruction {
+        let program = self.svm.get_account(nft).unwrap().owner;
         self.ix(
             pluribus::instruction::DepositLp {}.data(),
             pluribus::accounts::DepositLp {
@@ -518,7 +535,7 @@ impl Env {
                 lp_market: self.lp_market_pda(whirlpool),
                 position: orca_position(nft),
                 position_mint: *nft,
-                owner_nft: ata(owner, nft, &program),
+                owner_nft: *owner_nft,
                 vault_nft: ata(&self.pool, nft, &program),
                 token_program: program,
                 associated_token_program: ATA_PROGRAM,
@@ -651,6 +668,39 @@ impl Env {
             pluribus::instruction::RefreshTier {}.data(),
             pluribus::accounts::RefreshTier { credit: self.credit_pda(owner), pool: self.pool }.to_account_metas(None),
             Some(owner),
+        )
+    }
+
+    /// `orca` lists the Whirlpool's accounts for this position: tick array lower, tick array upper, token vault A, token vault B
+    pub fn autopay_ix(&self, caller: &Pubkey, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey, orca: [Pubkey; 4]) -> Instruction {
+        let program = self.svm.get_account(nft).unwrap().owner;
+        let market: LpMarket = self.load(&self.lp_market_pda(whirlpool));
+        self.ix(
+            pluribus::instruction::Autopay {}.data(),
+            pluribus::accounts::Autopay {
+                caller: *caller,
+                credit: self.credit_pda(owner),
+                pool: self.pool,
+                lp_market: self.lp_market_pda(whirlpool),
+                whirlpool: *whirlpool,
+                position: orca_position(nft),
+                position_mint: *nft,
+                vault_nft: ata(&self.pool, nft, &program),
+                tick_array_lower: orca[0],
+                tick_array_upper: orca[1],
+                base_asset: self.asset_pda(&market.base_mint),
+                base_vault: self.vault_pda(&market.base_mint),
+                whirlpool_vault_a: orca[2],
+                usdc_asset: self.asset_pda(&self.usdc),
+                usdc_collateral_vault: self.vault_pda(&self.usdc),
+                whirlpool_vault_b: orca[3],
+                usdc_mint: self.usdc,
+                usdc_vault: self.usdc_vault,
+                token_program: TOKEN,
+                whirlpool_program: WHIRLPOOL_PROGRAM_ID,
+            }
+            .to_account_metas(None),
+            None,
         )
     }
 

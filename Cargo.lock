@@ -2023,8 +2023,10 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "base64 0.22.1",
  "litesvm",
  "orca_whirlpools_core",
+ "serde_json",
  "solana-account",
  "solana-keypair",
  "solana-message",
