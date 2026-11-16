@@ -29,6 +29,8 @@ type Props = {
   focus?: string | null;
   /** Changing this redraws the lines from scratch (e.g. on range change). */
   animKey?: string;
+  /** Joins points with straight segments, for readings that jump and would overshoot when smoothed */
+  straight?: boolean;
   ariaLabel: string;
   overlay?: (s: Scale) => ReactNode;
 };
@@ -50,6 +52,7 @@ export function LineChart({
   restIndex,
   focus = null,
   animKey = "",
+  straight = false,
   ariaLabel,
   overlay,
 }: Props) {
@@ -108,7 +111,7 @@ export function LineChart({
         {overlay?.({ x, y, innerWidth: iw, innerHeight: ih, pad })}
         {lines.map((l, k) => {
           const pts: Point[] = l.data.map((v, i) => [x(i), y(v)]);
-          const d = smoothPath(pts);
+          const d = smoothPath(pts, straight ? 0 : undefined);
           const dim = focus !== null && focus !== l.key;
           return (
             <motion.g key={`${l.key}-${animKey}`} animate={{ opacity: dim ? 0.35 : 1 }} transition={{ duration: 0.3 }}>
@@ -185,6 +188,6 @@ export function LineChart({
 const DAY = 86_400_000;
 const END = Date.UTC(2026, 10, 14);
 /** UTC formatting so server and client render the same string. */
-export const dateLabel = (daysAgo: number, year = false) =>
-  new Date(END - daysAgo * DAY).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(year && { year: "numeric" }), timeZone: "UTC" });
-export const axisDates = (n: number) => Array.from({ length: 7 }, (_, k) => dateLabel(n - 1 - Math.round((k / 6) * (n - 1))));
+export const dateLabel = (daysAgo: number, year = false, end = END) =>
+  new Date(end - daysAgo * DAY).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(year && { year: "numeric" }), timeZone: "UTC" });
+export const axisDates = (n: number, end = END) => Array.from({ length: 7 }, (_, k) => dateLabel(n - 1 - Math.round((k / 6) * (n - 1)), false, end));

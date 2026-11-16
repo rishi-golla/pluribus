@@ -1,15 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, ArrowRight, Award, ChevronDown, ChevronRight, Info, Plus, ShieldCheck, TrendingUp } from "lucide-react";
+import { Activity, ArrowRight, Award, ChevronDown, ChevronRight, Info, Plus, ShieldCheck, TrendingUp, TriangleAlert } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { Chip, KV, Label, StatusDot, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
 import { LineChart } from "@/components/charts/LineChart";
-import { useAccount, useToast } from "@/components/app/providers";
-import { AUTOPAY_PER_MONTH, BORROW_APR, COLLATERAL_VALUE, CREDIT_LIMIT, displayAmount, healthOf, healthPos, healthTone, money, sleep } from "@/lib/account";
+import { useAccount, useToast, type Live } from "@/components/app/providers";
+import { displayAmount, healthOf, healthPos, healthTone, money, shortKey, usd } from "@/lib/account";
 import { series } from "@/lib/chart";
+import { deployment } from "@/lib/cluster";
+import { healthAfterDrop, type Collateral } from "@/lib/live";
+import { CollateralDialog } from "./CollateralDialog";
 import { PortfolioChart, RANGES, SERIES, type Range, type SeriesKey } from "./PortfolioChart";
 
 const ic = { size: 16, strokeWidth: 1.75 };
@@ -23,15 +26,30 @@ type Mode = "Draw" | "Repay";
 type Status = "idle" | "signing" | "confirming";
 
 type Projection = { mode: Mode; amount: number; valid: boolean; newDebt: number };
+const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
 
-function CreditHero({ debt, p }: { debt: number; p: Projection }) {
-  const health = healthOf(debt);
-  const nextHealth = healthOf(p.newDebt);
+function CreditHero({ p }: { p: Projection }) {
+  const { debt, creditLimit, liquidationLimit, borrowApr, tier, live } = useAccount();
+  const health = healthOf(debt, liquidationLimit);
+  const nextHealth = healthOf(p.newDebt, liquidationLimit);
   const showDelta = p.valid && p.amount > 0;
-  const base = ((p.mode === "Draw" ? debt : p.newDebt) / CREDIT_LIMIT) * 100;
-  const delta = showDelta ? (Math.abs(p.newDebt - debt) / CREDIT_LIMIT) * 100 : 0;
-  const status = health >= 1.5 ? "Healthy" : health >= 1.2 ? "Caution" : "At risk";
+  const available = Math.max(0, creditLimit - debt);
+  const share = (v: number) => (creditLimit > 0 ? Math.min(100, (v / creditLimit) * 100) : 0);
+  const base = share(p.mode === "Draw" ? debt : p.newDebt);
+  const delta = showDelta ? share(Math.abs(p.newDebt - debt)) : 0;
+  const status = health < 1 ? "Liquidatable" : health >= 1.5 ? "Healthy" : health >= 1.2 ? "Caution" : "At risk";
   const bar = { duration: 0.6, ease: EASE };
+  const rateParts = live
+    ? [
+        ["Base rate", pct(live.rate.base)],
+        [`Utilization, ${(live.pool.utilization * 100).toFixed(1)}%`, `+${pct(live.rate.utilization)}`],
+        [`Loyalty, ${live.healthyDays} healthy days`, `${live.rate.discount ? "-" : ""}${pct(live.rate.discount)}`],
+      ]
+    : [
+        ["Base rate", "7.80%"],
+        ["Risk premium", "+2.90%"],
+        ["Loyalty, 142 healthy days", "-1.10%"],
+      ];
 
   return (
     <section className="panel grid grid-cols-[1.5fr_1px_1fr_1px_1fr]">
@@ -40,11 +58,25 @@ function CreditHero({ debt, p }: { debt: number; p: Projection }) {
           Available to borrow <Info />
         </Label>
         <div className="mt-2.5 flex items-baseline gap-2.5">
-          <Num value={CREDIT_LIMIT - debt} decimals={2} prefix="$" countUp className="text-[40px] font-medium leading-[1.05] tracking-[-0.04em] tabular-nums" />
-          <Tag tone="green" className="ml-1.5">
-            <TrendingUp />
-            +$412.80 today
-          </Tag>
+          <Num value={available} decimals={2} prefix="$" countUp className="text-[40px] font-medium leading-[1.05] tracking-[-0.04em] tabular-nums" />
+          {!live && (
+            <Tag tone="green" className="ml-1.5">
+              <TrendingUp />
+              +$412.80 today
+            </Tag>
+          )}
+          {live && health < 1 && (
+            <Tag tone="red" className="ml-1.5">
+              <TriangleAlert />
+              Over the liquidation limit by {usd(debt - liquidationLimit)}
+            </Tag>
+          )}
+          {live?.viewError && health >= 1 && (
+            <Tag tone="orange" className="ml-1.5">
+              <TriangleAlert />
+              {live.viewError}
+            </Tag>
+          )}
         </div>
         <div className="mt-[22px] flex h-2.5 gap-[3px] overflow-hidden rounded-full">
           <motion.i className="block h-full rounded-[3px] bg-brand" initial={{ width: 0 }} animate={{ width: `${base}%` }} transition={{ ...bar, delay: 0.2 }} />
@@ -68,11 +100,11 @@ function CreditHero({ debt, p }: { debt: number; p: Projection }) {
             <Swatch color="rgba(255,255,255,0.2)" className="mr-[7px]" />
             Available
             <b>
-              <Num value={CREDIT_LIMIT - debt} decimals={2} prefix="$" />
+              <Num value={available} decimals={2} prefix="$" />
             </b>
           </span>
           <span className="ml-auto inline-flex items-center">
-            Credit limit<b>${money(CREDIT_LIMIT)}</b>
+            Credit limit<b>${money(creditLimit)}</b>
           </span>
         </div>
       </div>
@@ -124,26 +156,27 @@ function CreditHero({ debt, p }: { debt: number; p: Projection }) {
           </Label>
           <Tag tone="brand">
             <Award />
-            Tier 3
+            {tier}
           </Tag>
         </div>
         <div className="mt-2.5 text-[40px] font-medium leading-[1.05] tracking-[-0.04em] tabular-nums">
-          <Num value={BORROW_APR * 100} decimals={2} suffix="%" countUp />
+          <Num value={borrowApr * 100} decimals={2} suffix="%" countUp />
           <span className="ml-1.5 text-lg font-normal tracking-[-0.01em] text-t3">APR</span>
         </div>
         <div className="mt-3">
-          <KV k="Base rate" dense>7.80%</KV>
-          <KV k="Risk premium" dense>+2.90%</KV>
-          <KV k="Loyalty, 142 healthy days" dense>
-            <span className="text-green">-1.10%</span>
-          </KV>
+          {rateParts.map(([k, v], i) => (
+            <KV key={k} k={k} dense>
+              {i === 2 ? <span className="text-green">{v}</span> : v}
+            </KV>
+          ))}
         </div>
       </div>
     </section>
   );
 }
 
-function PortfolioPanel({ debt }: { debt: number }) {
+function PortfolioPanel() {
+  const { debt, creditLimit, collateralValue, live } = useAccount();
   const [range, setRange] = useState<Range>("90D");
   const [focus, setFocusState] = useState<SeriesKey>("Value");
   const [touched, setTouched] = useState(false);
@@ -152,8 +185,8 @@ function PortfolioPanel({ debt }: { debt: number }) {
     setTouched(true);
   };
   const stats = [
-    { key: "Value", label: "Collateral value", color: "var(--color-brand)", value: COLLATERAL_VALUE },
-    { key: "Credit", label: "Credit limit", color: "#ededef", value: CREDIT_LIMIT },
+    { key: "Value", label: "Collateral value", color: "var(--color-brand)", value: collateralValue },
+    { key: "Credit", label: "Credit limit", color: "#ededef", value: creditLimit },
     { key: "Debt", label: "Debt", color: "var(--color-orange)", value: debt },
   ] as const;
   return (
@@ -182,7 +215,7 @@ function PortfolioPanel({ debt }: { debt: number }) {
             </button>
           ))}
         </div>
-        <PortfolioChart range={range} focus={touched ? focus : null} />
+        <PortfolioChart range={range} focus={touched ? focus : null} samples={live?.samples} />
       </div>
     </div>
   );
@@ -193,26 +226,32 @@ function Spinner() {
 }
 
 /** All Draw/Repay form state plus the projected outcome, shared by the hero and the panel. */
-function useDrawForm(debt: number) {
+function useDrawForm() {
+  const { mode: source, debt, creditLimit, liquidationLimit, poolCash, walletUsdc, transact } = useAccount();
   const [mode, setMode] = useState<Mode>("Draw");
-  const [raw, setRaw] = useState("5000.00");
-  const [chip, setChip] = useState<string | null>("30%");
+  const [raw, setRaw] = useState(source === "live" ? "" : "5000.00");
+  const [chip, setChip] = useState<string | null>(source === "live" ? null : "30%");
   const [status, setStatus] = useState<Status>("idle");
 
   const amount = Number(raw) || 0;
-  const max = mode === "Draw" ? CREDIT_LIMIT - debt : debt;
+  const max = mode === "Draw" ? Math.max(0, creditLimit - debt) : debt;
   const newDebt = mode === "Draw" ? debt + amount : Math.max(0, debt - amount);
-  const nextHealth = healthOf(newDebt);
+  const nextHealth = healthOf(newDebt, liquidationLimit);
   const error =
     amount <= 0
       ? "Enter an amount"
-      : amount > max + 1e-9
+      : // Debt is shown rounded to the cent, and typing that figure back in has to work
+        amount > (mode === "Draw" ? max : Math.round(max * 100) / 100) + 1e-9
         ? mode === "Draw"
           ? "Exceeds available credit"
           : "Exceeds your debt"
-        : mode === "Draw" && nextHealth < 1.1
-          ? "Health factor too low"
-          : null;
+        : amount > (mode === "Draw" ? poolCash : walletUsdc)
+          ? mode === "Draw"
+            ? "Exceeds pool liquidity"
+            : "Exceeds wallet balance"
+          : mode === "Draw" && nextHealth < 1.1
+            ? "Health factor too low"
+            : null;
 
   const clear = () => {
     setRaw("");
@@ -245,12 +284,10 @@ function useDrawForm(debt: number) {
     normalize: () => raw && setRaw((Number(raw) || 0).toFixed(2)),
     run: async (apply: (mode: Mode, amount: number) => void) => {
       if (error || status !== "idle") return;
-      setStatus("signing");
-      await sleep(1100);
-      setStatus("confirming");
-      await sleep(900);
-      apply(mode, amount);
+      const ok = await transact(mode === "Draw" ? "draw" : "repay", amount, setStatus);
       setStatus("idle");
+      if (!ok) return;
+      apply(mode, amount);
       clear();
     },
   };
@@ -258,11 +295,13 @@ function useDrawForm(debt: number) {
 
 type DrawForm = ReturnType<typeof useDrawForm>;
 
-function DrawPanel({ debt, form, onApply }: { debt: number; form: DrawForm; onApply: (mode: Mode, amount: number) => void }) {
+function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, amount: number) => void }) {
+  const { debt, creditLimit, liquidationLimit, borrowApr, autopayPerMonth } = useAccount();
   const { mode, raw, chip, status, amount, max, newDebt, nextHealth, error } = form;
-  const health = healthOf(debt);
-  const interest = (newDebt * BORROW_APR) / 12;
-  const coverage = interest > 0 ? Math.min(100, (AUTOPAY_PER_MONTH / interest) * 100) : 100;
+  const health = healthOf(debt, liquidationLimit);
+  const used = (v: number) => (creditLimit > 0 ? (v / creditLimit) * 100 : 0);
+  const interest = (newDebt * borrowApr) / 12;
+  const coverage = interest > 0 ? Math.min(100, (autopayPerMonth / interest) * 100) : 100;
   const arrow = <ArrowRight size={13} strokeWidth={1.75} className="text-t3" />;
   const label =
     status === "signing" ? "Confirm in wallet..." : status === "confirming" ? "Confirming on Solana..." : (error ?? `${mode} ${money(amount).replace(/\.00$/, "")} USDC`);
@@ -320,10 +359,10 @@ function DrawPanel({ debt, form, onApply }: { debt: number; form: DrawForm; onAp
             <span className={`transition-colors ${healthTone(nextHealth)}`}>{Number.isFinite(nextHealth) ? <Num value={nextHealth} decimals={2} /> : "No debt"}</span>
           </KV>
           <KV k="Credit used">
-            {((debt / CREDIT_LIMIT) * 100).toFixed(1)}%{arrow}
-            <Num value={(newDebt / CREDIT_LIMIT) * 100} decimals={1} suffix="%" />
+            {used(debt).toFixed(1)}%{arrow}
+            <Num value={used(newDebt)} decimals={1} suffix="%" />
           </KV>
-          <KV k="Borrow APR">9.60%</KV>
+          <KV k="Borrow APR">{pct(borrowApr)}</KV>
           <KV k="Est. monthly interest">
             <Num value={interest} decimals={2} prefix="$" />
           </KV>
@@ -408,7 +447,52 @@ const Pair = ({ badge }: { badge: string }) => (
   </span>
 );
 
-type Position = { kind: Kind; icon: ReactNode; name: string; sub: string; bal: string; val: string; vsub: string; ltv: number; naive?: string; power: string; liq: ReactNode };
+type Position = { kind: Kind | null; icon: ReactNode; name: string; sub: string; bal: string; val: string; vsub: string; ltv: number; naive?: string; power: string; liq: ReactNode; mint?: string };
+const TOKENS: Record<string, { kind: Kind | null; icon: string; sub: string }> = {
+  SOL: { kind: "SOL", icon: "sol.webp", sub: "Solana" },
+  NVDAx: { kind: "Tokenized stocks", icon: "nvdax.webp", sub: "NVIDIA xStock" },
+  USDC: { kind: null, icon: "usdc.webp", sub: "USD Coin" },
+};
+const rangePrice = (v: number) => money(v, v >= 100 ? 0 : 2);
+
+/** A table row for an on-chain position, in the same shape as the demo rows */
+function toRow(c: Collateral): Position {
+  const base = { mint: c.mint, val: usd(c.value), ltv: c.value > 0 ? (c.power / c.value) * 100 : 0, power: usd(c.power) };
+  if (c.lp) {
+    const { lower, upper, sol, usdc, naive } = c.lp;
+    const inside = c.price >= lower && c.price <= upper;
+    return {
+      ...base,
+      kind: "LP positions",
+      icon: <Pair badge="orca.png" />,
+      name: "SOL-USDC",
+      sub: `Orca Whirlpool, ${rangePrice(lower)} to ${rangePrice(upper)}`,
+      bal: `Position ${shortKey(c.mint)}`,
+      vsub: `${money(sol)} SOL + ${money(usdc)} USDC`,
+      naive: `${((naive / c.value) * 100).toFixed(1)}%`,
+      liq: (
+        <div className="flex items-center gap-2.5">
+          <RangeBar from={25} to={75} at={Math.min(100, Math.max(0, 25 + ((c.price - lower) / (upper - lower)) * 50))} />
+          <Tag tone={inside ? "green" : "orange"}>{inside ? "In range" : "Out of range"}</Tag>
+        </div>
+      ),
+    };
+  }
+  const token = TOKENS[c.symbol] ?? TOKENS.USDC;
+  // The on-chain liquidation cost is the protocol's own measure of how deep an asset's market is
+  const depth = c.risk.liqCostBps <= 500 ? 5 : c.risk.liqCostBps <= 1000 ? 3 : 2;
+  return {
+    ...base,
+    kind: token.kind,
+    icon: <TokenIcon src={token.icon} />,
+    name: c.symbol,
+    sub: token.sub,
+    bal: `${money(c.amount)} ${c.symbol}`,
+    vsub: usd(c.price),
+    liq: <Meter n={depth} label={depth === 2 ? <Tag tone="orange">Risky</Tag> : <span className="text-[12.5px] text-t2">{depth === 5 ? "Deep" : "Moderate"}</span>} />,
+  };
+}
+
 const POSITIONS: Position[] = [
   { kind: "SOL", icon: <TokenIcon src="sol.webp" />, name: "SOL", sub: "Solana", bal: "120.50 SOL", val: "$18,075.00", vsub: "$150.00", ltv: 66.5, power: "$12,020.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
   { kind: "LSTs", icon: <TokenIcon src="jitosol.webp" />, name: "JitoSOL", sub: "Liquid staking", bal: "41.44 JitoSOL", val: "$6,950.00", vsub: "1 JitoSOL = 1.118 SOL", ltv: 65, power: "$4,518.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
@@ -420,13 +504,17 @@ const POSITIONS: Position[] = [
 
 function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
   const [filter, setFilter] = useState<"All" | Kind>("All");
+  const [dialog, setDialog] = useState<{ withdraw?: string } | null>(null);
   const toast = useToast();
-  const rows = POSITIONS.filter((p) => filter === "All" || p.kind === filter);
+  const { live } = useAccount();
+  const all = live ? live.collateral.map(toRow) : POSITIONS;
+  const rows = all.filter((p) => filter === "All" || p.kind === filter);
   return (
     <section className="panel mt-4">
+      {live && <CollateralDialog live={live} open={dialog} onClose={() => setDialog(null)} />}
       <div className="flex items-center justify-between px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
-          Collateral <span className="font-normal text-t3">{POSITIONS.length} positions</span>
+          Collateral <span className="font-normal text-t3">{all.length === 1 ? "1 position" : `${all.length} positions`}</span>
         </h3>
         <div className="flex items-center gap-2.5">
           <button type="button" onClick={onStressTest} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3">
@@ -435,7 +523,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
           </button>
           <button
             type="button"
-            onClick={() => toast({ title: "Connect a wallet to deposit", detail: "Supports SOL, LSTs, CLMM LP NFTs and xStocks", tone: "info" })}
+            onClick={() => (live ? setDialog({}) : toast({ title: "Connect a wallet to deposit", detail: "Supports SOL, LSTs, CLMM LP NFTs and xStocks", tone: "info" }))}
             className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] bg-[#f4f4f5] px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white"
           >
             <Plus {...ic} />
@@ -483,10 +571,11 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
         <tbody>
           {rows.map((r) => (
               <motion.tr
-                key={r.name + r.sub}
+                key={r.mint ?? r.name + r.sub}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.25 }}
+                onClick={() => r.mint && setDialog({ withdraw: r.mint })}
                 className="group cursor-pointer border-t border-line transition-colors hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5"
               >
                 <td className="pl-[22px]">
@@ -521,6 +610,11 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
             ))}
         </tbody>
       </table>
+      {!rows.length && (
+        <div className="px-[22px] py-10 text-center text-t3">
+          {all.length ? `No ${filter} deposited.` : "No collateral yet. Deposit SOL, NVDAx or an Orca LP position to borrow against it."}
+        </div>
+      )}
     </section>
   );
 }
@@ -528,18 +622,77 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
 /* ---------- Stress test + autopay ---------- */
 
 const SHOCKS = Array.from({ length: 36 }, (_, i) => i * 2);
-const healthAtShock = (s: number, debt: number) => Math.max(0.55, (CREDIT_LIMIT / debt) * (1 - (s / 53.7) * (1 - debt / CREDIT_LIMIT) * 1.0) - Math.pow(s / 70, 3) * 0.12);
+const healthAtShock = (s: number, debt: number, limit: number) => Math.max(0.55, (limit / debt) * (1 - (s / 53.7) * (1 - debt / limit) * 1.0) - Math.pow(s / 70, 3) * 0.12);
+const CRASHES = [10, 30, 50];
 
-function StressPanel({ debt, highlight }: { debt: number; highlight: boolean }) {
-  const hf = SHOCKS.map((s) => healthAtShock(s, debt));
-  const liqIdx = Math.max(0, hf.findIndex((h) => h <= 1));
-  const crashIdx = 15;
-  const tiles = [
-    { label: "SOL and LSTs", icons: ["sol.webp", "jitosol.webp"], pct: "-30%" },
-    { label: "SOL LPs", icons: ["orca.png"], pct: "-30%" },
-    { label: "Stocks", icons: ["nvdax.webp"], pct: "-18%" },
-    { label: "Memes", icons: ["bonk.webp"], pct: "-65%" },
-  ];
+/** Moves the demo price feed, so a crash can be shown on stage */
+function PriceControl({ live }: { live: Live }) {
+  const toast = useToast();
+  const [asset, setAsset] = useState<"SOL" | "NVDAx">("SOL");
+  const [raw, setRaw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mint = asset === "SOL" ? deployment!.solMint : deployment!.stockMint;
+  const price = live.prices[mint];
+  const target = Number(raw) || 0;
+  const set = async (next: number) => {
+    setBusy(true);
+    const ok = await live.setPrice(mint, next);
+    setBusy(false);
+    if (!ok) return;
+    setRaw("");
+    toast({ title: `${asset} price set to ${usd(next)}`, detail: `Was ${usd(price)}`, tone: "info" });
+  };
+  const chip = "cursor-pointer rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  return (
+    <div className="mb-4 flex items-center gap-1.5">
+      <Label className="mr-1.5">Demo price</Label>
+      <Segmented small label="Demo price asset" items={["SOL", "NVDAx"] as const} value={asset} onChange={setAsset} />
+      {CRASHES.map((c) => (
+        <button key={c} type="button" disabled={busy} onClick={() => set(Math.round(price * (100 - c)) / 100)} className={chip}>
+          -{c}%
+        </button>
+      ))}
+      <label className="ml-auto flex h-[30px] w-[104px] items-center gap-1 rounded-lg border border-line bg-bg px-2.5 text-xs font-medium transition-colors focus-within:border-line-2">
+        <span className="text-t3">$</span>
+        <input
+          inputMode="decimal"
+          aria-label={`New ${asset} price in dollars`}
+          placeholder={price.toFixed(2)}
+          value={raw}
+          onChange={(e) => /^\d*\.?\d{0,2}$/.test(e.target.value) && setRaw(e.target.value)}
+          className="w-full min-w-0 bg-transparent text-t1 outline-none placeholder:text-t3"
+        />
+      </label>
+      <button type="button" disabled={busy || target <= 0} onClick={() => set(target)} className={chip}>
+        Set price
+      </button>
+    </div>
+  );
+}
+
+function StressPanel({ highlight }: { highlight: boolean }) {
+  const { debt, creditLimit, live } = useAccount();
+  const solMint = deployment?.solMint ?? "";
+  const solPrice = live ? live.prices[solMint] : 150.12;
+  // Health above the top of the chart is drawn at the top
+  const hf = live ? SHOCKS.map((s) => (debt > 0 ? Math.min(2.5, Math.max(0.5, healthAfterDrop(live, solMint, s / 100))) : 2.5)) : SHOCKS.map((s) => healthAtShock(s, debt, creditLimit));
+  const crossing = hf.findIndex((h) => h <= 1);
+  const liqIdx = Math.max(0, crossing);
+  const crashIdx = live ? Math.round(live.crash.sol * 50) : 15;
+  const drop = (v: number) => `-${Math.round(v * 100)}%`;
+  const tiles = live
+    ? [
+        { label: "SOL", icons: ["sol.webp"], pct: drop(live.crash.sol) },
+        { label: "SOL LPs", icons: ["orca.png"], pct: drop(live.crash.sol) },
+        { label: "Stocks", icons: ["nvdax.webp"], pct: drop(live.crash.stock) },
+        { label: "Memes", icons: ["bonk.webp"], pct: "Planned" },
+      ]
+    : [
+        { label: "SOL and LSTs", icons: ["sol.webp", "jitosol.webp"], pct: "-30%" },
+        { label: "SOL LPs", icons: ["orca.png"], pct: "-30%" },
+        { label: "Stocks", icons: ["nvdax.webp"], pct: "-18%" },
+        { label: "Memes", icons: ["bonk.webp"], pct: "-65%" },
+      ];
   return (
     <motion.div className="panel" animate={{ boxShadow: highlight ? "0 0 0 1px rgba(158,140,255,0.5), 0 0 40px -8px rgba(158,140,255,0.45)" : "inset 0 1px 0 rgba(255,255,255,0.03)" }} transition={{ duration: 0.6 }}>
       <div className="flex items-center justify-between px-[22px] pt-[18px]">
@@ -547,6 +700,7 @@ function StressPanel({ debt, highlight }: { debt: number; highlight: boolean }) 
         <span className="text-[12.5px] text-t3">Joint scenario, every position shocked together</span>
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
+        {live?.canSetPrice && <PriceControl live={live} />}
         <div className="grid grid-cols-4 gap-px overflow-hidden rounded-xl border border-line bg-line">
           {tiles.map((t) => (
             <div key={t.label} className="bg-s1 px-3.5 py-3">
@@ -558,7 +712,7 @@ function StressPanel({ debt, highlight }: { debt: number; highlight: boolean }) 
                 </span>
                 {t.label}
               </Label>
-              <div className="mt-1 text-lg font-medium tracking-[-0.02em] text-red">{t.pct}</div>
+              <div className={`mt-1 text-lg font-medium tracking-[-0.02em] ${t.pct === "Planned" ? "text-t3" : "text-red"}`}>{t.pct}</div>
             </div>
           ))}
         </div>
@@ -573,18 +727,22 @@ function StressPanel({ debt, highlight }: { debt: number; highlight: boolean }) 
             yTicks={[1, 1.5, 2, 2.5]}
             fmtY={(v) => v.toFixed(1)}
             xLabels={["0%", "-10%", "-20%", "-30%", "-40%", "-50%", "-60%", "-70%"]}
-            titleAt={(i) => `SOL ${SHOCKS[i] ? `-${SHOCKS[i]}%` : "today"}, $${(150.12 * (1 - SHOCKS[i] / 100)).toFixed(2)}`}
-            fmtValue={(v) => v.toFixed(2)}
+            titleAt={(i) => `SOL ${SHOCKS[i] ? `-${SHOCKS[i]}%` : "today"}, $${(solPrice * (1 - SHOCKS[i] / 100)).toFixed(2)}`}
+            fmtValue={(v) => (live && v >= 2.5 ? (debt > 0 ? "2.50+" : "No debt") : v.toFixed(2))}
             restIndex={crashIdx}
             ariaLabel="Health factor under a joint crash scenario"
             overlay={({ x, y, innerWidth, pad }) => (
               <g>
                 <rect x={pad.left} y={y(1)} width={innerWidth} height={y(0.5) - y(1)} fill="rgba(255,97,102,0.07)" />
                 <line x1={pad.left} x2={pad.left + innerWidth} y1={y(1)} y2={y(1)} stroke="#ff6166" strokeDasharray="4 4" strokeWidth={1.2} />
-                <circle cx={x(liqIdx)} cy={y(1)} r={4} fill="#ff6166" stroke="#0d0f12" strokeWidth={2} />
-                <text x={x(liqIdx) - 10} y={y(1) + 18} textAnchor="end" style={{ fill: "#ff6166", fontSize: 11.5 }}>
-                  Liquidation at SOL ${(150.12 * (1 - SHOCKS[liqIdx] / 100)).toFixed(2)}
-                </text>
+                {(!live || crossing >= 0) && (
+                  <>
+                    <circle cx={x(liqIdx)} cy={y(1)} r={4} fill="#ff6166" stroke="#0d0f12" strokeWidth={2} />
+                    <text x={x(liqIdx) + (live && liqIdx < 12 ? 10 : -10)} y={y(1) + 18} textAnchor={live && liqIdx < 12 ? "start" : "end"} style={{ fill: "#ff6166", fontSize: 11.5 }}>
+                      Liquidation at SOL ${(solPrice * (1 - SHOCKS[liqIdx] / 100)).toFixed(2)}
+                    </text>
+                  </>
+                )}
               </g>
             )}
           />
@@ -595,9 +753,13 @@ function StressPanel({ debt, highlight }: { debt: number; highlight: boolean }) 
 }
 
 const FEES = series(30, 6, 8, 5, 3).map((v) => Math.max(2.2, v));
+const DAY_MS = 86_400_000;
 
 function AutopayPanel() {
-  const [on, setOn] = useState(true);
+  const { live, months, today, autopayPerMonth } = useAccount();
+  const [enabled, setOn] = useState(true);
+  // On-chain anyone may harvest a deposited LP position, so a borrower cannot switch autopay off
+  const on = live ? live.collateral.some((c) => c.lp) : enabled;
   const toast = useToast();
   const AW = 458;
   const bw = (AW - 29 * 4) / 30;
@@ -605,6 +767,10 @@ function AutopayPanel() {
     setOn(!on);
     toast(on ? { title: "Autopay paused", detail: "LP fees will stay in your positions", tone: "info" } : { title: "Autopay resumed", detail: "Next harvest in 3h 12m" });
   };
+  const paid = months.flatMap((m) => m.events).filter((e) => e.kind === "autopay");
+  const dayOf = (iso: string) => Math.round(Date.parse(iso) / DAY_MS);
+  const fees = live ? FEES.map((_, i) => paid.filter((e) => dayOf(e.date) === dayOf(today) - 29 + i).reduce((s, e) => s + e.amount, 0)) : FEES;
+  const top = Math.max(14, ...fees);
   return (
     <div className="panel">
       <div className="flex items-center justify-between px-[22px] pt-[18px]">
@@ -612,7 +778,7 @@ function AutopayPanel() {
           Autopay
           <Tag tone={on ? "green" : "neutral"}>
             <StatusDot />
-            {on ? "Active" : "Paused"}
+            {on ? "Active" : live ? "No LP position" : "Paused"}
           </Tag>
         </h3>
         <button
@@ -620,8 +786,9 @@ function AutopayPanel() {
           role="switch"
           aria-checked={on}
           aria-label="Autopay"
+          disabled={!!live}
           onClick={toggle}
-          className={`relative h-5 w-[34px] cursor-pointer rounded-full transition-colors duration-300 ${on ? "bg-green" : "bg-s3"}`}
+          className={`relative h-5 w-[34px] rounded-full transition-colors duration-300 ${live ? "cursor-not-allowed" : "cursor-pointer"} ${on ? "bg-green" : "bg-s3"}`}
         >
           <motion.span className="absolute top-0.5 size-4 rounded-full bg-white" initial={false} animate={{ left: on ? 16 : 2 }} transition={{ type: "spring", stiffness: 600, damping: 35 }} />
         </button>
@@ -631,7 +798,7 @@ function AutopayPanel() {
         <div className="mt-[18px] flex items-center justify-between">
           <Label>Daily fees repaid, 30D</Label>
           <span className="text-[12.5px] text-t2">
-            Avg <b className="font-medium text-t1">$7.08</b> / day
+            Avg <b className="font-medium text-t1">{live ? usd(fees.reduce((s, v) => s + v, 0) / 30) : "$7.08"}</b> / day
           </span>
         </div>
         <motion.svg
@@ -647,8 +814,8 @@ function AutopayPanel() {
           {[0, 1, 2].map((j) => (
             <line key={j} x1={0} x2={AW} y1={10 + j * 40} y2={10 + j * 40} stroke="rgba(255,255,255,0.05)" />
           ))}
-          {FEES.map((v, i) => {
-            const h = (v / 14) * 120;
+          {fees.map((v, i) => {
+            const h = (v / top) * 120;
             return (
               <motion.rect
                 key={i}
@@ -666,7 +833,7 @@ function AutopayPanel() {
             );
           })}
           <text x={0} y={146} fontSize={11}>
-            Oct 16
+            {live ? new Date(Date.parse(today) - 29 * DAY_MS).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "Oct 16"}
           </text>
           <text x={AW} y={146} fontSize={11} textAnchor="end">
             Today
@@ -674,9 +841,9 @@ function AutopayPanel() {
         </motion.svg>
         <div className="mt-3.5 grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-line bg-line">
           {[
-            ["This month", <Num key="m" value={AUTOPAY_PER_MONTH} decimals={2} prefix="$" countUp className="text-green" />],
-            ["Lifetime", <Num key="l" value={1847.2} decimals={2} prefix="$" countUp />],
-            ["Next harvest", on ? "3h 12m" : "Paused"],
+            ["This month", <Num key="m" value={autopayPerMonth} decimals={2} prefix="$" countUp className="text-green" />],
+            ["Lifetime", <Num key="l" value={live ? paid.reduce((s, e) => s + e.amount, 0) : 1847.2} decimals={2} prefix="$" countUp />],
+            ["Next harvest", live ? (on ? "By keeper" : "-") : on ? "3h 12m" : "Paused"],
           ].map(([k, v]) => (
             <div key={k as string} className="bg-s1 px-3.5 py-3">
               <Label>{k}</Label>
@@ -691,17 +858,16 @@ function AutopayPanel() {
 
 /** The Borrow page. `full={false}` renders just the top half for the landing page preview. */
 export function BorrowDashboard({ full = true }: { full?: boolean }) {
-  const { debt, record } = useAccount();
+  const { debt, liquidationLimit, poolCash, live } = useAccount();
   const toast = useToast();
-  const form = useDrawForm(debt);
+  const form = useDrawForm();
   const stressRef = useRef<HTMLDivElement>(null);
   const [highlightStress, setHighlightStress] = useState(false);
 
   const onApply = (mode: Mode, amount: number) => {
     const next = mode === "Draw" ? debt + amount : Math.max(0, debt - amount);
     const fmt = (h: number) => (Number.isFinite(h) ? h.toFixed(2) : "max");
-    record(mode === "Draw" ? "draw" : "repay", amount);
-    toast({ title: `${mode === "Draw" ? "Drew" : "Repaid"} ${money(amount)} USDC`, detail: `Health factor ${fmt(healthOf(debt))} to ${fmt(healthOf(next))}` });
+    toast({ title: `${mode === "Draw" ? "Drew" : "Repaid"} ${money(amount)} USDC`, detail: `Health factor ${fmt(healthOf(debt, liquidationLimit))} to ${fmt(healthOf(next, liquidationLimit))}` });
   };
 
   const runStressTest = () => {
@@ -719,26 +885,26 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
         </div>
         <div className="flex gap-2">
           <Chip>
-            Pool liquidity <b>$2,004,118</b>
+            Pool liquidity <b>{usd(poolCash, 0)}</b>
           </Chip>
           <Chip>
-            Borrow APR from <b>7.80%</b>
+            Borrow APR from <b>{live ? pct(live.pool.baseApr - Math.max(...live.tiers.map((t) => t.discount))) : "7.80%"}</b>
           </Chip>
         </div>
       </div>
       <section className="grid grid-cols-[minmax(0,1fr)_384px] gap-4">
-        <PortfolioPanel debt={debt} />
-        <DrawPanel debt={debt} form={form} onApply={onApply} />
+        <PortfolioPanel />
+        <DrawPanel form={form} onApply={onApply} />
       </section>
       <div className="mt-4">
-        <CreditHero debt={debt} p={form.projection} />
+        <CreditHero p={form.projection} />
       </div>
       {full && (
         <>
           <CollateralPanel onStressTest={runStressTest} />
           <section className="mt-4 grid grid-cols-[1.35fr_1fr] gap-4">
             <div ref={stressRef}>
-              <StressPanel debt={debt} highlight={highlightStress} />
+              <StressPanel highlight={highlightStress} />
             </div>
             <AutopayPanel />
           </section>
