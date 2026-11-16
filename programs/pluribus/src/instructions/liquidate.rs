@@ -156,9 +156,9 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
 
     let mut after = h.maint;
     for s in 0..h.scenarios() {
-        // The USDC left behind is valued the way the next health check will value it
-        let shocked = cut(excess, a.pool.params.shock(false, s, a.pool.usdc_group))?;
-        after[s] = after[s] - h.pos_maint[i][s] + cut(shocked, a.usdc_asset.params.liq_cost_bps as u128)?;
+        // While the account stays liquidatable anyone can net the USDC left behind against the debt one for one, so it counts in full
+        // Valuing it under the USDC shock instead would block this sale in any scenario that shocks USDC harder than the LP
+        after[s] = after[s] - h.pos_maint[i][s] + excess;
     }
     require_not_worse(debt, limit, debt - repay, worst(&after, h.scenarios()))?;
 
