@@ -139,8 +139,9 @@ pub struct InitAsset<'info> {
 
 fn check_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
     params.validate()?;
-    // Only USDC is priced at a fixed $1, and it has to count at par for liquidation maths to hold
-    let fixed_usdc = *mint == pool.usdc_mint && params.liq_cost_bps == 0 && params.group as usize >= MAX_GROUPS;
+    // Only USDC is priced at a fixed $1
+    // Giving it a shock group of its own puts a gap between its draw limit and its liquidation line
+    let fixed_usdc = *mint == pool.usdc_mint;
     require!(
         if params.oracle == ORACLE_FIXED { fixed_usdc } else { pool.params.bonus_fits(params.liq_cost_bps) },
         PluribusError::InvalidParams

@@ -156,7 +156,7 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
 
     let mut after = h.maint;
     for s in 0..h.scenarios() {
-        // USDC collateral counts at par in every scenario
+        // The USDC left behind can be netted against the debt one for one, so it counts in full
         after[s] = after[s] - h.pos_maint[i][s] + excess;
     }
     require_not_worse(debt, limit, debt - repay, worst(&after, h.scenarios()))?;
