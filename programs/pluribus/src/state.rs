@@ -23,6 +23,8 @@ pub struct PoolParams {
     pub reserve_factor_bps: u16,
     /// Share of borrower interest the protocol keeps as revenue
     pub protocol_fee_bps: u16,
+    /// Share of the senior lenders' interest paid to junior lenders for taking losses first
+    pub protection_fee_bps: u16,
     pub tier_discount_bps: [u16; TIERS],
     pub tier_min_healthy_secs: [i64; TIERS],
 }
@@ -44,6 +46,7 @@ impl PoolParams {
             && (1..BPS).contains(&(self.kink_bps as u128))
             // Lenders always keep at least half the interest
             && self.reserve_factor_bps as u32 + self.protocol_fee_bps as u32 <= 5_000
+            && self.protection_fee_bps <= 5_000
             && self.tier_discount_bps[0] == 0
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
@@ -73,6 +76,8 @@ pub struct Pool {
     pub usdc_mint: Pubkey,
     pub usdc_vault: Pubkey,
     pub share_mint: Pubkey,
+    /// Share mint of the junior tranche, unset until the admin opens it
+    pub junior_mint: Pubkey,
     pub bump: u8,
     /// When set, prices come from admin-written demo accounts instead of Pyth
     pub demo_mode: bool,
@@ -88,6 +93,10 @@ pub struct Pool {
     pub last_accrual: i64,
     /// Lowest liquidation cost any priced asset or LP market has been given, which caps the liquidation bonus
     pub min_liq_cost_bps: u16,
+    /// Shock group of the USDC asset, applied to the USDC side of LP positions as well
+    pub usdc_group: u8,
+    /// Part of the lender assets that belongs to junior lenders, who absorb losses before senior ones
+    pub junior_assets: u64,
     /// One borrow index per loyalty tier, since a shared index cannot charge different rates
     pub borrow_index: [u128; TIERS],
     pub debt_shares: [u128; TIERS],
@@ -109,6 +118,54 @@ impl Pool {
     /// What lender shares are backed by
     pub fn lender_assets(&self) -> Result<u128> {
         Ok((self.cash as u128 + self.total_debt()?).saturating_sub(self.reserves as u128 + self.protocol_fees as u128))
+    }
+
+    /// Which tranche a share mint stands for
+    pub fn is_junior(&self, share_mint: &Pubkey) -> Result<bool> {
+        if *share_mint == self.share_mint {
+            return Ok(false);
+        }
+        require!(self.junior_mint != Pubkey::default() && *share_mint == self.junior_mint, PluribusError::AccountMismatch);
+        Ok(true)
+    }
+
+    /// What one tranche's shares are backed by
+    pub fn tranche_assets(&self, junior: bool) -> Result<u128> {
+        let all = self.lender_assets()?;
+        let junior_assets = (self.junior_assets as u128).min(all);
+        Ok(if junior { junior_assets } else { all - junior_assets })
+    }
+
+    /// Takes a lender's USDC into a tranche and returns the shares to mint
+    pub fn lend(&mut self, junior: bool, supply: u64, amount: u64) -> Result<u64> {
+        let shares = if supply == 0 {
+            amount
+        } else {
+            let assets = self.tranche_assets(junior)?;
+            // A wiped-out tranche has shares but nothing behind them, so no price to join at
+            require!(assets > 0, PluribusError::PoolInsolvent);
+            to_u64(mul_div_floor(amount as u128, supply as u128, assets)?)?
+        };
+        require!(shares > 0, PluribusError::ZeroAmount);
+        self.cash = self.cash.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
+        if junior {
+            self.junior_assets = self.junior_assets.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
+        }
+        Ok(shares)
+    }
+
+    /// Redeems a tranche's shares and returns the USDC to pay out
+    pub fn redeem(&mut self, junior: bool, supply: u64, shares: u64) -> Result<u64> {
+        require!(shares > 0 && shares <= supply, PluribusError::ZeroAmount);
+        let amount = to_u64(mul_div_floor(shares as u128, self.tranche_assets(junior)?, supply as u128)?)?;
+        require!(amount > 0, PluribusError::ZeroAmount);
+        // Lent-out USDC cannot leave, and the rate kink is what pulls it back
+        require!(amount <= self.cash, PluribusError::InsufficientLiquidity);
+        self.cash -= amount;
+        if junior {
+            self.junior_assets = self.junior_assets.saturating_sub(amount);
+        }
+        Ok(amount)
     }
 
     pub fn utilization_bps(&self) -> Result<u128> {
@@ -141,6 +198,7 @@ impl Pool {
             return Ok(());
         }
         let base = self.base_rate_bps()?;
+        let (lenders, junior) = (self.lender_assets()?, self.tranche_assets(true)?);
         let mut interest = 0u128;
         for t in 0..TIERS {
             let rate = base.saturating_sub(self.params.tier_discount_bps[t] as u128);
@@ -152,6 +210,13 @@ impl Pool {
         let protocol_cut = to_u64(mul_div_floor(interest, self.params.protocol_fee_bps as u128, BPS)?)?;
         self.reserves = self.reserves.checked_add(reserve_cut).ok_or(PluribusError::MathOverflow)?;
         self.protocol_fees = self.protocol_fees.checked_add(protocol_cut).ok_or(PluribusError::MathOverflow)?;
+        if junior > 0 {
+            // Junior lenders earn their own share of the interest plus a cut of the senior share
+            let to_lenders = interest - reserve_cut as u128 - protocol_cut as u128;
+            let own = mul_div_floor(to_lenders, junior, lenders)?;
+            let fee = mul_div_floor(to_lenders - own, self.params.protection_fee_bps as u128, BPS)?;
+            self.junior_assets = self.junior_assets.checked_add(to_u64(own + fee)?).ok_or(PluribusError::MathOverflow)?;
+        }
         self.last_accrual = now;
         Ok(())
     }
@@ -201,9 +266,9 @@ impl Pool {
         Ok(())
     }
 
-    /// Drops debt that no collateral backs and returns the loss with what reserves and protocol fees absorbed
-    /// Reserves pay first, then the protocol's uncollected cut, and only the rest lowers the share price
-    pub fn write_off(&mut self, credit: &mut CreditAccount) -> Result<(u64, u64, u64)> {
+    /// Drops debt that no collateral backs and returns the loss with what reserves, protocol fees and junior lenders absorbed
+    /// Reserves pay first, then the protocol's uncollected cut, then junior lenders, and senior lenders take what is left
+    pub fn write_off(&mut self, credit: &mut CreditAccount) -> Result<(u64, u64, u64, u64)> {
         let loss = to_u64(self.debt_of(credit)?)?;
         self.debt_shares[credit.tier as usize] -= credit.debt_shares;
         credit.debt_shares = 0;
@@ -212,8 +277,10 @@ impl Pool {
         // Interest that was never paid is not revenue, so it goes before lenders take a loss
         let from_fees = (loss - from_reserves).min(self.protocol_fees);
         self.protocol_fees -= from_fees;
+        let from_junior = (loss - from_reserves - from_fees).min(self.junior_assets);
+        self.junior_assets -= from_junior;
         self.bad_debt = self.bad_debt.saturating_add(loss);
-        Ok((loss, from_reserves, from_fees))
+        Ok((loss, from_reserves, from_fees, from_junior))
     }
 }
 

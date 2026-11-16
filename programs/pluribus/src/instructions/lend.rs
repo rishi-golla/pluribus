@@ -1,16 +1,18 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{burn, mint_to, Burn, Mint, MintTo, TokenAccount, TokenInterface};
 
-use crate::{constants::*, error::PluribusError, events::*, math::*, state::*, token::*};
+use crate::{constants::*, events::*, state::*, token::*};
 
+/// Lending into either tranche: the share mint passed in decides which one
 #[derive(Accounts)]
 pub struct Lend<'info> {
     pub lender: Signer<'info>,
-    #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault, has_one = share_mint)]
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint, has_one = usdc_vault)]
     pub pool: Box<Account<'info, Pool>>,
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The senior or junior share mint, checked against the pool in the handler
     #[account(mut)]
     pub share_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut, token::mint = usdc_mint)]
@@ -23,18 +25,10 @@ pub struct Lend<'info> {
 pub fn handle_lend_deposit(ctx: Context<Lend>, amount: u64) -> Result<()> {
     let a = ctx.accounts;
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
-    let supply = a.share_mint.supply as u128;
-    let shares = if supply == 0 {
-        amount
-    } else {
-        let assets = a.pool.lender_assets()?;
-        require!(assets > 0, PluribusError::PoolInsolvent);
-        to_u64(mul_div_floor(amount as u128, supply, assets)?)?
-    };
-    require!(shares > 0, PluribusError::ZeroAmount);
+    let junior = a.pool.is_junior(&a.share_mint.key())?;
+    let shares = a.pool.lend(junior, a.share_mint.supply, amount)?;
 
     pull(&a.token_program, &a.usdc_mint, &a.lender_usdc, &a.usdc_vault, &a.lender, amount)?;
-    a.pool.cash = a.pool.cash.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
     let accounts = MintTo {
         mint: a.share_mint.to_account_info(),
         to: a.lender_shares.to_account_info(),
@@ -42,18 +36,15 @@ pub fn handle_lend_deposit(ctx: Context<Lend>, amount: u64) -> Result<()> {
     };
     let seeds = a.pool.signer_seeds();
     mint_to(CpiContext::new_with_signer(a.token_program.key(), accounts, &[&seeds]), shares)?;
-    emit!(LenderMoved { lender: a.lender.key(), usdc: amount, shares, deposit: true });
+    emit!(LenderMoved { lender: a.lender.key(), usdc: amount, shares, deposit: true, junior });
     Ok(())
 }
 
 pub fn handle_lend_withdraw(ctx: Context<Lend>, shares: u64) -> Result<()> {
     let a = ctx.accounts;
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
-    require!(shares > 0 && shares <= a.share_mint.supply, PluribusError::ZeroAmount);
-    let amount = to_u64(mul_div_floor(shares as u128, a.pool.lender_assets()?, a.share_mint.supply as u128)?)?;
-    require!(amount > 0, PluribusError::ZeroAmount);
-    // Lent-out USDC cannot leave, and the rate kink is what pulls it back
-    require!(amount <= a.pool.cash, PluribusError::InsufficientLiquidity);
+    let junior = a.pool.is_junior(&a.share_mint.key())?;
+    let amount = a.pool.redeem(junior, a.share_mint.supply, shares)?;
 
     let accounts = Burn {
         mint: a.share_mint.to_account_info(),
@@ -61,8 +52,7 @@ pub fn handle_lend_withdraw(ctx: Context<Lend>, shares: u64) -> Result<()> {
         authority: a.lender.to_account_info(),
     };
     burn(CpiContext::new(a.token_program.key(), accounts), shares)?;
-    a.pool.cash -= amount;
     push(&a.token_program, &a.usdc_mint, &a.usdc_vault, &a.lender_usdc, &a.pool, amount)?;
-    emit!(LenderMoved { lender: a.lender.key(), usdc: amount, shares, deposit: false });
+    emit!(LenderMoved { lender: a.lender.key(), usdc: amount, shares, deposit: false, junior });
     Ok(())
 }

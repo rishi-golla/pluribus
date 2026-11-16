@@ -7,6 +7,8 @@ pub const USDC_VAULT_SEED: &[u8] = b"usdc_vault";
 #[constant]
 pub const SHARE_MINT_SEED: &[u8] = b"share_mint";
 #[constant]
+pub const JUNIOR_MINT_SEED: &[u8] = b"junior_mint";
+#[constant]
 pub const ASSET_SEED: &[u8] = b"asset";
 #[constant]
 pub const VAULT_SEED: &[u8] = b"vault";

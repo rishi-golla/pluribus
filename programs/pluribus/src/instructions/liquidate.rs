@@ -27,8 +27,8 @@ fn settle(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i64) -> Res
 /// Debt with no collateral left behind it can never be repaid by a liquidation, so it is booked as a loss at once
 fn write_off_if_unbacked(pool: &mut Pool, credit: &mut Account<CreditAccount>) -> Result<()> {
     if !credit.has_collateral() && credit.debt_shares > 0 {
-        let (loss, covered_by_reserves, covered_by_protocol_fees) = pool.write_off(credit)?;
-        emit!(BadDebt { account: credit.key(), loss, covered_by_reserves, covered_by_protocol_fees });
+        let (loss, covered_by_reserves, covered_by_protocol_fees, covered_by_junior) = pool.write_off(credit)?;
+        emit!(BadDebt { account: credit.key(), loss, covered_by_reserves, covered_by_protocol_fees, covered_by_junior });
     }
     Ok(())
 }

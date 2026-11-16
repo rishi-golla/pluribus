@@ -86,6 +86,7 @@ pub fn default_params() -> PoolParams {
         kink_bps: 9000,
         reserve_factor_bps: 1000,
         protocol_fee_bps: 1000,
+        protection_fee_bps: 2000,
         tier_discount_bps: [0, 40, 80],
         tier_min_healthy_secs: [0, 7 * DAY, 30 * DAY],
     }
@@ -489,6 +490,39 @@ impl Env {
 
     pub fn lend_deposit_ix(&self, lender: &Pubkey, amount: u64) -> Instruction {
         self.ix(pluribus::instruction::LendDeposit { amount }.data(), self.lend_metas(lender), None)
+    }
+
+    pub fn junior_mint(&self) -> Pubkey {
+        pda(&[JUNIOR_MINT_SEED])
+    }
+
+    pub fn init_junior_ix(&self, admin: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::InitJunior {}.data(),
+            pluribus::accounts::InitJunior {
+                admin: *admin,
+                pool: self.pool,
+                junior_mint: self.junior_mint(),
+                token_program: TOKEN,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    /// Lend into or redeem from the tranche that `share_mint` stands for
+    pub fn tranche_ix(&self, lender: &Pubkey, share_mint: &Pubkey, amount: u64, deposit: bool) -> Instruction {
+        let mut metas = self.lend_metas(lender);
+        // Slots 4 and 6 hold the share mint and the lender's share account
+        metas[4].pubkey = *share_mint;
+        metas[6].pubkey = ata(lender, share_mint, &TOKEN);
+        let data = if deposit {
+            pluribus::instruction::LendDeposit { amount }.data()
+        } else {
+            pluribus::instruction::LendWithdraw { shares: amount }.data()
+        };
+        self.ix(data, metas, None)
     }
 
     pub fn lend_withdraw_ix(&self, lender: &Pubkey, shares: u64) -> Instruction {

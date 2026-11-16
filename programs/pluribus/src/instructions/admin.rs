@@ -65,6 +65,7 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         usdc_mint: ctx.accounts.usdc_mint.key(),
         usdc_vault: ctx.accounts.usdc_vault.key(),
         share_mint: ctx.accounts.share_mint.key(),
+        junior_mint: Pubkey::default(),
         bump: ctx.bumps.pool,
         demo_mode,
         paused: false,
@@ -75,6 +76,8 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         bad_debt: 0,
         last_accrual: Clock::get()?.unix_timestamp,
         min_liq_cost_bps: u16::MAX,
+        usdc_group: u8::MAX,
+        junior_assets: 0,
         borrow_index: [INDEX_ONE; TIERS],
         debt_shares: [0; TIERS],
     });
@@ -148,6 +151,8 @@ fn check_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<(
     );
     if params.oracle != ORACLE_FIXED {
         pool.min_liq_cost_bps = pool.min_liq_cost_bps.min(params.liq_cost_bps);
+    } else {
+        pool.usdc_group = params.group;
     }
     Ok(())
 }
@@ -298,5 +303,31 @@ pub fn handle_collect_protocol_fees(ctx: Context<CollectProtocolFees>, amount: u
     a.pool.cash -= amount;
     push(&a.token_program, &a.usdc_mint, &a.usdc_vault, &a.treasury_usdc, &a.pool, amount)?;
     emit!(ProtocolFeesCollected { amount });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitJunior<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(
+        init,
+        payer = admin,
+        seeds = [JUNIOR_MINT_SEED],
+        bump,
+        mint::decimals = USDC_DECIMALS,
+        mint::authority = pool,
+        mint::token_program = token_program,
+    )]
+    pub junior_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Opens the junior tranche: its lenders earn part of the senior interest and absorb losses first
+pub fn handle_init_junior(ctx: Context<InitJunior>) -> Result<()> {
+    ctx.accounts.pool.junior_mint = ctx.accounts.junior_mint.key();
     Ok(())
 }

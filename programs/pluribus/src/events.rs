@@ -49,6 +49,7 @@ pub struct BadDebt {
     pub loss: u64,
     pub covered_by_reserves: u64,
     pub covered_by_protocol_fees: u64,
+    pub covered_by_junior: u64,
 }
 
 #[event]
@@ -64,6 +65,7 @@ pub struct LenderMoved {
     pub usdc: u64,
     pub shares: u64,
     pub deposit: bool,
+    pub junior: bool,
 }
 
 #[event]

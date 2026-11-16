@@ -57,6 +57,10 @@ pub mod pluribus {
         admin::handle_set_demo_price(ctx, price, conf)
     }
 
+    pub fn init_junior(ctx: Context<InitJunior>) -> Result<()> {
+        admin::handle_init_junior(ctx)
+    }
+
     pub fn collect_protocol_fees(ctx: Context<CollectProtocolFees>, amount: u64) -> Result<()> {
         admin::handle_collect_protocol_fees(ctx, amount)
     }
