@@ -123,8 +123,11 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
       : lenderAssets > 0
         ? (p.protectionFeeBps / BPS) * (seniorAssets / lenderAssets / JUNIOR_TARGET)
         : 0;
-  const perShare = (assets: number, units?: Numeric) =>
-    units !== undefined && num(units) > 0 ? assets / (num(units) / 1e6) : null;
+  // The program counts one virtual share and one virtual dollar in each tranche, and never pays above the plain price
+  const perShare = (assets: number, units?: Numeric) => {
+    const shares = units === undefined ? 0 : num(units) / 1e6;
+    return shares > 0 ? Math.min((assets + 1) / (shares + 1), assets / shares) : null;
+  };
   return {
     cash,
     debt,
@@ -137,6 +140,8 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
     borrowRateBps,
     seniorShareValue: perShare(seniorAssets, supply.senior),
     juniorShareValue: perShare(juniorAssets, supply.junior),
+    // Share of senior interest that goes to junior lenders right now
+    protectionFee: fee,
     seniorApyBps: lenderYield * (1 - fee),
     juniorApyBps: lenderYield * (1 + boost),
   };

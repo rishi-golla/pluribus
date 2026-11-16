@@ -2893,16 +2893,11 @@ export type Pluribus = {
     },
     {
       "code": 6021,
-      "name": "poolInsolvent",
-      "msg": "Pool has no lender assets left"
-    },
-    {
-      "code": 6022,
       "name": "demoDisabled",
       "msg": "Demo feed is disabled"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "notUpgradeAuthority",
       "msg": "Only the program's upgrade authority can initialize the pool"
     }

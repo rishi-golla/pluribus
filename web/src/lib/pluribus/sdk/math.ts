@@ -95,6 +95,9 @@ type PoolLike = {
 
 // Pool totals in USDC as of the last accrual, with rates in bps a year
 // Give each share mint's supply in base units to get what one share of that tranche is worth
+// Junior share of lender assets at which junior lenders earn the whole protection fee, as fixed in the program
+const JUNIOR_TARGET = 0.1;
+
 export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: Numeric } = {}) {
   const debt = pool.debtShares.reduce((sum: number, s, t) => sum + (num(s) * num(pool.borrowIndex[t])) / 1e18, 0) / 1e6;
   const [cash, reserves, protocolFees] = [pool.cash, pool.reserves, pool.protocolFees].map((x) => num(x) / 1e6);
@@ -110,10 +113,21 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const seniorAssets = lenderAssets - juniorAssets;
   // What borrowers pay, spread over everything lent, after the reserve and protocol cuts
   const lenderYield = borrowRateBps * utilization * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
-  // Senior lenders pay the protection fee only while there are junior lenders to pay it to
-  const fee = juniorAssets > 0 ? p.protectionFeeBps / BPS : 0;
-  const perShare = (assets: number, units?: Numeric) =>
-    units !== undefined && num(units) > 0 ? assets / (num(units) / 1e6) : null;
+  // Senior lenders pay the whole protection fee only once junior lenders fill the target share of the pool
+  const filled = lenderAssets > 0 ? Math.min(juniorAssets / lenderAssets / JUNIOR_TARGET, 1) : 0;
+  const fee = (p.protectionFeeBps / BPS) * filled;
+  // What a junior dollar earns on top of the lender yield, which stays finite for the first dollar in
+  const boost =
+    juniorAssets > 0
+      ? (fee * seniorAssets) / juniorAssets
+      : lenderAssets > 0
+        ? (p.protectionFeeBps / BPS) * (seniorAssets / lenderAssets / JUNIOR_TARGET)
+        : 0;
+  // The program counts one virtual share and one virtual dollar in each tranche, and never pays above the plain price
+  const perShare = (assets: number, units?: Numeric) => {
+    const shares = units === undefined ? 0 : num(units) / 1e6;
+    return shares > 0 ? Math.min((assets + 1) / (shares + 1), assets / shares) : null;
+  };
   return {
     cash,
     debt,
@@ -126,8 +140,9 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
     borrowRateBps,
     seniorShareValue: perShare(seniorAssets, supply.senior),
     juniorShareValue: perShare(juniorAssets, supply.junior),
+    // Share of senior interest that goes to junior lenders right now
+    protectionFee: fee,
     seniorApyBps: lenderYield * (1 - fee),
-    // Not defined for an empty tranche, where the first dollar would collect the whole fee
-    juniorApyBps: juniorAssets > 0 ? lenderYield * (1 + (fee * seniorAssets) / juniorAssets) : null,
+    juniorApyBps: lenderYield * (1 + boost),
   };
 }

@@ -409,14 +409,16 @@ try {
     .mul(late.senior.supply)
     .gt(late.senior.assets.mul(early.senior.supply).mul(early.junior.assets).mul(late.junior.supply));
   const stats = math.poolStats(await fetchPool(program), { senior: late.senior.supply, junior: late.junior.supply });
+  // What the program pays for a share: the price with its one virtual share counted, capped by the plain price
+  const sharePrice = (t: { assets: BN; supply: BN }) => Math.min((n(t.assets) + 1e6) / (n(t.supply) + 1e6), n(t.assets) / n(t.supply));
   check(
     "A junior share gained more per unit than a senior share",
     worthMore(late.junior, early.junior) &&
       grewMore &&
-      stats.juniorApyBps! > stats.seniorApyBps &&
-      gap(stats.seniorShareValue!, n(late.senior.assets) / n(late.senior.supply)) < 1e-9 &&
-      gap(stats.juniorShareValue!, n(late.junior.assets) / n(late.junior.supply)) < 1e-9,
-    `junior assets rose by ${late.junior.assets.sub(early.junior.assets).toString()} micro-USDC, a junior share is worth $${stats.juniorShareValue?.toFixed(9)} at ${stats.juniorApyBps?.toFixed(1)} bps, a senior share $${stats.seniorShareValue?.toFixed(9)} at ${stats.seniorApyBps.toFixed(1)} bps`,
+      stats.juniorApyBps > stats.seniorApyBps &&
+      gap(stats.seniorShareValue!, sharePrice(late.senior)) < 1e-9 &&
+      gap(stats.juniorShareValue!, sharePrice(late.junior)) < 1e-9,
+    `junior assets rose by ${late.junior.assets.sub(early.junior.assets).toString()} micro-USDC, a junior share is worth $${stats.juniorShareValue?.toFixed(9)} at ${stats.juniorApyBps.toFixed(1)} bps, a senior share $${stats.seniorShareValue?.toFixed(9)} at ${stats.seniorApyBps.toFixed(1)} bps`,
   );
   const half = Math.floor(held / 2);
   const usdcBefore = await balance(usdc, lender.publicKey);

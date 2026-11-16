@@ -2887,16 +2887,11 @@
     },
     {
       "code": 6021,
-      "name": "PoolInsolvent",
-      "msg": "Pool has no lender assets left"
-    },
-    {
-      "code": 6022,
       "name": "DemoDisabled",
       "msg": "Demo feed is disabled"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "NotUpgradeAuthority",
       "msg": "Only the program's upgrade authority can initialize the pool"
     }
