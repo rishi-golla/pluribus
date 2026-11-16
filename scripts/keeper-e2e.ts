@@ -77,12 +77,7 @@ const stockPrice0 = await program.account.demoPrice.fetch(pda.demoPrice(stock));
 const stockAsset0 = await program.account.asset.fetch(pda.asset(stock));
 const setTiers = async (secs: BN[]) => send(await ix.setParams(program, me, { ...pool0.params, tierMinHealthySecs: secs }));
 const setStockAge = async (maxPriceAgeSecs: number) =>
-  send([
-    await program.methods
-      .setAsset({ ...stockAsset0.params, maxPriceAgeSecs })
-      .accountsStrict({ admin: me, pool: pda.pool(), asset: pda.asset(stock) })
-      .instruction(),
-  ]);
+  send(await ix.setAsset(program, me, stock, { ...stockAsset0.params, maxPriceAgeSecs }));
 const setSol = async (price: BN, conf = new BN(0)) => send(await ix.setDemoPrice(program, me, NATIVE_MINT, price, conf));
 
 try {

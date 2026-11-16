@@ -142,10 +142,16 @@ const lenderAssets = (p: Pool) =>
     .reduce((sum, shares, t) => sum.add(shares.mul(p.borrowIndex[t]).add(INDEX_ONE.subn(1)).div(INDEX_ONE)), p.cash)
     .sub(p.reserves)
     .sub(p.protocolFees);
-const shares = async () => ({
-  assets: lenderAssets(await fetchPool(program)),
-  supply: new BN((await connection.getTokenSupply(pda.shareMint())).value.amount),
-});
+// One tranche: what its shares are backed by and how many there are
+async function shares(junior = false) {
+  const pool = await fetchPool(program);
+  const all = lenderAssets(pool);
+  const juniorAssets = BN.min(pool.juniorAssets, all);
+  const mint = junior ? pda.juniorMint() : pda.shareMint();
+  const supply = new BN((await connection.getTokenSupply(mint)).value.amount);
+  return { assets: junior ? juniorAssets : all.sub(juniorAssets), supply };
+}
+const tranches = async () => ({ senior: await shares(), junior: await shares(true) });
 type Shares = Awaited<ReturnType<typeof shares>>;
 const worthMore = (a: Shares, b: Shares) => a.assets.mul(b.supply).gt(b.assets.mul(a.supply));
 
@@ -218,8 +224,8 @@ async function collectOrcaFees(holder: Keypair, positionMint: PublicKey, nftProg
   return [(await balance(sol, holder.publicKey)) - before[0], (await balance(usdc, holder.publicKey)) - before[1]];
 }
 
-const [borrower, control, third, lender, liquidator, keeper] = Array.from({ length: 6 }, () => Keypair.generate());
-const [A, C, D, Q] = [borrower, control, third, liquidator].map((k) => k.publicKey);
+const [borrower, control, third, lender, juniorLender, liquidator, keeper] = Array.from({ length: 7 }, () => Keypair.generate());
+const [A, C, D, J, Q] = [borrower, control, third, juniorLender, liquidator].map((k) => k.publicKey);
 const setPrice = (name: string, mint: PublicKey, dollars: number) =>
   run(name, ix.setDemoPrice(program, me, mint, Math.round(dollars * USDC)), wallet, ["demoPriceSet"]);
 
@@ -235,6 +241,7 @@ try {
   const lpC = (await faucet(d, C, { sol: 20, stock: 120, lp: 10_000 }))!;
   const lpD = (await faucet(d, D, { sol: 20, lp: 2000 }))!;
   await faucet(d, lender.publicKey, { sol: 1, usdc: 50_000 });
+  await faucet(d, J, { sol: 1, usdc: 5000 });
   await faucet(d, Q, { sol: 2, usdc: 50_000 });
   await faucet(d, keeper.publicKey, { sol: 1 });
   const listed = await listOrcaPositions(connection, d, A);
@@ -382,12 +389,35 @@ try {
   // 5: lender
   const [moved] = await run("Lender deposits 50,000 USDC", ix.lendDeposit(program, d, lender.publicKey, 50_000 * USDC), lender, ["lenderMoved"]);
   const held = await balance(pda.shareMint(), lender.publicKey);
-  check("Shares arrived", held > 0 && held === n(moved.shares), `${held / USDC} shares`);
-  const early = await shares();
+  check("Senior shares arrived", held > 0 && held === n(moved.shares) && moved.junior === false, `${held / USDC} shares`);
+  const [movedJunior] = await run("Junior lender deposits 5,000 USDC", ix.lendDeposit(program, d, J, 5000 * USDC, { junior: true }), juniorLender, ["lenderMoved"]);
+  const heldJunior = await balance(pda.juniorMint(), J);
+  check("Junior shares arrived", heldJunior > 0 && heldJunior === n(movedJunior.shares) && movedJunior.junior === true, `${heldJunior / USDC} shares`);
+  const early = await tranches();
   await sleep(4000);
   await run("Anyone accrues interest", ix.accrue(program), keeper, []);
-  const late = await shares();
-  check("A share is worth more after interest accrued", worthMore(late, early), `lender assets rose by ${late.assets.sub(early.assets).toString()} micro-USDC`);
+  const late = await tranches();
+  check(
+    "A senior share is worth more after interest accrued",
+    worthMore(late.senior, early.senior),
+    `senior assets rose by ${late.senior.assets.sub(early.senior.assets).toString()} micro-USDC`,
+  );
+  // Growth is compared instead of level, because a rerun starts with junior shares already marked down by a loss
+  const grewMore = late.junior.assets
+    .mul(early.junior.supply)
+    .mul(early.senior.assets)
+    .mul(late.senior.supply)
+    .gt(late.senior.assets.mul(early.senior.supply).mul(early.junior.assets).mul(late.junior.supply));
+  const stats = math.poolStats(await fetchPool(program), { senior: late.senior.supply, junior: late.junior.supply });
+  check(
+    "A junior share gained more per unit than a senior share",
+    worthMore(late.junior, early.junior) &&
+      grewMore &&
+      stats.juniorApyBps! > stats.seniorApyBps &&
+      gap(stats.seniorShareValue!, n(late.senior.assets) / n(late.senior.supply)) < 1e-9 &&
+      gap(stats.juniorShareValue!, n(late.junior.assets) / n(late.junior.supply)) < 1e-9,
+    `junior assets rose by ${late.junior.assets.sub(early.junior.assets).toString()} micro-USDC, a junior share is worth $${stats.juniorShareValue?.toFixed(9)} at ${stats.juniorApyBps?.toFixed(1)} bps, a senior share $${stats.seniorShareValue?.toFixed(9)} at ${stats.seniorApyBps.toFixed(1)} bps`,
+  );
   const half = Math.floor(held / 2);
   const usdcBefore = await balance(usdc, lender.publicKey);
   const [out] = await run("Lender redeems half the shares", ix.lendWithdraw(program, d, lender.publicKey, half), lender, ["lenderMoved"]);
@@ -437,7 +467,7 @@ try {
   check("The borrower fell back to the base tier", reset.from === 2 && reset.to === 0 && (await view(A)).tier === 0);
 
   const paidBefore = await balance(usdc, Q);
-  const [bought] = await run("Liquidator buys the borrower's position NFT", ix.liquidateLp(program, d, Q, A, lpA), liquidator, ["liquidated"]);
+  const [kept, bought] = await run("Liquidator buys the borrower's position NFT", ix.liquidateLp(program, d, Q, A, lpA), liquidator, ["collateralChanged", "liquidated"]);
   const excess = paidBefore - (await balance(usdc, Q)) - n(bought.repaid);
   check(
     "The liquidator holds the NFT and the pool's vault account is closed",
@@ -446,7 +476,7 @@ try {
   );
   check(
     "Payment above the repay cap stays in the borrower's account as USDC collateral",
-    excess > 0 && (await slot(A, usdc)) === excess,
+    excess > 0 && (await slot(A, usdc)) === excess && kept.mint.equals(usdc) && n(kept.amount) === excess,
     `${usd(n(bought.repaid))} repaid, ${usd(excess)} kept`,
   );
   const [own] = await run("Borrower pays debt down with that USDC collateral", ix.repayFromCollateral(program, d, A, A, MAX_U64), borrower, ["repaid"]);
@@ -457,7 +487,7 @@ try {
   await setPrice(`Admin crashes SOL further to $${deep}`, sol, deep);
   await run("Liquidator takes the third borrower's SOL", ix.liquidate(program, d, Q, D, sol, MAX_U64), liquidator, ["liquidated"]);
   const poolBefore = await fetchPool(program);
-  const sharesBefore = await shares();
+  const before = await tranches();
   const [last, bad] = await run("Liquidator buys the third borrower's Token-2022 position NFT", ix.liquidateLp(program, d, Q, D, lpD), liquidator, ["liquidated", "badDebt"]);
   const poolAfter = await fetchPool(program);
   const left = await fetchCredit(program, D);
@@ -467,11 +497,30 @@ try {
       n(poolAfter.badDebt) - n(poolBefore.badDebt) === n(bad.loss),
     usd(n(bad.loss)),
   );
+  const after = await tranches();
+  const [loss, fromReserves, fromFees, fromJunior] = [bad.loss, bad.coveredByReserves, bad.coveredByProtocolFees, bad.coveredByJunior].map(n);
   check(
-    "Reserves absorb the loss first, then protocol fees, then lenders",
-    n(bad.coveredByReserves) >= n(poolBefore.reserves) && n(bad.coveredByReserves) > 0 && poolAfter.reserves.isZero() &&
-      poolAfter.protocolFees.isZero() && worthMore(sharesBefore, await shares()),
-    `${n(bad.coveredByReserves)} micro-USDC from reserves, ${n(bad.coveredByProtocolFees)} from protocol fees`,
+    "Reserves take the loss first, then protocol fees, then junior lenders",
+    fromReserves >= n(poolBefore.reserves) && fromReserves > 0 && poolAfter.reserves.isZero() &&
+      fromFees >= n(poolBefore.protocolFees) && poolAfter.protocolFees.isZero() &&
+      fromJunior > 0 && fromJunior === loss - fromReserves - fromFees,
+    `${fromReserves} micro-USDC from reserves, ${fromFees} from protocol fees, ${usd(fromJunior)} from junior lenders`,
+  );
+  // The write-off accrues first, so the tranches also move by the interest of the second or so since the last transaction
+  const juniorDrop = n(poolBefore.juniorAssets) - n(poolAfter.juniorAssets);
+  const seniorGain = n(after.senior.assets.sub(before.senior.assets));
+  check(
+    "Junior assets fell by what they covered and the senior tranche lost nothing",
+    juniorDrop <= fromJunior && fromJunior - juniorDrop < 1000 && seniorGain >= 0 && seniorGain < 1000 &&
+      worthMore(before.junior, after.junior) && !worthMore(before.senior, after.senior),
+    `junior assets down ${juniorDrop} micro-USDC against ${fromJunior} covered, senior assets up ${seniorGain} micro-USDC of interest`,
+  );
+  const [outJunior] = await run("Junior lender redeems every share", ix.lendWithdraw(program, d, J, heldJunior, { junior: true }), juniorLender, ["lenderMoved"]);
+  const back = await balance(usdc, J);
+  check(
+    "The junior lender carries a share of the loss",
+    outJunior.junior === true && back === n(outJunior.usdc) && back < 5000 * USDC && back > 4500 * USDC,
+    `${usd(back)} back for $5000.00`,
   );
 
   // Custody round trip: the liquidator can use both seized NFTs with Orca directly
