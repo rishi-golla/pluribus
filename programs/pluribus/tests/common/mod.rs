@@ -762,7 +762,14 @@ impl Env {
         );
         let payer = self.admin.insecure_clone();
         self.svm.expire_blockhash();
-        let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &self.svm.latest_blockhash());
+        // The view values every position under both limits, which five LP positions push past the default budget
+        // It only ever runs in simulation, where asking for more compute costs nothing
+        let budget = Instruction::new_with_bytes(
+            pubkey!("ComputeBudget111111111111111111111111111111"),
+            &[&[2u8][..], &1_400_000u32.to_le_bytes()].concat(),
+            vec![],
+        );
+        let msg = Message::new_with_blockhash(&[budget, ix], Some(&payer.pubkey()), &self.svm.latest_blockhash());
         let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
         let sim = self.svm.simulate_transaction(tx).expect("health view");
         HealthView::try_from_slice(&sim.meta.return_data.data).unwrap()
