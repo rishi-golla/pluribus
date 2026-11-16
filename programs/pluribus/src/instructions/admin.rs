@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{constants::*, error::PluribusError, events::*, orca::read_whirlpool_mints, state::*};
+use crate::{constants::*, error::PluribusError, events::*, orca::read_whirlpool_mints, state::*, token::push};
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -49,6 +49,7 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         params,
         cash: 0,
         reserves: 0,
+        protocol_fees: 0,
         bad_debt: 0,
         last_accrual: Clock::get()?.unix_timestamp,
         borrow_index: [INDEX_ONE; TIERS],
@@ -232,5 +233,32 @@ pub fn handle_set_demo_price(ctx: Context<SetDemoPrice>, price: u64, conf: u64) 
         bump: ctx.bumps.demo_price,
     });
     emit!(DemoPriceSet { mint: ctx.accounts.asset.mint, price });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CollectProtocolFees<'info> {
+    pub admin: Signer<'info>,
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin, has_one = usdc_mint, has_one = usdc_vault)]
+    pub pool: Account<'info, Pool>,
+    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    #[account(mut)]
+    pub usdc_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut, token::mint = usdc_mint)]
+    pub treasury_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+/// Pays out accrued protocol revenue, up to what is idle in the pool
+/// The insurance reserve is never touched here
+pub fn handle_collect_protocol_fees(ctx: Context<CollectProtocolFees>, amount: u64) -> Result<()> {
+    let a = ctx.accounts;
+    a.pool.accrue(Clock::get()?.unix_timestamp)?;
+    let amount = amount.min(a.pool.protocol_fees).min(a.pool.cash);
+    require!(amount > 0, PluribusError::ZeroAmount);
+    a.pool.protocol_fees -= amount;
+    a.pool.cash -= amount;
+    push(&a.token_program, &a.usdc_mint, &a.usdc_vault, &a.treasury_usdc, &a.pool, amount)?;
+    emit!(ProtocolFeesCollected { amount });
     Ok(())
 }

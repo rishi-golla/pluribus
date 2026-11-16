@@ -19,7 +19,10 @@ pub struct PoolParams {
     pub slope1_bps: u16,
     pub slope2_bps: u16,
     pub kink_bps: u16,
+    /// Share of borrower interest kept as the insurance reserve
     pub reserve_factor_bps: u16,
+    /// Share of borrower interest the protocol keeps as revenue
+    pub protocol_fee_bps: u16,
     pub tier_discount_bps: [u16; TIERS],
     pub tier_min_healthy_secs: [i64; TIERS],
 }
@@ -39,7 +42,8 @@ impl PoolParams {
             && (1..=5_000).contains(&self.close_factor_bps)
             && self.warn_health_bps as u128 >= BPS
             && (1..BPS).contains(&(self.kink_bps as u128))
-            && self.reserve_factor_bps <= 5_000
+            // Lenders always keep at least half the interest
+            && self.reserve_factor_bps as u32 + self.protocol_fee_bps as u32 <= 5_000
             && self.tier_discount_bps[0] == 0
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
@@ -72,6 +76,8 @@ pub struct Pool {
     pub cash: u64,
     /// Insurance fund: a claim on pool assets that absorbs bad debt before lenders
     pub reserves: u64,
+    /// Protocol revenue the admin can collect, also a claim on pool assets
+    pub protocol_fees: u64,
     pub bad_debt: u64,
     pub last_accrual: i64,
     /// One borrow index per loyalty tier, since a shared index cannot charge different rates
@@ -94,7 +100,7 @@ impl Pool {
 
     /// What lender shares are backed by
     pub fn lender_assets(&self) -> Result<u128> {
-        Ok((self.cash as u128 + self.total_debt()?).saturating_sub(self.reserves as u128))
+        Ok((self.cash as u128 + self.total_debt()?).saturating_sub(self.reserves as u128 + self.protocol_fees as u128))
     }
 
     pub fn utilization_bps(&self) -> Result<u128> {
@@ -135,7 +141,9 @@ impl Pool {
             self.borrow_index[t] = self.borrow_index[t].checked_add(growth).ok_or(PluribusError::MathOverflow)?;
         }
         let reserve_cut = to_u64(mul_div_floor(interest, self.params.reserve_factor_bps as u128, BPS)?)?;
+        let protocol_cut = to_u64(mul_div_floor(interest, self.params.protocol_fee_bps as u128, BPS)?)?;
         self.reserves = self.reserves.checked_add(reserve_cut).ok_or(PluribusError::MathOverflow)?;
+        self.protocol_fees = self.protocol_fees.checked_add(protocol_cut).ok_or(PluribusError::MathOverflow)?;
         self.last_accrual = now;
         Ok(())
     }

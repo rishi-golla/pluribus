@@ -57,6 +57,10 @@ pub mod pluribus {
         admin::handle_set_demo_price(ctx, price, conf)
     }
 
+    pub fn collect_protocol_fees(ctx: Context<CollectProtocolFees>, amount: u64) -> Result<()> {
+        admin::handle_collect_protocol_fees(ctx, amount)
+    }
+
     pub fn lend_deposit(ctx: Context<Lend>, amount: u64) -> Result<()> {
         lend::handle_lend_deposit(ctx, amount)
     }

@@ -80,6 +80,7 @@ pub fn default_params() -> PoolParams {
         slope2_bps: 6000,
         kink_bps: 9000,
         reserve_factor_bps: 1000,
+        protocol_fee_bps: 1000,
         tier_discount_bps: [0, 40, 80],
         tier_min_healthy_secs: [0, 7 * DAY, 30 * DAY],
     }
@@ -446,6 +447,22 @@ impl Env {
             token_program: TOKEN,
         }
         .to_account_metas(None)
+    }
+
+    pub fn collect_protocol_fees_ix(&self, admin: &Pubkey, amount: u64) -> Instruction {
+        self.ix(
+            pluribus::instruction::CollectProtocolFees { amount }.data(),
+            pluribus::accounts::CollectProtocolFees {
+                admin: *admin,
+                pool: self.pool,
+                usdc_mint: self.usdc,
+                usdc_vault: self.usdc_vault,
+                treasury_usdc: ata(admin, &self.usdc, &TOKEN),
+                token_program: TOKEN,
+            }
+            .to_account_metas(None),
+            None,
+        )
     }
 
     pub fn lend_deposit_ix(&self, lender: &Pubkey, amount: u64) -> Instruction {

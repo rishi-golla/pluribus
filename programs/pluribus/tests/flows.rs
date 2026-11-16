@@ -114,8 +114,9 @@ fn interest_accrues_tiers_discount_it_and_lenders_earn() {
     // Debt rounds up, never down: at most a base unit over the exact figure
     let debt = env.debt(&user.pubkey());
     assert!((47_700 * USDC..=47_700 * USDC + 1).contains(&debt), "debt {debt}");
-    // A tenth of the interest goes to the insurance reserve
+    // A tenth of the interest goes to the insurance reserve and a tenth to the protocol
     assert!(near(env.pool_state().reserves, 270.0 * USDC as f64, 1e-8));
+    assert!(near(env.pool_state().protocol_fees, 270.0 * USDC as f64, 1e-8));
 
     // A year of good standing earns the top tier in one step
     expect_ok(env.send(&[env.refresh_tier_ix(&user.pubkey())], &[&lender]));
@@ -140,9 +141,22 @@ fn interest_accrues_tiers_discount_it_and_lenders_earn() {
     let out = env.balance(&usdc, &lender.pubkey());
     let pool = env.pool_state();
     assert!(out > 104_000 * USDC, "lender got {out}");
-    // What is left in the pool is the reserve, to the rounding unit
-    assert!(pool.cash - pool.reserves <= 2);
+    // What is left in the pool is the reserve and the protocol's cut, to the rounding unit
+    assert!(pool.cash - pool.reserves - pool.protocol_fees <= 2);
     assert_eq!(pool.cash, env.token_amount(&env.usdc_vault));
+
+    // The admin collects the protocol's cut and the insurance reserve stays put
+    let admin = env.admin.insecure_clone();
+    env.fund(&usdc, &admin.pubkey(), 0);
+    expect_ok(env.send(&[env.collect_protocol_fees_ix(&admin.pubkey(), u64::MAX)], &[&admin]));
+    assert_eq!(env.balance(&usdc, &admin.pubkey()), pool.protocol_fees);
+    let after = env.pool_state();
+    assert_eq!((after.protocol_fees, after.reserves), (0, pool.reserves));
+    assert_eq!(after.cash, env.token_amount(&env.usdc_vault));
+    // Nobody but the admin can collect
+    env.fund(&usdc, &user.pubkey(), 0);
+    let stranger = env.collect_protocol_fees_ix(&user.pubkey(), 1);
+    assert!(failed_with_code(&env.send(&[stranger], &[&user]), anchor_lang::error::ErrorCode::ConstraintHasOne.into()));
 }
 
 #[test]

@@ -70,3 +70,8 @@ pub struct DemoPriceSet {
     pub mint: Pubkey,
     pub price: u64,
 }
+
+#[event]
+pub struct ProtocolFeesCollected {
+    pub amount: u64,
+}
