@@ -147,3 +147,31 @@ fn only_the_admin_opens_the_junior_tranche_and_only_the_pools_own_mints_are_shar
     expect_ok(env.send(&[env.init_junior_ix(&admin.pubkey())], &[&admin]));
     assert!(env.send(&[env.init_junior_ix(&admin.pubkey())], &[&admin]).is_err());
 }
+
+#[test]
+fn a_thin_junior_tranche_earns_only_a_matching_slice_of_the_protection_fee() {
+    let mut env = Env::new();
+    let admin = env.admin.insecure_clone();
+    expect_ok(env.send(&[env.init_junior_ix(&admin.pubkey())], &[&admin]));
+    let senior = env.lender(10_000 * USDC);
+    // One dollar of junior money next to ten thousand senior: a hundredth of a percent of the pool
+    junior_lender(&mut env, USDC);
+    let sol = env.sol;
+    let user = env.user();
+    env.deposit(&user, &sol, 1000 * SOL);
+    expect_ok(env.draw(&user, 5_000 * USDC));
+    let rate = env.pool_state().base_rate_bps().unwrap() as f64 / 10_000.0;
+    env.warp(365 * DAY);
+    expect_ok(env.send(&[env.accrue_ix()], &[&senior]));
+
+    let pool = env.pool_state();
+    let base_yield = 5_000.0 * rate * 0.8 / 10_001.0;
+    let junior_yield = pool.junior_assets as f64 / USDC as f64 - 1.0;
+    // At the 10% target a junior dollar would earn the base yield plus twice it again from the 20% fee
+    // This thin it earns the base yield and a fee capped at that same multiple, never the whole fee
+    assert!(junior_yield < base_yield * 3.01, "junior yield {junior_yield} against base {base_yield}");
+    assert!(junior_yield > base_yield * 2.9);
+    // Senior lenders give up next to nothing to it
+    let senior_yield = pool.tranche_assets(false).unwrap() as f64 / (10_000.0 * USDC as f64) - 1.0;
+    assert!(senior_yield > base_yield * 0.999, "senior yield {senior_yield} against base {base_yield}");
+}

@@ -217,7 +217,10 @@ impl Pool {
             // Junior lenders earn their own share of the interest plus a cut of the senior share
             let to_lenders = interest - to_reserves - to_protocol;
             let own = mul_div_wide(to_lenders, junior, lenders)?;
-            let fee = (to_lenders - own) * self.params.protection_fee_bps as u128 / BPS;
+            // A thin junior tranche covers little, so it earns the fee only in proportion to how much of the target it fills
+            // Otherwise one unit of junior money would collect the whole fee from every senior lender
+            let filled = (junior * BPS).min(lenders * JUNIOR_TARGET_BPS);
+            let fee = mul_div_wide(to_lenders - own, self.params.protection_fee_bps as u128 * filled, BPS * lenders * JUNIOR_TARGET_BPS)?;
             self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], own + fee)?;
         }
         self.last_accrual = now;
