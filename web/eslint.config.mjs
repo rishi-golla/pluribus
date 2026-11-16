@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Copied in by `npm run sdk:sync` and linted where it is written
+    "src/lib/pluribus/**",
   ]),
 ]);
 
