@@ -68,6 +68,10 @@ export type Live = LiveData & {
   samples: Sample[];
   /** Whether this server can move the demo price feed */
   canSetPrice: boolean;
+  /** Whether this server can hand out test tokens */
+  canFund: boolean;
+  /** Asks the server's faucet to fill the connected wallet, once per wallet */
+  fund: () => Promise<boolean>;
   /** Deposits or withdraws a token, in whole tokens, opening the credit account on the first deposit */
   moveToken: (mint: string, amount: number, deposit: boolean, onStage: OnStage) => Promise<boolean>;
   moveLp: (positionMint: string, deposit: boolean, onStage: OnStage) => Promise<boolean>;
@@ -125,6 +129,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   const [positions, setPositions] = useState({ senior: 25000, junior: 0 });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [canSetPrice, setCanSetPrice] = useState(false);
+  const [canFund, setCanFund] = useState(false);
   const [failed, setFailed] = useState<string>();
   const owner = wallet?.publicKey?.toBase58();
   const current = loaded?.owner === owner ? loaded : null;
@@ -165,7 +170,9 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   }, [owner, refresh, toast]);
 
   useEffect(() => {
-    if (owner) fetch("/api/demo/price").then((r) => setCanSetPrice(r.ok));
+    if (!owner) return;
+    fetch("/api/demo/price").then((r) => setCanSetPrice(r.ok));
+    fetch("/api/faucet").then((r) => setCanFund(r.ok));
   }, [owner]);
 
   const account = useMemo<Account>(() => {
@@ -267,6 +274,19 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         ...data,
         samples,
         canSetPrice,
+        canFund,
+        fund: async () => {
+          toast({ title: "Sending test tokens", detail: "This takes a few seconds", tone: "info" });
+          const res = await fetch("/api/faucet", { method: "POST", body: JSON.stringify({ address: owner }) });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast({ title: body.error ?? "No test tokens sent", detail: "Try again in a moment", tone: "error" });
+            return false;
+          }
+          toast({ title: "Test tokens are in your wallet", detail: `${body.sol} SOL, ${body.stock} NVDAx, ${body.usdc.toLocaleString("en-US")} USDC${body.lp ? " and an Orca position" : ""}`, tone: "success" });
+          await refresh().catch(() => {});
+          return true;
+        },
         moveToken: (mint, amount, deposit, onStage) =>
           run(async () => {
             const key = new PublicKey(mint);
@@ -293,7 +313,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         },
       },
     };
-  }, [current, wallet, loading, session, positions, canSetPrice, refresh, toast]);
+  }, [current, wallet, loading, session, positions, canSetPrice, canFund, owner, refresh, toast]);
 
   return <AccountCtx.Provider value={account}>{children}</AccountCtx.Provider>;
 }

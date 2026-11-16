@@ -1,12 +1,12 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronDown, Copy, LogOut, Wallet } from "lucide-react";
+import { ChevronDown, Copy, Droplets, LogOut, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Token } from "@/components/ui";
-import { useToast } from "@/components/app/providers";
+import { useAccount, useToast } from "@/components/app/providers";
 import { DEMO_WALLET } from "@/lib/demo-wallet";
 import { shortKey } from "@/lib/account";
 
@@ -16,6 +16,7 @@ const item = "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py
 export function WalletButton() {
   const { wallets, publicKey, connecting, select, disconnect } = useWallet();
   const toast = useToast();
+  const { live } = useAccount();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const ready = wallets.filter((w) => w.readyState === WalletReadyState.Installed || w.readyState === WalletReadyState.Loadable);
@@ -68,6 +69,12 @@ export function WalletButton() {
                     <Copy {...ic} className="text-t3" />
                     Copy address
                   </button>
+                  {live?.canFund && (
+                    <button type="button" role="menuitem" onClick={() => live.fund()} className={item}>
+                      <Droplets {...ic} className="text-t3" />
+                      Get test tokens
+                    </button>
+                  )}
                   <button type="button" role="menuitem" onClick={() => disconnect()} className={item}>
                     <LogOut {...ic} className="text-t3" />
                     Disconnect

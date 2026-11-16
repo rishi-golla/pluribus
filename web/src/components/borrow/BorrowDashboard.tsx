@@ -613,6 +613,11 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
       {!rows.length && (
         <div className="px-[22px] py-10 text-center text-t3">
           {all.length ? `No ${filter} deposited.` : "No collateral yet. Deposit SOL, NVDAx or an Orca LP position to borrow against it."}
+          {!all.length && live?.canFund && (
+            <button type="button" onClick={() => live.fund()} className="ml-2 cursor-pointer text-brand hover:underline">
+              Get test tokens
+            </button>
+          )}
         </div>
       )}
     </section>
