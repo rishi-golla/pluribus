@@ -59,7 +59,7 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     // USDC collateral is netted against debt with repay_from_collateral, at no bonus
     require_keys_neq!(mint, a.pool.usdc_mint, PluribusError::InvalidParams);
     let i = a.credit.find(KIND_TOKEN, &mint)?;
-    let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
+    let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?;
     let (debt, limit) = (a.pool.debt_of(&a.credit)?, h.liquidation_limit());
     require!(debt > limit, PluribusError::NotLiquidatable);
 
@@ -141,7 +141,7 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
     a.pool.accrue(now)?;
     let mint = a.position_mint.key();
     let i = a.credit.find(KIND_LP, &mint)?;
-    let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
+    let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?;
     let (debt, limit) = (a.pool.debt_of(&a.credit)?, h.liquidation_limit());
     require!(debt > limit, PluribusError::NotLiquidatable);
 
@@ -210,7 +210,7 @@ pub fn handle_repay_from_collateral(ctx: Context<RepayFromCollateral>, amount: u
     let by_owner = a.caller.key() == a.credit.owner;
     let mut amount = (amount.min(held) as u128).min(debt);
     if !by_owner {
-        let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
+        let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?;
         require!(debt > h.liquidation_limit(), PluribusError::NotLiquidatable);
         amount = amount.min(mul_div_floor(debt, a.pool.params.close_factor_bps as u128, BPS)?);
     }

@@ -39,19 +39,41 @@ impl Health {
     }
 }
 
+/// Which limits a caller needs, so the health check never values a position more often than it has to
+#[derive(Clone, Copy, PartialEq)]
+pub enum Scope {
+    Draw,
+    Liquidation,
+    All,
+}
+
+enum Valuer {
+    Token { amount: u64, decimals: u8 },
+    Lp { liquidity: u128, lower: u128, upper: u128, decimals: u8 },
+}
+
+impl Valuer {
+    fn at(&self, price: u128) -> Result<u128> {
+        match *self {
+            Valuer::Token { amount, decimals } => token_value(amount, price, decimals),
+            Valuer::Lp { liquidity, lower, upper, decimals } => lp_value(liquidity, lower, upper, price, decimals),
+        }
+    }
+}
+
 /// Values every position, reading its accounts from `rem` in slot order
 /// Token: asset, then its price account unless the asset is fixed at $1
 /// LP: LP market, Orca position, base asset, base price account
-pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64) -> Result<Health> {
+pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64, scope: Scope) -> Result<Health> {
     let params = &pool.params;
     let n = params.num_scenarios as usize;
+    let (want_init, want_maint) = (scope != Scope::Liquidation, scope != Scope::Draw);
     let mut h = Health { scenarios: n, ..Default::default() };
     let mut accs = rem.iter();
     let mut next = || accs.next().ok_or_else(|| error!(PluribusError::MissingAccount));
 
     for (i, pos) in credit.positions.iter().enumerate() {
-        // Value at a given price, risk group, liquidation cost, paused
-        let (value_at, group, cost, paused): (Box<dyn Fn(u128) -> Result<u128>>, u8, u128, bool) = match pos.kind {
+        let (valuer, group, cost, paused) = match pos.kind {
             KIND_TOKEN => {
                 let asset: Asset = load(next()?)?;
                 require_keys_eq!(asset.mint, pos.mint, PluribusError::AccountMismatch);
@@ -59,13 +81,8 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                     ORACLE_FIXED => PRICE_ONE,
                     _ => read_price(pool, &asset, next()?, now)?,
                 };
-                let (amount, decimals) = (pos.amount, asset.decimals);
-                (
-                    Box::new(move |price| token_value(amount, price, decimals)),
-                    asset.params.group,
-                    asset.params.liq_cost_bps as u128,
-                    asset.params.paused,
-                )
+                let valuer = Valuer::Token { amount: pos.amount, decimals: asset.decimals };
+                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, asset.params.paused)
             }
             KIND_LP => {
                 let market: LpMarket = load(next()?)?;
@@ -78,25 +95,24 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 // Oracle price only: the pool's own price can be pushed around inside one transaction
                 h.price[i] = read_price(pool, &asset, next()?, now)?;
                 let (lower, upper) = range_sqrt_prices(orca.tick_lower, orca.tick_upper)?;
-                let (liquidity, decimals) = (orca.liquidity, asset.decimals);
-                (
-                    Box::new(move |price| lp_value(liquidity, lower, upper, price, decimals)),
-                    asset.params.group,
-                    market.liq_cost_bps as u128,
-                    market.paused || asset.params.paused,
-                )
+                let valuer = Valuer::Lp { liquidity: orca.liquidity, lower, upper, decimals: asset.decimals };
+                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused)
             }
             _ => continue,
         };
 
-        h.market[i] = value_at(h.price[i])?;
+        if want_maint {
+            h.market[i] = valuer.at(h.price[i])?;
+        }
         for s in 0..n {
-            let maint = cut(value_at(cut(h.price[i], params.shock(false, s, group))?)?, cost)?;
-            h.pos_maint[i][s] = maint;
-            h.maint[s] += maint;
+            if want_maint {
+                let maint = cut(valuer.at(cut(h.price[i], params.shock(false, s, group))?)?, cost)?;
+                h.pos_maint[i][s] = maint;
+                h.maint[s] += maint;
+            }
             // Paused collateral stops backing new debt but keeps protecting what is already drawn
-            if !paused {
-                h.init[s] += cut(value_at(cut(h.price[i], params.shock(true, s, group))?)?, cost)?;
+            if want_init && !paused {
+                h.init[s] += cut(valuer.at(cut(h.price[i], params.shock(true, s, group))?)?, cost)?;
             }
         }
     }
@@ -110,6 +126,6 @@ pub fn require_within_limit(pool: &Pool, credit: &CreditAccount, rem: &[AccountI
     if debt == 0 {
         return Ok(());
     }
-    require!(debt <= evaluate(pool, credit, rem, now)?.credit_limit(), PluribusError::ExceedsCreditLimit);
+    require!(debt <= evaluate(pool, credit, rem, now, Scope::Draw)?.credit_limit(), PluribusError::ExceedsCreditLimit);
     Ok(())
 }

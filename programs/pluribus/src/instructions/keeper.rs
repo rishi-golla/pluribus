@@ -31,7 +31,7 @@ pub fn handle_refresh_tier(ctx: Context<RefreshTier>) -> Result<()> {
     let from = a.credit.tier;
     let mut to = from;
     if debt > 0 {
-        let limit = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now)?.liquidation_limit();
+        let limit = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?.liquidation_limit();
         if limit * BPS < debt * a.pool.params.warn_health_bps as u128 {
             to = 0;
             a.credit.healthy_since = now;
@@ -74,7 +74,7 @@ pub fn handle_health(ctx: Context<ViewHealth>) -> Result<HealthView> {
     let credit = &ctx.accounts.credit;
     let mut pool = (*ctx.accounts.pool).clone();
     pool.accrue(now)?;
-    let h = evaluate(&pool, credit, ctx.remaining_accounts, now)?;
+    let h = evaluate(&pool, credit, ctx.remaining_accounts, now, Scope::All)?;
     let mut view = HealthView {
         debt: to_u64(pool.debt_of(credit)?)?,
         credit_limit: to_u64(h.credit_limit())?,
