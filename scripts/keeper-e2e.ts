@@ -203,7 +203,9 @@ try {
   const autopays = of(all, "autopay");
   assert.equal(autopays.length, 1, `Expected autopay to run once, saw ${autopays.length} rows`);
   assert(autopays[0].amount > 0 && autopays[0].source === "orca", "The autopay row is empty or has no source");
-  assert.equal(keeper.output().match(/Autopay for .*, tx /g)?.length, 1, "The keeper did not log exactly one autopay");
+  // Other accounts on the chain may hold Orca positions too, so only this borrower's line counts
+  const logged = keeper.output().match(new RegExp(`Autopay for ${owner.toBase58()}.*, tx `, "g"));
+  assert.equal(logged?.length, 1, "The keeper did not log exactly one autopay for the borrower");
 
   const liquidations = liquidated(all);
   const byKeeper = liquidations.every((r) => r.kind === "repay" && r.detail === `Liquidation by ${short(me)}`);
