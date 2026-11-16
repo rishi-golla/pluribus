@@ -101,9 +101,9 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
   const blurb = !stat
     ? t.blurb
     : id === "junior"
-      ? `Lender yield plus the ${fee}% protection fee that senior lenders pay. Takes losses before senior lenders, after the insurance reserve and the protocol's uncollected fees.`
+      ? `Lender yield plus a protection fee of up to ${fee}% of senior interest, paid in full once junior lenders hold a tenth of the pool. Takes losses before senior lenders, after the insurance reserve and the protocol's uncollected fees.`
       : pool?.junior
-        ? `Lender yield minus a ${fee}% protection fee paid to junior lenders. Takes losses only after the insurance reserve, the protocol's uncollected fees and every junior lender.`
+        ? `Lender yield minus a protection fee of up to ${fee}%, which scales with how much junior money stands in front. Takes losses only after the insurance reserve, the protocol's uncollected fees and every junior lender.`
         : "Lender yield from borrower interest. Takes losses only after the insurance reserve and the protocol's uncollected fees.";
   const stats = soon
     ? ["-", "-", "-", "-"]

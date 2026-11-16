@@ -121,10 +121,9 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const avgRateBps = stats.debt > 0 ? tierDebt.reduce((sum, debt, t) => sum + debt * (stats.borrowRateBps - params.tierDiscountBps[t]), 0) / stats.debt : stats.borrowRateBps;
   const lenderShare = 1 - (params.reserveFactorBps + params.protocolFeeBps) / 1e4;
   // Senior lenders hand the protection fee to junior lenders out of their own part of the interest
-  const protectionFee = stats.juniorAssets > 0 ? params.protectionFeeBps / 1e4 : 0;
-  const seniorCut = stats.lenderAssets > 0 ? lenderShare * (stats.seniorAssets / stats.lenderAssets) * (1 - protectionFee) : lenderShare;
+  const seniorCut = stats.lenderAssets > 0 ? lenderShare * (stats.seniorAssets / stats.lenderAssets) * (1 - stats.protectionFee) : lenderShare;
   const senior: TrancheStats = { assets: stats.seniorAssets, apy: stats.seniorApyBps / 1e4, sharePrice: stats.seniorShareValue ?? 1 };
-  const junior: TrancheStats | null = juniorSupply && { assets: stats.juniorAssets, apy: stats.juniorApyBps === null ? null : stats.juniorApyBps / 1e4, sharePrice: stats.juniorShareValue ?? 1 };
+  const junior: TrancheStats | null = juniorSupply && { assets: stats.juniorAssets, apy: stats.juniorApyBps / 1e4, sharePrice: stats.juniorShareValue ?? 1 };
 
   const borrowRateBps = account.rateBps;
   const balance = (mint: string) => tokens.value.filter((t) => t.account.data.parsed.info.mint === mint).reduce((sum, t) => sum + t.account.data.parsed.info.tokenAmount.uiAmount, 0);
