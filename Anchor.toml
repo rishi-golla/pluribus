@@ -9,6 +9,9 @@ skip-lint = false
 [programs.localnet]
 pluribus = "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT"
 
+[programs.devnet]
+pluribus = "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
