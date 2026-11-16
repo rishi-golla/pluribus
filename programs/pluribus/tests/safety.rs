@@ -1171,15 +1171,18 @@ fn books_balance_through_a_mixed_flow() {
     expect_ok(env.send(&[env.withdraw_token_ix(&b, &stock, 45 * STOCK)], &[&bob]));
     expect_ok(env.send(&[env.withdraw_token_ix(&b, &usdc, 200 * USDC)], &[&bob]));
     assert!(!env.credit(&a).has_collateral() && !env.credit(&b).has_collateral());
-    expect_ok(env.send(&[env.lend_withdraw_ix(&l, env.balance(&shares, &l))], &[&lender]));
+    let (held, wallet) = (env.balance(&shares, &l), env.balance(&usdc, &l));
+    expect_ok(env.send(&[env.lend_withdraw_ix(&l, held)], &[&lender]));
+    let out = env.balance(&usdc, &l) - wallet;
     assert_books_balance(&env, &owners);
 
     let pool = env.pool_state();
     assert_eq!(pool.debt_shares, [0; TIERS]);
     assert!(env.balance(&usdc, &l) > 500_000 * USDC);
-    // All that stays behind is the reserve and the uncollected protocol fees, to the rounding unit
+    // All that stays behind is the reserve, the uncollected protocol fees and the one virtual share's part of the interest
     let claims = pool.reserves + pool.protocol_fees;
-    assert!(pool.cash >= claims && pool.cash - claims <= 3);
+    let virtual_part = (out - held) * pluribus::constants::VIRTUAL_SHARES as u64 / held;
+    assert!(pool.cash >= claims && pool.cash - claims <= virtual_part + 3);
 }
 
 #[test]

@@ -141,8 +141,9 @@ fn interest_accrues_tiers_discount_it_and_lenders_earn() {
     let out = env.balance(&usdc, &lender.pubkey());
     let pool = env.pool_state();
     assert!(out > 104_000 * USDC, "lender got {out}");
-    // What is left in the pool is the reserve and the protocol's cut, to the rounding unit
-    assert!(pool.cash - pool.reserves - pool.protocol_fees <= 2);
+    // What is left in the pool is the reserve, the protocol's cut and the one virtual share's part of the interest
+    let virtual_part = (out - held) * pluribus::constants::VIRTUAL_SHARES as u64 / held;
+    assert!(pool.cash - pool.reserves - pool.protocol_fees <= virtual_part + 2);
     assert_eq!(pool.cash, env.token_amount(&env.usdc_vault));
 
     // The admin collects the protocol's cut and the insurance reserve stays put

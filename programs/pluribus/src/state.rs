@@ -140,14 +140,8 @@ impl Pool {
 
     /// Takes a lender's USDC into a tranche and returns the shares to mint
     pub fn lend(&mut self, junior: bool, supply: u64, amount: u64) -> Result<u64> {
-        let shares = if supply == 0 {
-            amount
-        } else {
-            let assets = self.tranche_assets(junior)?;
-            // A wiped-out tranche has shares but nothing behind them, so no price to join at
-            require!(assets > 0, PluribusError::PoolInsolvent);
-            to_u64(mul_div_floor(amount as u128, supply as u128, assets)?)?
-        };
+        let assets = self.tranche_assets(junior)?;
+        let shares = to_u64(mul_div_wide(amount as u128, supply as u128 + VIRTUAL_SHARES, assets + VIRTUAL_SHARES)?)?;
         require!(shares > 0, PluribusError::ZeroAmount);
         self.cash = self.cash.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
         if junior {
@@ -159,7 +153,10 @@ impl Pool {
     /// Redeems a tranche's shares and returns the USDC to pay out
     pub fn redeem(&mut self, junior: bool, supply: u64, shares: u64) -> Result<u64> {
         require!(shares > 0 && shares <= supply, PluribusError::ZeroAmount);
-        let amount = to_u64(mul_div_floor(shares as u128, self.tranche_assets(junior)?, supply as u128)?)?;
+        let assets = self.tranche_assets(junior)?;
+        let with_virtual = mul_div_wide(shares as u128, assets + VIRTUAL_SHARES, supply as u128 + VIRTUAL_SHARES)?;
+        // After a loss the virtual assets would promise money the tranche does not hold, so the plain price caps the payout
+        let amount = to_u64(with_virtual.min(mul_div_wide(shares as u128, assets, supply as u128)?))?;
         require!(amount > 0, PluribusError::ZeroAmount);
         // Lent-out USDC cannot leave, and the rate kink is what pulls it back
         require!(amount <= self.cash, PluribusError::InsufficientLiquidity);

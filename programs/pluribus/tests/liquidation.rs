@@ -760,8 +760,9 @@ fn reserves_absorb_bad_debt_before_lenders_do() {
     let supply = env.balance(&shares, &lender.pubkey()) as u128;
     expect_ok(env.send(&[env.lend_withdraw_ix(&lender.pubkey(), 1000 * USDC)], &[&lender]));
     let out = env.balance(&usdc, &lender.pubkey()) as u128;
-    assert_eq!(out, 1000 * USDC as u128 * assets_end / supply);
-    assert!(out < 1000 * USDC as u128 * assets / supply);
+    let unit = pluribus::constants::VIRTUAL_SHARES;
+    assert_eq!(out, 1000 * USDC as u128 * (assets_end + unit) / (supply + unit));
+    assert!(out < 1000 * USDC as u128 * (assets + unit) / (supply + unit));
     assert_books(&env);
 }
 

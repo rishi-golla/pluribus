@@ -44,8 +44,6 @@ pub enum PluribusError {
     HealthNotImproved,
     #[msg("Not enough liquidity in the pool")]
     InsufficientLiquidity,
-    #[msg("Pool has no lender assets left")]
-    PoolInsolvent,
     #[msg("Demo feed is disabled")]
     DemoDisabled,
     #[msg("Only the program's upgrade authority can initialize the pool")]

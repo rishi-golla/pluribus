@@ -92,11 +92,9 @@ fn losses_fall_on_junior_lenders_before_senior_ones() {
     assert_eq!(pool.tranche_assets(false).unwrap(), (9_000 * USDC - (large - left)) as u128);
     assert_eq!(pool.cash, env.token_amount(&env.usdc_vault));
 
-    // Junior shares are now worth nothing, and nobody can buy into an empty tranche at a made-up price
+    // Junior shares are now worth nothing
     let held = env.balance(&junior_mint, &junior.pubkey());
     expect_err(env.send(&[env.tranche_ix(&junior.pubkey(), &junior_mint, held, false)], &[&junior]), PluribusError::ZeroAmount);
-    env.fund(&usdc, &junior.pubkey(), 100 * USDC);
-    expect_err(env.send(&[env.tranche_ix(&junior.pubkey(), &junior_mint, 100 * USDC, true)], &[&junior]), PluribusError::PoolInsolvent);
 
     // Seniors leave with exactly their tranche
     let held = env.balance(&senior_mint, &senior.pubkey());
@@ -117,10 +115,11 @@ fn junior_lenders_leave_with_their_own_share_price() {
     let worth = env.pool_state().junior_assets;
     let held = env.balance(&junior_mint, &junior.pubkey());
     expect_ok(env.send(&[env.tranche_ix(&junior.pubkey(), &junior_mint, held, false)], &[&junior]));
-    assert_eq!(env.balance(&usdc, &junior.pubkey()), worth);
-    assert!(worth > 1_000 * USDC);
+    // The one virtual share keeps its thousandth of the gain
+    let paid = env.balance(&usdc, &junior.pubkey());
+    assert!(paid > 1_000 * USDC && paid < worth && worth - paid <= (worth - 1_000 * USDC) / 1_000);
     let pool = env.pool_state();
-    assert_eq!(pool.junior_assets, 0);
+    assert_eq!(pool.junior_assets, worth - paid);
     assert_eq!(pool.cash, env.token_amount(&env.usdc_vault));
 }
 

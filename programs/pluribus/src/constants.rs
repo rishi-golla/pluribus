@@ -29,6 +29,9 @@ pub const BPS: u128 = 10_000;
 pub const PRICE_ONE: u128 = 1_000_000;
 pub const INDEX_ONE: u128 = 1_000_000_000_000_000_000;
 pub const SECONDS_PER_YEAR: u128 = 31_536_000;
+/// Shares and assets that every tranche counts but nobody owns
+/// They pin a tranche's opening price at one and make pushing it up cost more than it can take from the next lender
+pub const VIRTUAL_SHARES: u128 = 1_000_000;
 /// Junior share of lender assets at which junior lenders earn the whole protection fee
 // Shortcut: fixed here, move it into the pool parameters with the next account migration
 pub const JUNIOR_TARGET_BPS: u128 = 1_000;
