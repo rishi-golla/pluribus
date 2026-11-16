@@ -109,6 +109,10 @@ pub mod pluribus {
         liquidate::handle_liquidate_lp(ctx)
     }
 
+    pub fn autopay(ctx: Context<Autopay>) -> Result<()> {
+        autopay::handle_autopay(ctx)
+    }
+
     pub fn accrue(ctx: Context<Accrue>) -> Result<()> {
         keeper::handle_accrue(ctx)
     }
