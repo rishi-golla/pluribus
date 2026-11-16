@@ -320,7 +320,7 @@ function WalletAccount({ children }: { children: ReactNode }) {
 export function AppProviders({ children, preview = false }: { children: ReactNode; preview?: boolean }) {
   const [toast, setToast] = useState<Toast | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const wallets = useMemo(() => (process.env.NEXT_PUBLIC_DEMO_WALLET === "1" ? [new DemoWalletAdapter()] : []), []);
+  const wallets = useMemo(() => (process.env.NEXT_PUBLIC_DEMO_WALLET === "0" ? [] : [new DemoWalletAdapter()]), []);
 
   const show = useCallback((t: Omit<Toast, "id">) => {
     clearTimeout(timer.current);
