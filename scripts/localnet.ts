@@ -1,21 +1,37 @@
 // Boots a local validator with Orca and Pluribus preloaded, sets everything up and keeps it running
 import { execFileSync, spawn } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { PROGRAM_ID, WHIRLPOOL_PROGRAM_ID } from "../sdk/index.ts";
-import { args, connection, me, root, url, wallet } from "./orca-common.ts";
+import { args, connection, key, me, root, url, wallet } from "./orca-common.ts";
 
 const orca = path.join(root, "programs/pluribus/tests/fixtures/orca");
 const port = Number(new URL(url).port);
 // Every port sits in the 2000 above this, which for 8899 is the stock layout
 // A chain on another RPC port then never collides with one on the default
 const base = port - 899;
-// Running under npm skips the shell profile that puts the Agave tools on PATH
+// Running under npm skips the shell profile that puts the Agave tools and Anchor on PATH
+const home = os.homedir();
 const env = {
   ...process.env,
-  PATH: `${os.homedir()}/.local/share/solana/install/active_release/bin:${process.env.PATH}`,
+  PATH: `${home}/.local/share/solana/install/active_release/bin:${home}/.avm/bin:${home}/.cargo/bin:${process.env.PATH}`,
 };
+// A dev server reads this file ahead of every other setting, so the web app follows the local chain while it is up
+const webEnv = path.join(root, "web/.env.development.local");
+
+// A fresh clone has neither binary: Orca's is too large to commit and ours is build output
+if (!fs.existsSync(path.join(orca, "whirlpool.so"))) {
+  console.log("Fetching the Orca Whirlpool program from devnet");
+  const dump = ["program", "dump", WHIRLPOOL_PROGRAM_ID.toBase58(), path.join(orca, "whirlpool.so")];
+  execFileSync("solana", [...dump, "--url", "https://api.devnet.solana.com"], { env, stdio: "inherit" });
+}
+if (!fs.existsSync(path.join(root, "target/deploy/pluribus.so"))) {
+  console.log("Building the Pluribus program, which takes a few minutes the first time");
+  // The program keypair is not in the repo, and the validator loads the binary at the declared id anyway
+  execFileSync("anchor", ["build", "--ignore-keys"], { cwd: root, env, stdio: "inherit" });
+}
 // Orca's devnet upgrade authority, kept so the program account matches the snapshot
 const orcaAuthority = "8rHQUMS8qg4qrQriPpTbrZqk2yjLrUHSLpA6MzgMSiM";
 
@@ -39,6 +55,8 @@ validator.on("exit", (code) => {
   console.error(`Validator exited with code ${code}`);
   process.exit(1);
 });
+// The web app goes back to devnet once this chain is gone
+process.on("exit", () => fs.existsSync(webEnv) && fs.unlinkSync(webEnv));
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => validator.kill(signal));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -64,7 +82,10 @@ try {
   while (!(await landed().catch(() => false))) await sleep(500);
   await import("./orca-fixture.ts");
   await import("./setup.ts");
+  await import("./faucet-stock.ts");
   execFileSync("npm", ["run", "--silent", "sdk:sync"], { cwd: root, stdio: "inherit" });
+  const secret = JSON.stringify([...key("faucet").secretKey]);
+  fs.writeFileSync(webEnv, `# Written by npm run localnet and removed when it stops\nNEXT_PUBLIC_CLUSTER=localnet\nFAUCET_SECRET=${secret}\n`);
   console.log(`Ready: Pluribus localnet at ${url}, stop it with ctrl-c`);
 } catch (e) {
   validator.kill();
