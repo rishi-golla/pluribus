@@ -288,3 +288,29 @@ fn the_usdc_side_of_an_lp_takes_the_usdc_shock() {
     assert!(near(h.liquidation_limit, 10_000.0 * 0.99 * 0.95 * USDC as f64, 1e-6));
     assert!(near(h.collateral_value, 10_000.0 * USDC as f64, 1e-6));
 }
+
+#[test]
+fn accruing_every_second_splits_interest_like_accruing_once() {
+    // The same loan over the same ten minutes, accrued in one step or in 600
+    let run = |steps: i64| {
+        let mut env = Env::new();
+        let lender = env.lender(100_000 * USDC);
+        let user = env.user();
+        let sol = env.sol;
+        env.deposit(&user, &sol, 100 * SOL);
+        expect_ok(env.draw(&user, 1_000 * USDC));
+        for _ in 0..steps {
+            env.warp(600 / steps);
+            expect_ok(env.send(&[env.accrue_ix()], &[&lender]));
+        }
+        let pool = env.pool_state();
+        (pool.reserves, pool.protocol_fees, env.debt(&user.pubkey()) - 1_000 * USDC)
+    };
+    let (once, often) = (run(1), run(600));
+    // About 396 base units of interest, so a tenth each for reserves and the protocol is about 39
+    assert!((395..=397).contains(&once.2), "interest {}", once.2);
+    assert_eq!((once.0, once.1), (39, 39));
+    // Each second earns under one base unit, which a per-call floor would round to nothing
+    assert!(often.0.abs_diff(once.0) <= 1 && often.1.abs_diff(once.1) <= 1, "{often:?} against {once:?}");
+    assert!(often.2.abs_diff(once.2) <= 1);
+}

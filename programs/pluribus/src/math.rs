@@ -17,6 +17,12 @@ pub fn mul_div_ceil(a: u128, b: u128, d: u128) -> Result<u128> {
     Ok(if p % d == 0 { q } else { q + 1 })
 }
 
+/// Floor of a * b / d through 256 bits, for products that can pass u128
+pub fn mul_div_wide(a: u128, b: u128, d: u128) -> Result<u128> {
+    require!(d > 0, PluribusError::MathOverflow);
+    u128::try_from(ethnum::U256::from(a) * ethnum::U256::from(b) / ethnum::U256::from(d)).map_err(|_| overflow())
+}
+
 pub fn to_u64(v: u128) -> Result<u64> {
     u64::try_from(v).map_err(|_| overflow())
 }

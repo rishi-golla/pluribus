@@ -29,6 +29,8 @@ pub const BPS: u128 = 10_000;
 pub const PRICE_ONE: u128 = 1_000_000;
 pub const INDEX_ONE: u128 = 1_000_000_000_000_000_000;
 pub const SECONDS_PER_YEAR: u128 = 31_536_000;
+/// Scale at which fractions of a base unit are carried between interest accruals
+pub const DUST: u128 = 1_000_000_000;
 pub const USDC_DECIMALS: u8 = 6;
 
 pub const KIND_EMPTY: u8 = 0;

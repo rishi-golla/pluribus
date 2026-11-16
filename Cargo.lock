@@ -2024,6 +2024,7 @@ dependencies = [
  "anchor-lang",
  "anchor-spl",
  "base64 0.22.1",
+ "ethnum",
  "litesvm",
  "orca_whirlpools_core",
  "serde_json",

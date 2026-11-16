@@ -97,6 +97,8 @@ pub struct Pool {
     pub usdc_group: u8,
     /// Part of the lender assets that belongs to junior lenders, who absorb losses before senior ones
     pub junior_assets: u64,
+    /// Fractions of a base unit still owed to reserves, protocol fees and junior lenders
+    pub dust: [u32; 3],
     /// One borrow index per loyalty tier, since a shared index cannot charge different rates
     pub borrow_index: [u128; TIERS],
     pub debt_shares: [u128; TIERS],
@@ -198,27 +200,35 @@ impl Pool {
             return Ok(());
         }
         let base = self.base_rate_bps()?;
-        let (lenders, junior) = (self.lender_assets()?, self.tranche_assets(true)?);
-        let mut interest = 0u128;
+        let (lenders, junior, debt) = (self.lender_assets()?, self.tranche_assets(true)?, self.total_debt()?);
         for t in 0..TIERS {
             let rate = base.saturating_sub(self.params.tier_discount_bps[t] as u128);
             let growth = mul_div_ceil(self.borrow_index[t], rate * dt as u128, BPS * SECONDS_PER_YEAR)?;
-            interest += mul_div_floor(self.debt_shares[t], growth, INDEX_ONE)?;
             self.borrow_index[t] = self.borrow_index[t].checked_add(growth).ok_or(PluribusError::MathOverflow)?;
         }
-        let reserve_cut = to_u64(mul_div_floor(interest, self.params.reserve_factor_bps as u128, BPS)?)?;
-        let protocol_cut = to_u64(mul_div_floor(interest, self.params.protocol_fee_bps as u128, BPS)?)?;
-        self.reserves = self.reserves.checked_add(reserve_cut).ok_or(PluribusError::MathOverflow)?;
-        self.protocol_fees = self.protocol_fees.checked_add(protocol_cut).ok_or(PluribusError::MathOverflow)?;
+        // Interest is whatever the debt grew by, split at a finer scale than a base unit
+        // A keeper accruing every few seconds would otherwise round the small cuts away
+        let interest = (self.total_debt()? - debt) * DUST;
+        let to_reserves = interest * self.params.reserve_factor_bps as u128 / BPS;
+        let to_protocol = interest * self.params.protocol_fee_bps as u128 / BPS;
+        self.reserves = Self::carry(self.reserves, &mut self.dust[0], to_reserves)?;
+        self.protocol_fees = Self::carry(self.protocol_fees, &mut self.dust[1], to_protocol)?;
         if junior > 0 {
             // Junior lenders earn their own share of the interest plus a cut of the senior share
-            let to_lenders = interest - reserve_cut as u128 - protocol_cut as u128;
-            let own = mul_div_floor(to_lenders, junior, lenders)?;
-            let fee = mul_div_floor(to_lenders - own, self.params.protection_fee_bps as u128, BPS)?;
-            self.junior_assets = self.junior_assets.checked_add(to_u64(own + fee)?).ok_or(PluribusError::MathOverflow)?;
+            let to_lenders = interest - to_reserves - to_protocol;
+            let own = mul_div_wide(to_lenders, junior, lenders)?;
+            let fee = (to_lenders - own) * self.params.protection_fee_bps as u128 / BPS;
+            self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], own + fee)?;
         }
         self.last_accrual = now;
         Ok(())
+    }
+
+    /// Adds a scaled amount to a balance, keeping the part under one base unit for the next accrual
+    fn carry(balance: u64, dust: &mut u32, scaled: u128) -> Result<u64> {
+        let total = scaled + *dust as u128;
+        *dust = (total % DUST) as u32;
+        balance.checked_add(to_u64(total / DUST)?).ok_or_else(|| error!(PluribusError::MathOverflow))
     }
 
     pub fn debt_of(&self, credit: &CreditAccount) -> Result<u128> {

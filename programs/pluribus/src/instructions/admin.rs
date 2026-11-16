@@ -78,6 +78,7 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         min_liq_cost_bps: u16::MAX,
         usdc_group: u8::MAX,
         junior_assets: 0,
+        dust: [0; 3],
         borrow_index: [INDEX_ONE; TIERS],
         debt_shares: [0; TIERS],
     });
