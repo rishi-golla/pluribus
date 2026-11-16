@@ -62,6 +62,10 @@ struct Roots {
 
 impl Roots {
     fn of(&mut self, price: u128, decimals: u8) -> Result<u128> {
+        // A crash can round a near-worthless token to zero, which sits under every range
+        if price == 0 {
+            return Ok(0);
+        }
         if let Some(hit) = self.seen[..self.len].iter().find(|r| r.0 == price && r.1 == decimals) {
             return Ok(hit.2);
         }

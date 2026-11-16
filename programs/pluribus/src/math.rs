@@ -84,6 +84,10 @@ pub fn lp_parts(
 }
 
 pub fn lp_value(liquidity: u128, sqrt_lower: u128, sqrt_upper: u128, price: u128, base_decimals: u8) -> Result<u128> {
+    // A base token worth nothing leaves the position worth nothing, since under its range it holds only that token
+    if price == 0 {
+        return Ok(0);
+    }
     let sqrt_price = sqrt_price_x64(price, base_decimals)?;
     let (base, usdc) = lp_parts(liquidity, sqrt_lower, sqrt_upper, price, sqrt_price, base_decimals)?;
     base.checked_add(usdc).ok_or_else(overflow)
