@@ -5,9 +5,21 @@
   "scripts": {
     "orca:fixture": "tsx scripts/orca-fixture.ts",
     "orca:snapshot": "tsx scripts/orca-snapshot.ts",
-    "orca:verify": "tsx scripts/orca-verify.ts"
+    "orca:verify": "tsx scripts/orca-verify.ts",
+    "idl": "mkdir -p sdk/idl && cp target/idl/pluribus.json target/types/pluribus.ts sdk/idl/",
+    "sdk:sync": "mkdir -p deployments web/src/lib/pluribus && rm -rf web/src/lib/pluribus/sdk web/src/lib/pluribus/deployments && cp -R sdk deployments web/src/lib/pluribus/",
+    "localnet": "tsx scripts/localnet.ts",
+    "setup": "tsx scripts/setup.ts",
+    "faucet": "tsx scripts/faucet.ts",
+    "price": "tsx scripts/price.ts",
+    "e2e": "tsx scripts/e2e.ts",
+    "keeper": "tsx keeper/index.ts",
+    "keeper:e2e": "tsx scripts/keeper-e2e.ts",
+    "indexer": "tsx indexer/server.ts",
+    "indexer:replay": "tsx indexer/replay.ts"
   },
   "dependencies": {
+    "@anchor-lang/core": "1.2.2",
     "@coral-xyz/anchor": "~0.32.1",
     "@orca-so/common-sdk": "^0.7.1",
     "@orca-so/whirlpools-sdk": "^0.22.0",
