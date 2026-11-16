@@ -11,6 +11,7 @@
     "localnet": "tsx scripts/localnet.ts",
     "setup": "tsx scripts/setup.ts",
     "faucet": "tsx scripts/faucet.ts",
+    "faucet:stock": "tsx scripts/faucet-stock.ts",
     "price": "tsx scripts/price.ts",
     "e2e": "tsx scripts/e2e.ts",
     "smoke": "tsx scripts/smoke.ts",

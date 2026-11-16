@@ -33,6 +33,7 @@ export const { values: args } = parseArgs({
     usdc: { type: "string" },
     lp: { type: "string" },
     range: { type: "string" },
+    positions: { type: "string" },
     asset: { type: "string" },
     price: { type: "string" },
   },
