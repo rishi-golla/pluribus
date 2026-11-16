@@ -48,4 +48,6 @@ pub enum PluribusError {
     PoolInsolvent,
     #[msg("Demo feed is disabled")]
     DemoDisabled,
+    #[msg("Only the program's upgrade authority can initialize the pool")]
+    NotUpgradeAuthority,
 }

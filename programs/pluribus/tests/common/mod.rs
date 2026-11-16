@@ -39,6 +39,11 @@ pub fn pda(seeds: &[&[u8]]) -> Pubkey {
     Pubkey::find_program_address(seeds, &pluribus::ID).0
 }
 
+/// Where the upgradeable loader keeps the program's code and upgrade authority
+pub fn program_data_address() -> Pubkey {
+    Pubkey::find_program_address(&[pluribus::ID.as_ref()], &anchor_lang::solana_program::bpf_loader_upgradeable::ID).0
+}
+
 pub fn ata(owner: &Pubkey, mint: &Pubkey, program: &Pubkey) -> Pubkey {
     get_associated_token_address_with_program_id(owner, mint, program)
 }
@@ -123,6 +128,11 @@ impl Env {
 
         let admin = Keypair::new();
         svm.airdrop(&admin.pubkey(), 1000 * SOL).unwrap();
+        // The loader records no upgrade authority for a test program, so name the admin as a real deploy would
+        let mut program_data = svm.get_account(&program_data_address()).unwrap();
+        program_data.data[12] = 1;
+        program_data.data[13..45].copy_from_slice(admin.pubkey().as_ref());
+        svm.set_account(program_data_address(), program_data).unwrap();
         let mut env = Env {
             svm,
             admin,
@@ -151,6 +161,7 @@ impl Env {
             &pluribus::instruction::Initialize { params, demo_mode }.data(),
             pluribus::accounts::Initialize {
                 admin: admin.pubkey(),
+                program_data: program_data_address(),
                 pool: env.pool,
                 usdc_mint: env.usdc,
                 usdc_vault: env.usdc_vault,
