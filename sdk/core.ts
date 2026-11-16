@@ -11,6 +11,7 @@ import {
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   type AccountMeta,
+  ComputeBudgetProgram,
   type Connection,
   PublicKey,
   TransactionMessage,
@@ -161,7 +162,8 @@ export async function fetchHealth(program: PluribusProgram, d: Deployment, owner
   const message = new TransactionMessage({
     payerKey: new PublicKey(d.admin),
     recentBlockhash: PublicKey.default.toBase58(),
-    instructions: [view],
+    // Five LP positions cost more than the default 200000 compute units
+    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), view],
   }).compileToV0Message();
   const { value } = await program.provider.connection.simulateTransaction(new VersionedTransaction(message), {
     sigVerify: false,
