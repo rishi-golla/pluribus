@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "npm --prefix web install",
+    "dev": "npm --prefix web run dev",
     "orca:fixture": "tsx scripts/orca-fixture.ts",
     "orca:snapshot": "tsx scripts/orca-snapshot.ts",
     "orca:verify": "tsx scripts/orca-verify.ts",
