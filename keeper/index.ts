@@ -40,6 +40,8 @@ import {
 
 const env = process.env;
 const BPS = new BN(10_000);
+// Borrow indexes are scaled by 1e18
+const INDEX_ONE = new BN(10).pow(new BN(18));
 
 function millis(name: string, fallback: number): number {
   const n = Number(env[name] ?? fallback);
@@ -172,7 +174,8 @@ async function watchDebt(pool: Pool, owner: PublicKey, now: number) {
 
 const lastFeeCheck = new Map<string, number>();
 
-async function autopay(owner: PublicKey, positionMint: PublicKey) {
+async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicKey) {
+  const owner = account.owner;
   const id = positionMint.toBase58();
   if (Date.now() - (lastFeeCheck.get(id) ?? 0) < autopayMs) return;
   lastFeeCheck.set(id, Date.now());
@@ -188,6 +191,11 @@ async function autopay(owner: PublicKey, positionMint: PublicKey) {
     tokenExtensionCtx: NO_TOKEN_EXTENSION_CONTEXT,
   });
   if (fees.feeOwedA.isZero() && fees.feeOwedB.isZero()) return;
+  // The SOL fee, and USDC beyond what is owed, become collateral, which needs a free slot unless the account holds that token
+  const holds = (mint: PublicKey) => account.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(mint));
+  const debt = account.debtShares.mul(pool.borrowIndex[account.tier]).div(INDEX_ONE);
+  const slots = Number(!fees.feeOwedA.isZero() && !holds(new PublicKey(d.solMint))) + Number(fees.feeOwedB.gt(debt) && !holds(usdcMint));
+  if (slots > account.positions.filter((p) => p.kind === 0).length) return;
   const owed = `${Number(fees.feeOwedA.toString()) / 1e9} SOL and ${usd(fees.feeOwedB)} USDC`;
   await send(
     `Autopay for ${owner}: ${owed} of fees from LP position ${id}`,
@@ -255,12 +263,8 @@ async function pass() {
     if (stopping) return;
     const owner = account.owner;
     // Fees first, since they pay debt down at no cost before a liquidation is considered
-    // The SOL fee, and USDC beyond what is owed, become collateral, which needs a free slot unless the account holds it already
-      const holds = (mint: PublicKey) => account.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(mint));
-    const room =
-      account.positions.some((p) => p.kind === 0) || (holds(new PublicKey(d.solMint)) && (holds(usdcMint) || !account.debtShares.isZero()));
     for (const p of account.positions) {
-      if (p.kind === KIND_LP && room) await attempt(`Autopay for ${owner}`, () => autopay(owner, p.mint));
+      if (p.kind === KIND_LP) await attempt(`Autopay for ${owner}`, () => autopay(pool, account, p.mint));
     }
     if (!account.debtShares.isZero()) await attempt(`Debt check of ${owner}`, () => watchDebt(pool, owner, now));
   }

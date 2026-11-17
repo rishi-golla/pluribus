@@ -226,16 +226,17 @@ export async function locateLps(connection: Connection, d: Deployment, credit: C
   return found;
 }
 
-// The deployment's address lookup table, or null when it has none
-// Kept once found: it only ever gains addresses, and a transaction built without the newest ones is just longer
-const tables = new Map<string, AddressLookupTableAccount>();
+// The deployment's address lookup table while it is active, or null when it has none
+// Read again every few minutes, so one that is extended or shut down is picked up without a restart
+const tables = new Map<string, { table: AddressLookupTableAccount | null; at: number }>();
 export async function fetchLookupTable(connection: Connection, d: Deployment): Promise<AddressLookupTableAccount | null> {
   if (!d.lookupTable) return null;
   const cached = tables.get(d.lookupTable);
-  if (cached) return cached;
+  if (cached && Date.now() - cached.at < 5 * 60_000) return cached.table;
   const { value } = await connection.getAddressLookupTable(new PublicKey(d.lookupTable));
-  if (value) tables.set(d.lookupTable, value);
-  return value;
+  const table = value?.isActive() ? value : null;
+  tables.set(d.lookupTable, { table, at: Date.now() });
+  return table;
 }
 
 // A v0 transaction for `instructions`, its accounts shortened through the deployment's lookup table

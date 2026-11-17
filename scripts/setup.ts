@@ -156,6 +156,7 @@ const asset = (group: number, oracle: number, feed: string, liqCostBps: number, 
   rateFeedId: Array(32).fill(0),
   liqPriceAgeSecs: DAY,
   uiMultiplier: false,
+  jumpHoldSecs: 0,
 });
 // A staking token's own price comes from its demo account, its backing from SOL's at a fixed rate
 function staked(rate: number): AssetParams {
@@ -177,7 +178,8 @@ for (const [mint, assetParams, sigma] of [
   // Staking tokens in the LST group, priced at the lower of their own price and their SOL backing, a point more to sell than SOL
   ...LSTS.map((l) => [l.mint, staked(l.rate), 8_000] as const),
   // The xStock in the stock group: per-share price times the mint's multiplier, and four days of last price for liquidations
-  [xstock, { ...asset(1, 1, "", 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true }, 4_000],
+  // A price jump has to hold a day before it counts, longer than an issuer could lag the feed on a split
+  [xstock, { ...asset(1, 1, "", 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true, jumpHoldSecs: DAY }, 4_000],
 ] as const) {
   if (!(await exists(pda.asset(mint)))) {
     const tokenProgram = mint.equals(xstock) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
@@ -266,7 +268,8 @@ for (const junior of [false, true]) {
 // A lookup table of the addresses every transaction reuses, so liquidating an account with many positions fits in one
 // A rerun extends the table it made before with whatever is new
 const previous = fs.existsSync(deploymentFile) ? (JSON.parse(fs.readFileSync(deploymentFile, "utf8")) as Deployment).lookupTable : undefined;
-let table = previous && (await connection.getAddressLookupTable(new PublicKey(previous))).value?.state.authority?.equals(me) ? new PublicKey(previous) : null;
+const old = previous ? (await connection.getAddressLookupTable(new PublicKey(previous))).value : null;
+let table = old?.isActive() && old.state.authority?.equals(me) ? old.key : null;
 if (!table) {
   // The slot must already be in the slot hashes of the bank that runs the transaction, so a finalized one
   const recentSlot = await connection.getSlot("finalized");

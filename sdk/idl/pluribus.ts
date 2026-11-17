@@ -4086,6 +4086,11 @@ export type Pluribus = {
       "code": 6037,
       "name": "vaultShort",
       "msg": "The vault holds less than its books say, so it takes no deposits"
+    },
+    {
+      "code": 6038,
+      "name": "priceUnclear",
+      "msg": "This token's price is unclear around a corporate action, so it can't be seized yet"
     }
   ],
   "types": [
@@ -4347,6 +4352,14 @@ export type Pluribus = {
               "Multiply the per-share price by the mint's corporate-action multiplier, for a per-share feed on a scaled token"
             ],
             "type": "bool"
+          },
+          {
+            "name": "jumpHoldSecs",
+            "docs": [
+              "How long a multiplier token's price jump must hold, with no multiplier change, before it counts as a real move:",
+              "longer than the issuer could lag the feed in applying a split"
+            ],
+            "type": "u32"
           }
         ]
       }
