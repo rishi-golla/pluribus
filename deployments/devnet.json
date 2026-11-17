@@ -1,21 +1,21 @@
 {
   "cluster": "devnet",
   "rpcUrl": "https://api.devnet.solana.com",
-  "programId": "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT",
+  "programId": "6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny",
   "whirlpoolProgramId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
-  "admin": "ppJdRigfa8zDA5tKKnS4GPP8j9aGP5o5CXxjstQDusQ",
-  "usdcMint": "dHFns1Zj3LkVzrBqxdw5hDMtF1DieM77m6ZMabwWpfP",
+  "admin": "6sXC8nQJ4wx6yyn1LLQpfXMKkpU5FxF6eWdBxXPASrCk",
+  "usdcMint": "75bxZeFLwNKqezhQ2KHhUASsuxVBJN31g9D8EuSuRW5U",
   "solMint": "So11111111111111111111111111111111111111112",
-  "stockMint": "F4Xiwsc1wsf3jhPGvudesS4EJRVv6J6tTJcu2ZeooDuC",
-  "shareMint": "E6b8stgjMyxB5t7uHvssumxC7fMPbxMwgrduv6araHMZ",
-  "juniorMint": "DvnpmRnK8AEowyo7D9MRchpwQkvpKfMjsy1iUdEyfwef",
-  "whirlpool": "DM76wF2UTMDe6e52kU85yBLT6VHAJCfKM9gp8uS3sHgM",
-  "whirlpoolVaultA": "DCgLzT1t5r39NgWeFGZVWyZX4M5JmUk48VfAGfa3gePX",
-  "whirlpoolVaultB": "2mwtmsj2hgvz5pdRom9RWjgpV3UC5cFsnqhGKdSm6sLh",
+  "stockMint": "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij",
+  "shareMint": "8RpCAdNtKMHTRo3HuRjZfBGJZRj5ZgGxcBgs4vabi74r",
+  "juniorMint": "ENxfCDN3Jo5PgT1oovvwYQr9BB7hUL1DeRStMH12d6oT",
+  "whirlpool": "EHXKciegvkuBAm2P2TUChpkTvRNm4ewwaBa6JmfN8357",
+  "whirlpoolVaultA": "AjgMAv3UGjLr94XWpoymSYcjpi19kVJ4Zzntdk1TZqZf",
+  "whirlpoolVaultB": "AcKWCm9DvQBQBxQC955aJn2j6LrnxukAvxFexANHKKko",
   "tickSpacing": 64,
   "demoMode": true,
   "assets": {
-    "dHFns1Zj3LkVzrBqxdw5hDMtF1DieM77m6ZMabwWpfP": {
+    "75bxZeFLwNKqezhQ2KHhUASsuxVBJN31g9D8EuSuRW5U": {
       "symbol": "USDC",
       "name": "USD Coin (mock)",
       "decimals": 6,
@@ -25,13 +25,13 @@
       "symbol": "SOL",
       "name": "Solana",
       "decimals": 9,
-      "priceAccount": "7TZG5B6jEAerZ8wWAwBngLm3ehDCPuoY8wbbyMm8sadh"
+      "priceAccount": "CdDEvpJZaxCqF8QcYB2Xw5GRutt7xRryag8VhsCw668k"
     },
-    "F4Xiwsc1wsf3jhPGvudesS4EJRVv6J6tTJcu2ZeooDuC": {
+    "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij": {
       "symbol": "NVDAx",
       "name": "NVIDIA tokenized stock (mock)",
       "decimals": 6,
-      "priceAccount": "9rfuzXbpwYasPXNQNEbcvN2Db9MtxPA8eN4pwxr4jZRh"
+      "priceAccount": "F9n7AjLGJ8qUvEw7JFa52zbFEHw8wztbja3SrSCB2MUi"
     }
   }
 }
