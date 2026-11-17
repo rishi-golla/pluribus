@@ -255,19 +255,25 @@ async function pass() {
     if (stopping) return;
     const owner = account.owner;
     // Fees first, since they pay debt down at no cost before a liquidation is considered
+    // The SOL fee, and USDC beyond what is owed, become collateral, which needs a free slot unless the account holds it already
+      const holds = (mint: PublicKey) => account.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(mint));
+    const room =
+      account.positions.some((p) => p.kind === 0) || (holds(new PublicKey(d.solMint)) && (holds(usdcMint) || !account.debtShares.isZero()));
     for (const p of account.positions) {
-      if (p.kind === KIND_LP) await attempt(`Autopay for ${owner}`, () => autopay(owner, p.mint));
+      if (p.kind === KIND_LP && room) await attempt(`Autopay for ${owner}`, () => autopay(owner, p.mint));
     }
     if (!account.debtShares.isZero()) await attempt(`Debt check of ${owner}`, () => watchDebt(pool, owner, now));
   }
 }
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
-    stopping = true;
-    wake();
-  });
-}
+const stop = () => {
+  stopping = true;
+  wake();
+};
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
+// Windows can't send a child process a signal, so a parent with an IPC channel asks for the same clean stop
+process.on("message", (m) => m === "stop" && stop());
+process.channel?.unref();
 
 log(`Keeper ${me.toBase58()} on ${connection.rpcEndpoint} (${cluster}), every ${intervalMs} ms${dryRun ? ", dry run" : ""}`);
 while (!stopping) {

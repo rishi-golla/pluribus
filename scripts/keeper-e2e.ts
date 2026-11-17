@@ -47,10 +47,11 @@ function start(name: string, file: string, args: string[], env: Record<string, s
   const child = spawn(process.execPath, ["--import", "tsx", file, ...args], {
     cwd: root,
     env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
+    // The IPC channel lets the keeper be stopped cleanly on Windows, where a child gets no signals
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   let output = "";
-  for (const stream of [child.stdout, child.stderr]) {
+  for (const stream of [child.stdout!, child.stderr!]) {
     stream.on("data", (chunk) => {
       output += chunk;
       process.stdout.write(String(chunk).replace(/^(?=.)/gm, `[${name}] `));
@@ -155,7 +156,8 @@ try {
     return h.debt.lte(h.liquidationLimit) && h;
   });
   // Stopped before the books are compared, so nothing moves while they are read
-  keeper.child.kill("SIGINT");
+  if (process.platform === "win32") keeper.child.send("stop");
+  else keeper.child.kill("SIGINT");
   const [code] = await once(keeper.child, "exit");
   assert(code === 0 && keeper.output().includes("Keeper stopped"), `The keeper did not exit cleanly on SIGINT, code ${code}`);
   const [poolNow, creditNow] = [await fetchPool(program), (await fetchCredit(program, owner))!];

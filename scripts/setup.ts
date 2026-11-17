@@ -268,7 +268,9 @@ for (const junior of [false, true]) {
 const previous = fs.existsSync(deploymentFile) ? (JSON.parse(fs.readFileSync(deploymentFile, "utf8")) as Deployment).lookupTable : undefined;
 let table = previous && (await connection.getAddressLookupTable(new PublicKey(previous))).value?.state.authority?.equals(me) ? new PublicKey(previous) : null;
 if (!table) {
-  const [create, address] = AddressLookupTableProgram.createLookupTable({ authority: me, payer: me, recentSlot: await connection.getSlot() });
+  // The slot must already be in the slot hashes of the bank that runs the transaction, so a finalized one
+  const recentSlot = await connection.getSlot("finalized");
+  const [create, address] = AddressLookupTableProgram.createLookupTable({ authority: me, payer: me, recentSlot });
   await send([create]);
   table = address;
 }
