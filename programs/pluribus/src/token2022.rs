@@ -153,7 +153,8 @@ pub fn far(asset: &Asset, token_price: u128) -> bool {
 /// Whether a token price belongs to the jump that was noted: on the same side of the last sample, and no split-sized
 /// step from the jump's latest price, so a split the feed reprices first never inherits an earlier move's hold
 /// A rise must stay within half again of the jump, since a rise never needs seizing; a fall may deepen up to 1.8x per step,
-/// as a crashing stock gaps down day after day, while a 2-for-1 split halves the price
+/// as a crashing stock gaps down day after day, while a 2-for-1 split halves the price, and may bounce back up to half again,
+/// since a reverse split the feed prices first lifts a crashed price by its ratio
 fn with_jump(asset: &Asset, token_price: u128) -> bool {
     let (sample, jump) = (asset.vol_price as u128, asset.jump_price as u128);
     if jump == 0 {
@@ -162,7 +163,7 @@ fn with_jump(asset: &Asset, token_price: u128) -> bool {
     if token_price > sample {
         jump > sample && !far_from(jump, token_price)
     } else {
-        jump <= sample && token_price * 9 >= jump * 5
+        jump <= sample && token_price * 9 >= jump * 5 && token_price * 2 <= jump * 3
     }
 }
 

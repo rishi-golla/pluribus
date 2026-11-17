@@ -662,6 +662,19 @@ fn a_deeper_fall_keeps_its_hold_but_a_stale_jump_lends_none() {
     assert_eq!(asset.jump_price, 30 * USDC);
     assert!(env.now() < asset.jump_since + 3_600, "the split step restarted the hold");
     assert_eq!(env.health(&owner.pubkey()).credit_limit, 0);
+
+    // The same for a 1-for-2 reverse split the feed prices first after a crash to $30: the bounce to $60 is a new jump
+    let fourth = list(&mut env, &Xstock::default(), 100);
+    let crank4 = |env: &mut Env| env.send(&[env.update_vol_ix(&fourth)], &[&keeper]);
+    expect_ok(crank4(&mut env));
+    env.warp(120);
+    env.set_price(&fourth, 30 * USDC);
+    expect_ok(crank4(&mut env));
+    env.warp(1_800);
+    env.set_price(&fourth, 60 * USDC);
+    expect_ok(crank4(&mut env));
+    let asset: Asset = env.load(&env.asset_pda(&fourth));
+    assert_eq!((asset.jump_since, asset.jump_price), (env.now(), 60 * USDC));
 }
 
 #[test]
