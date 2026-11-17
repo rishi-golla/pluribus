@@ -144,6 +144,7 @@ export async function depositLp(program: PluribusProgram, d: Deployment, owner: 
         credit: pda.credit(owner),
         pool: pda.pool(),
         lpMarket: pda.lpMarket(key(d.whirlpool)),
+        baseAsset: pda.asset(key(d.solMint)),
         position: pda.orcaPosition(positionMint),
         positionMint,
         ownerNft: ata(positionMint, owner, nft),
@@ -256,6 +257,7 @@ export async function lendDeposit(
   ];
 }
 
+// Senior shares only: junior shares leave through `requestJuniorExit` and `claimJuniorExit`
 export async function lendWithdraw(
   program: PluribusProgram,
   d: Deployment,
@@ -266,6 +268,143 @@ export async function lendWithdraw(
   return [
     createAta(lender, key(d.usdcMint)),
     await program.methods.lendWithdraw(bn(shares)).accountsStrict(lend(d, lender, tranche)).instruction(),
+  ];
+}
+
+// Turns senior shares into junior shares at both share prices, with no USDC moving
+export async function convertToJunior(program: PluribusProgram, lender: PublicKey, shares: Amount): Ixs {
+  return [
+    createAta(lender, pda.juniorMint()),
+    await program.methods
+      .convertToJunior(bn(shares))
+      .accountsStrict({
+        lender,
+        pool: pda.pool(),
+        shareMint: pda.shareMint(),
+        juniorMint: pda.juniorMint(),
+        lenderShares: ata(pda.shareMint(), lender),
+        lenderJunior: ata(pda.juniorMint(), lender),
+        tokenProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// Moves junior shares into the exit queue, one exit per owner at a time
+export async function requestJuniorExit(program: PluribusProgram, owner: PublicKey, shares: Amount): Ixs {
+  return [
+    await program.methods
+      .requestJuniorExit(bn(shares))
+      .accountsStrict({
+        owner,
+        pool: pda.pool(),
+        juniorMint: pda.juniorMint(),
+        ownerJunior: ata(pda.juniorMint(), owner),
+        juniorEscrow: pda.juniorEscrow(),
+        exit: pda.juniorExit(owner),
+        tokenProgram,
+        systemProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// Pays a queued exit out in USDC, which needs idle cash in the pool, or in senior shares, which never does
+export async function claimJuniorExit(
+  program: PluribusProgram,
+  d: Deployment,
+  owner: PublicKey,
+  opts: { inUsdc?: boolean } = {},
+): Ixs {
+  const payoutMint = opts.inUsdc === false ? pda.shareMint() : key(d.usdcMint);
+  return [
+    createAta(owner, payoutMint),
+    await program.methods
+      .claimJuniorExit()
+      .accountsStrict({
+        owner,
+        pool: pda.pool(),
+        exit: pda.juniorExit(owner),
+        juniorMint: pda.juniorMint(),
+        juniorEscrow: pda.juniorEscrow(),
+        shareMint: pda.shareMint(),
+        usdcMint: key(d.usdcMint),
+        usdcVault: pda.usdcVault(),
+        payout: ata(payoutMint, owner),
+        tokenProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// The owner can cancel any time, anyone else once the exit has lapsed
+// Shares worth what was queued go back to the owner, and the yield earned while queued stays with junior lenders
+export async function cancelJuniorExit(program: PluribusProgram, caller: PublicKey, owner: PublicKey): Ixs {
+  const junior = pda.juniorMint();
+  return [
+    // The shares go back to the owner's account, which a stranger cancelling a lapsed exit may have to create
+    createAssociatedTokenAccountIdempotentInstruction(caller, ata(junior, owner), owner, junior),
+    await program.methods
+      .cancelJuniorExit()
+      .accountsStrict({
+        caller,
+        pool: pda.pool(),
+        owner,
+        exit: pda.juniorExit(owner),
+        juniorMint: pda.juniorMint(),
+        juniorEscrow: pda.juniorEscrow(),
+        ownerJunior: ata(pda.juniorMint(), owner),
+        tokenProgram,
+      })
+      .instruction(),
+  ];
+}
+
+export async function pauseJuniorExits(program: PluribusProgram, admin: PublicKey, durationSecs: number): Ixs {
+  return [await program.methods.pauseJuniorExits(durationSecs).accountsStrict({ admin, pool: pda.pool() }).instruction()];
+}
+
+export async function unpauseJuniorExits(program: PluribusProgram, admin: PublicKey): Ixs {
+  return [await program.methods.unpauseJuniorExits().accountsStrict({ admin, pool: pda.pool() }).instruction()];
+}
+
+// Permissionless once a waiting change is due
+export async function applyParams(program: PluribusProgram): Ixs {
+  return [await program.methods.applyParams().accountsStrict({ pool: pda.pool() }).instruction()];
+}
+
+export async function applyAsset(program: PluribusProgram, mint: PublicKey): Ixs {
+  return [await program.methods.applyAsset().accountsStrict({ pool: pda.pool(), asset: pda.asset(mint) }).instruction()];
+}
+
+export async function applyLpMarket(program: PluribusProgram, whirlpool: PublicKey): Ixs {
+  return [
+    await program.methods.applyLpMarket().accountsStrict({ pool: pda.pool(), lpMarket: pda.lpMarket(whirlpool) }).instruction(),
+  ];
+}
+
+export async function setGuardian(program: PluribusProgram, admin: PublicKey, guardian: PublicKey): Ixs {
+  return [await program.methods.setGuardian(guardian).accountsStrict({ admin, pool: pda.pool() }).instruction()];
+}
+
+// Guardian or admin: drops waiting pool parameters
+export async function cancelPendingParams(program: PluribusProgram, guard: PublicKey): Ixs {
+  return [await program.methods.cancelPendingParams().accountsStrict({ guard, pool: pda.pool() }).instruction()];
+}
+
+// Guardian or admin: pauses an asset and drops any change waiting on it
+export async function guardAsset(program: PluribusProgram, guard: PublicKey, mint: PublicKey): Ixs {
+  return [
+    await program.methods.guardAsset().accountsStrict({ guard, pool: pda.pool(), asset: pda.asset(mint) }).instruction(),
+  ];
+}
+
+export async function guardLpMarket(program: PluribusProgram, guard: PublicKey, whirlpool: PublicKey): Ixs {
+  return [
+    await program.methods
+      .guardLpMarket()
+      .accountsStrict({ guard, pool: pda.pool(), lpMarket: pda.lpMarket(whirlpool) })
+      .instruction(),
   ];
 }
 
@@ -501,7 +640,14 @@ export async function initJunior(program: PluribusProgram, admin: PublicKey): Ix
   return [
     await program.methods
       .initJunior()
-      .accountsStrict({ admin, pool: pda.pool(), juniorMint: pda.juniorMint(), tokenProgram, systemProgram })
+      .accountsStrict({
+        admin,
+        pool: pda.pool(),
+        juniorMint: pda.juniorMint(),
+        juniorEscrow: pda.juniorEscrow(),
+        tokenProgram,
+        systemProgram,
+      })
       .instruction(),
   ];
 }

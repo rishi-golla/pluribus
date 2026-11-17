@@ -1,5 +1,5 @@
 {
-  "address": "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT",
+  "address": "6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny",
   "metadata": {
     "name": "pluribus",
     "version": "0.1.0",
@@ -18,6 +18,155 @@
         247,
         72,
         228
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_asset",
+      "discriminator": [
+        3,
+        125,
+        44,
+        60,
+        227,
+        210,
+        36,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_lp_market",
+      "discriminator": [
+        120,
+        78,
+        121,
+        241,
+        39,
+        113,
+        96,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lp_market.whirlpool",
+                "account": "LpMarket"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_params",
+      "discriminator": [
+        188,
+        203,
+        86,
+        124,
+        178,
+        34,
+        133,
+        116
       ],
       "accounts": [
         {
@@ -286,6 +435,282 @@
       "args": []
     },
     {
+      "name": "cancel_junior_exit",
+      "discriminator": [
+        113,
+        84,
+        140,
+        26,
+        53,
+        118,
+        47,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "exit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  120,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "exit.owner",
+                "account": "JuniorExit"
+              }
+            ]
+          }
+        },
+        {
+          "name": "junior_mint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "junior_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_junior",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_pending_params",
+      "discriminator": [
+        86,
+        110,
+        207,
+        152,
+        11,
+        166,
+        48,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "guard",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_junior_exit",
+      "discriminator": [
+        239,
+        187,
+        86,
+        222,
+        84,
+        255,
+        157,
+        126
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  120,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "junior_mint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "junior_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "share_mint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "payout",
+          "docs": [
+            "USDC to be paid in cash, or senior shares to be paid in those"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "collect_protocol_fees",
       "discriminator": [
         22,
@@ -346,6 +771,73 @@
       "args": [
         {
           "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "convert_to_junior",
+      "discriminator": [
+        0,
+        255,
+        188,
+        80,
+        153,
+        148,
+        59,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "lender",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "share_mint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "junior_mint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "lender_shares",
+          "writable": true
+        },
+        {
+          "name": "lender_junior",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
           "type": "u64"
         }
       ]
@@ -428,6 +920,31 @@
               {
                 "kind": "account",
                 "path": "lp_market.whirlpool",
+                "account": "LpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "base_asset",
+          "docs": [
+            "The LP's priced token, whose own pause and activation delay apply to its LPs too"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lp_market.base_mint",
                 "account": "LpMarket"
               }
             ]
@@ -762,6 +1279,128 @@
       ]
     },
     {
+      "name": "guard_asset",
+      "discriminator": [
+        58,
+        68,
+        14,
+        218,
+        98,
+        171,
+        69,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "guard",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "guard_lp_market",
+      "discriminator": [
+        205,
+        190,
+        210,
+        122,
+        102,
+        23,
+        242,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "guard",
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lp_market.whirlpool",
+                "account": "LpMarket"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "health",
       "discriminator": [
         235,
@@ -982,6 +1621,35 @@
                   105,
                   110,
                   116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "junior_escrow",
+          "docs": [
+            "Holds junior shares while they wait in the exit queue"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
                 ]
               }
             ]
@@ -1703,6 +2371,51 @@
       "args": []
     },
     {
+      "name": "pause_junior_exits",
+      "discriminator": [
+        229,
+        103,
+        176,
+        164,
+        102,
+        19,
+        255,
+        199
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "duration_secs",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "refresh_tier",
       "discriminator": [
         176,
@@ -1949,6 +2662,120 @@
       "args": [
         {
           "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_junior_exit",
+      "discriminator": [
+        161,
+        110,
+        172,
+        213,
+        80,
+        138,
+        252,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "junior_mint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "owner_junior",
+          "writable": true
+        },
+        {
+          "name": "junior_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  117,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  120,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
           "type": "u64"
         }
       ]
@@ -2223,6 +3050,51 @@
       ]
     },
     {
+      "name": "set_guardian",
+      "discriminator": [
+        147,
+        243,
+        50,
+        121,
+        154,
+        164,
+        50,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "guardian",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "set_lp_market",
       "discriminator": [
         195,
@@ -2346,6 +3218,46 @@
           }
         }
       ]
+    },
+    {
+      "name": "unpause_junior_exits",
+      "discriminator": [
+        1,
+        172,
+        5,
+        107,
+        124,
+        109,
+        90,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "withdraw_lp",
@@ -2621,6 +3533,19 @@
       ]
     },
     {
+      "name": "JuniorExit",
+      "discriminator": [
+        234,
+        76,
+        106,
+        173,
+        150,
+        51,
+        122,
+        168
+      ]
+    },
+    {
       "name": "LpMarket",
       "discriminator": [
         165,
@@ -2675,6 +3600,45 @@
       ]
     },
     {
+      "name": "ChangeApplied",
+      "discriminator": [
+        226,
+        1,
+        224,
+        100,
+        192,
+        110,
+        58,
+        24
+      ]
+    },
+    {
+      "name": "ChangeCancelled",
+      "discriminator": [
+        139,
+        179,
+        97,
+        81,
+        214,
+        21,
+        119,
+        93
+      ]
+    },
+    {
+      "name": "ChangeQueued",
+      "discriminator": [
+        232,
+        143,
+        80,
+        230,
+        125,
+        117,
+        169,
+        213
+      ]
+    },
+    {
       "name": "CollateralChanged",
       "discriminator": [
         172,
@@ -2711,6 +3675,58 @@
         148,
         44,
         221
+      ]
+    },
+    {
+      "name": "JuniorExitCancelled",
+      "discriminator": [
+        252,
+        140,
+        99,
+        200,
+        121,
+        2,
+        52,
+        89
+      ]
+    },
+    {
+      "name": "JuniorExitClaimed",
+      "discriminator": [
+        56,
+        77,
+        146,
+        152,
+        107,
+        115,
+        9,
+        181
+      ]
+    },
+    {
+      "name": "JuniorExitRequested",
+      "discriminator": [
+        83,
+        199,
+        184,
+        206,
+        130,
+        212,
+        249,
+        165
+      ]
+    },
+    {
+      "name": "JuniorExitsPaused",
+      "discriminator": [
+        80,
+        99,
+        49,
+        150,
+        9,
+        52,
+        73,
+        73
       ]
     },
     {
@@ -2776,6 +3792,19 @@
         123,
         136,
         1
+      ]
+    },
+    {
+      "name": "TrancheConverted",
+      "discriminator": [
+        249,
+        121,
+        88,
+        27,
+        39,
+        181,
+        244,
+        199
       ]
     }
   ],
@@ -2894,6 +3923,61 @@
       "code": 6022,
       "name": "NotUpgradeAuthority",
       "msg": "Only the program's upgrade authority can initialize the pool"
+    },
+    {
+      "code": 6023,
+      "name": "JuniorExitQueue",
+      "msg": "Junior shares leave through the exit queue"
+    },
+    {
+      "code": 6024,
+      "name": "ExitsPaused",
+      "msg": "Junior exits are paused by governance"
+    },
+    {
+      "code": 6025,
+      "name": "ExitNotReady",
+      "msg": "The exit is still in its waiting period"
+    },
+    {
+      "code": 6026,
+      "name": "ExitLapsed",
+      "msg": "The exit lapsed: its claim window has passed"
+    },
+    {
+      "code": 6027,
+      "name": "ExitNotLapsed",
+      "msg": "Only the owner can cancel an exit before it lapses"
+    },
+    {
+      "code": 6028,
+      "name": "PauseNotAllowed",
+      "msg": "A pause must fit the cap and follow the last one by the required gap"
+    },
+    {
+      "code": 6029,
+      "name": "NoPendingChange",
+      "msg": "No change is waiting"
+    },
+    {
+      "code": 6030,
+      "name": "ChangeNotDue",
+      "msg": "The change is still waiting out its activation delay"
+    },
+    {
+      "code": 6031,
+      "name": "NotGuardian",
+      "msg": "Only the admin or the guardian can do this"
+    },
+    {
+      "code": 6032,
+      "name": "ShareMintNotCollateral",
+      "msg": "Share tokens of this pool can never be collateral"
+    },
+    {
+      "code": 6033,
+      "name": "NotYetActive",
+      "msg": "This collateral is still in its activation delay"
     }
   ],
   "types": [
@@ -2948,6 +4032,28 @@
                 "name": "AssetParams"
               }
             }
+          },
+          {
+            "name": "active_at",
+            "docs": [
+              "Backs new debt only from here, so juniors can leave before a new listing adds risk"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pending",
+            "docs": [
+              "Looser parameters waiting out the activation delay, live from `pending_at`, which is 0 when nothing waits"
+            ],
+            "type": {
+              "defined": {
+                "name": "AssetParams"
+              }
+            }
+          },
+          {
+            "name": "pending_at",
+            "type": "i64"
           }
         ]
       }
@@ -3024,6 +4130,49 @@
           {
             "name": "covered_by_junior",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChangeApplied",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "target",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChangeCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "target",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChangeQueued",
+      "docs": [
+        "A change to the pool, an asset or an LP market, named by `target`, waits until `effective_at`"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "target",
+            "type": "pubkey"
+          },
+          {
+            "name": "effective_at",
+            "type": "i64"
           }
         ]
       }
@@ -3215,6 +4364,160 @@
       }
     },
     {
+      "name": "JuniorExit",
+      "docs": [
+        "A junior lender's shares in the exit queue, held in the pool's escrow until claimed or cancelled",
+        "They stay junior money until then: they keep earning and keep taking losses"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "docs": [
+              "What the shares were worth when queued, the most the exit can pay"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "unlock_at",
+            "type": "i64"
+          },
+          {
+            "name": "window_secs",
+            "docs": [
+              "Terms fixed when the exit was queued, so later parameter changes can only improve them"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JuniorExitCancelled",
+      "docs": [
+        "`returned` of the queued `shares` went back to the owner, the rest were burned with the yield earned while queued"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "returned",
+            "type": "u64"
+          },
+          {
+            "name": "lapsed",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JuniorExitClaimed",
+      "docs": [
+        "`paid` is USDC, or its worth in senior shares when `in_usdc` is false, after the `fee` left with junior lenders"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          },
+          {
+            "name": "in_usdc",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JuniorExitRequested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "docs": [
+              "The most the exit can pay, before its fee"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "unlock_at",
+            "type": "i64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JuniorExitsPaused",
+      "docs": [
+        "Junior exits are frozen until `until`, which is the present when a pause is lifted"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "until",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "LenderMoved",
       "type": {
         "kind": "struct",
@@ -3305,6 +4608,28 @@
           {
             "name": "paused",
             "type": "bool"
+          },
+          {
+            "name": "active_at",
+            "docs": [
+              "Backs new debt only from here, so juniors can leave before a new listing adds risk"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pending_liq_cost_bps",
+            "docs": [
+              "A lower liquidation cost or an unpause waiting out the activation delay, live from `pending_at` when that is not 0"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "pending_paused",
+            "type": "bool"
+          },
+          {
+            "name": "pending_at",
+            "type": "i64"
           }
         ]
       }
@@ -3337,6 +4662,13 @@
             "name": "junior_mint",
             "docs": [
               "Share mint of the junior tranche, unset until the admin opens it"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "docs": [
+              "May only tighten risk: pause collateral and drop waiting changes, never pause junior exits"
             ],
             "type": "pubkey"
           },
@@ -3445,6 +4777,46 @@
                 3
               ]
             }
+          },
+          {
+            "name": "junior_queued",
+            "docs": [
+              "Junior shares waiting in the exit queue"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "junior_pause_start",
+            "docs": [
+              "The latest governance pause of junior exits, from start until end"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "junior_pause_end",
+            "type": "i64"
+          },
+          {
+            "name": "junior_next_pause_at",
+            "docs": [
+              "Earliest start of the next pause, fixed when a pause starts or is lifted so a later cut to the gap cannot bring it forward"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pending_params",
+            "docs": [
+              "Looser parameters waiting out the activation delay, live from `pending_at`, which is 0 when nothing waits"
+            ],
+            "type": {
+              "defined": {
+                "name": "PoolParams"
+              }
+            }
+          },
+          {
+            "name": "pending_at",
+            "type": "i64"
           }
         ]
       }
@@ -3555,6 +4927,76 @@
                 3
               ]
             }
+          },
+          {
+            "name": "junior_target_bps",
+            "docs": [
+              "Junior share of lender assets at which junior lenders earn the whole protection fee and premium"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "junior_premium_bps",
+            "docs": [
+              "Share of all borrower interest paid to junior lenders on top of their own share, for taking losses first"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "junior_min_delay_secs",
+            "docs": [
+              "Wait before a queued junior exit can be claimed, from the min with an empty queue up to the max"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "junior_max_delay_secs",
+            "type": "u32"
+          },
+          {
+            "name": "junior_delay_threshold_bps",
+            "docs": [
+              "Queued share of the junior supply at which the wait reaches its max"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "junior_exit_window_secs",
+            "docs": [
+              "Time after the wait in which an exit must be claimed, or it lapses and the shares go back to work",
+              "Between MIN_JUNIOR_EXIT_WINDOW_SECS and MAX_JUNIOR_EXIT_WINDOW_SECS"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "junior_exit_fee_bps",
+            "docs": [
+              "Taken from a junior claim and left with the junior lenders who stay"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "junior_max_pause_secs",
+            "docs": [
+              "Longest governance pause of junior exits, never above MAX_JUNIOR_PAUSE_SECS"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "junior_pause_gap_secs",
+            "docs": [
+              "Unpaused time required between two pauses: at least the longest wait plus MAX_JUNIOR_EXIT_WINDOW_SECS,",
+              "and at least the activation delay"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "activation_delay_secs",
+            "docs": [
+              "Wait before new collateral, or any change that is not a pure tightening, takes effect",
+              "At least the longest junior wait plus the claim window, so juniors who disagree can leave first"
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -3654,6 +5096,33 @@
           }
         ]
       }
+    },
+    {
+      "name": "TrancheConverted",
+      "docs": [
+        "Senior shares turned into junior shares, `value` USDC moving between the tranches"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lender",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          },
+          {
+            "name": "minted",
+            "type": "u64"
+          }
+        ]
+      }
     }
   ],
   "constants": [
@@ -3671,6 +5140,16 @@
       "name": "DEMO_PRICE_SEED",
       "type": "bytes",
       "value": "[100, 101, 109, 111, 95, 112, 114, 105, 99, 101]"
+    },
+    {
+      "name": "JUNIOR_ESCROW_SEED",
+      "type": "bytes",
+      "value": "[106, 117, 110, 105, 111, 114, 95, 101, 115, 99, 114, 111, 119]"
+    },
+    {
+      "name": "JUNIOR_EXIT_SEED",
+      "type": "bytes",
+      "value": "[106, 117, 110, 105, 111, 114, 95, 101, 120, 105, 116]"
     },
     {
       "name": "JUNIOR_MINT_SEED",

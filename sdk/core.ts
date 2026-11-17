@@ -21,7 +21,7 @@ import BN from "bn.js";
 import { Buffer } from "buffer";
 import idl from "./idl/pluribus.json";
 import type { Pluribus } from "./idl/pluribus";
-import { type RiskPosition, lpAmounts, lpValue, tickToPrice } from "./math";
+import { type RiskPosition, effectiveAt, lpAmounts, lpValue, tickToPrice } from "./math";
 
 export type { Pluribus };
 
@@ -54,6 +54,7 @@ export type Asset = IdlAccounts<Pluribus>["asset"];
 export type LpMarket = IdlAccounts<Pluribus>["lpMarket"];
 export type HealthView = IdlTypes<Pluribus>["healthView"];
 export type PoolParams = IdlTypes<Pluribus>["poolParams"];
+export type JuniorExit = IdlAccounts<Pluribus>["juniorExit"];
 export type AssetParams = IdlTypes<Pluribus>["assetParams"];
 export type Wallet = ConstructorParameters<typeof AnchorProvider>[1];
 
@@ -81,6 +82,9 @@ export const pda = {
   usdcVault: () => find(PROGRAM_ID, "usdc_vault"),
   shareMint: () => find(PROGRAM_ID, "share_mint"),
   juniorMint: () => find(PROGRAM_ID, "junior_mint"),
+  // Holds junior shares while they wait in the exit queue
+  juniorEscrow: () => find(PROGRAM_ID, "junior_escrow"),
+  juniorExit: (owner: PublicKey) => find(PROGRAM_ID, "junior_exit", owner),
   asset: (mint: PublicKey) => find(PROGRAM_ID, "asset", mint),
   vault: (mint: PublicKey) => find(PROGRAM_ID, "vault", mint),
   lpMarket: (whirlpool: PublicKey) => find(PROGRAM_ID, "lp_market", whirlpool),
@@ -103,6 +107,9 @@ export const fetchAsset = (program: PluribusProgram, mint: PublicKey) => program
 export const fetchLpMarket = (program: PluribusProgram, whirlpool: PublicKey) =>
   program.account.lpMarket.fetch(pda.lpMarket(whirlpool));
 export const fetchAllCredits = (program: PluribusProgram) => program.account.creditAccount.all();
+// The owner's queued junior exit, or null when there is none
+export const fetchJuniorExit = (program: PluribusProgram, owner: PublicKey) =>
+  program.account.juniorExit.fetchNullable(pda.juniorExit(owner));
 
 // Dollar price per whole token for every asset, as the program reads it
 // Shortcut: demo price accounts only, add a Pyth decoder when a deployment leaves demo mode
@@ -197,19 +204,22 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
   const [assets, market, pool, orca] = await Promise.all([
     program.account.asset.fetchMultiple(priced.map((m) => pda.asset(new PublicKey(m)))),
     lps.length ? fetchLpMarket(program, new PublicKey(d.whirlpool)) : null,
-    lps.length ? fetchPool(program) : null,
+    fetchPool(program),
     program.provider.connection.getMultipleAccountsInfo(lps.map((p) => pda.orcaPosition(p.mint))),
   ]);
+  // A listing still in its activation delay backs no new debt, the same as a paused one
+  const now = Date.now() / 1000;
+  const waiting = (activeAt: BN) => now < effectiveAt(pool, activeAt);
   return held.map((p) => {
     const lp = p.kind === KIND_LP;
     const mint = lp ? d.solMint : p.mint.toBase58();
     const asset = assets[priced.indexOf(mint)];
     if (!asset) throw new Error(`Asset ${mint} is not whitelisted`);
-    const base = { mint, group: asset.params.group, paused: asset.params.paused };
+    const base = { mint, group: asset.params.group, paused: asset.params.paused || waiting(asset.activeAt) };
     let risk: RiskPosition;
     if (lp) {
       const data = orca[lps.indexOf(p)]?.data;
-      if (!data || !market || !pool) throw new Error(`Orca position for ${p.mint.toBase58()} is missing`);
+      if (!data || !market) throw new Error(`Orca position for ${p.mint.toBase58()} is missing`);
       const { liquidity, tickLower, tickUpper } = decodeOrcaPosition(data);
       risk = {
         ...base,
@@ -218,7 +228,7 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
         tickUpper,
         usdcGroup: pool.usdcGroup,
         liqCostBps: market.liqCostBps,
-        paused: base.paused || market.paused,
+        paused: base.paused || market.paused || waiting(market.activeAt),
       };
     } else {
       risk = { ...base, liqCostBps: asset.params.liqCostBps, amount: Number(p.amount.toString()) / 10 ** asset.decimals };

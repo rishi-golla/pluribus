@@ -90,13 +90,13 @@ type PoolLike = {
     reserveFactorBps: number;
     protocolFeeBps: number;
     protectionFeeBps: number;
+    juniorTargetBps: number;
+    juniorPremiumBps: number;
   };
 };
 
 // Pool totals in USDC as of the last accrual, with rates in bps a year
 // Give each share mint's supply in base units to get what one share of that tranche is worth
-// Junior share of lender assets at which junior lenders earn the whole protection fee, as fixed in the program
-const JUNIOR_TARGET = 0.1;
 
 export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: Numeric } = {}) {
   const debt = pool.debtShares.reduce((sum: number, s, t) => sum + (num(s) * num(pool.borrowIndex[t])) / 1e18, 0) / 1e6;
@@ -111,18 +111,25 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const lenderAssets = Math.max(cash + debt - reserves - protocolFees, 0);
   const juniorAssets = Math.min(num(pool.juniorAssets) / 1e6, lenderAssets);
   const seniorAssets = lenderAssets - juniorAssets;
-  // What borrowers pay, spread over everything lent, after the reserve and protocol cuts
-  const lenderYield = borrowRateBps * utilization * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
-  // Senior lenders pay the whole protection fee only once junior lenders fill the target share of the pool
-  const filled = lenderAssets > 0 ? Math.min(juniorAssets / lenderAssets / JUNIOR_TARGET, 1) : 0;
+  // Mirrors `Pool::accrue`: a year of interest at today's rate, the premium off the top of the lenders' part,
+  // juniors' own share of the rest, then the protection fee out of the seniors' share
+  // Premium and fee are paid in full only once junior lenders fill the target share of the pool
+  const target = p.juniorTargetBps / BPS;
+  const filled = lenderAssets > 0 ? Math.min(juniorAssets / lenderAssets / target, 1) : 0;
+  const interest = (borrowRateBps / BPS) * debt;
+  const toLenders = interest * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
+  const premium = Math.min(interest * (p.juniorPremiumBps / BPS) * filled, toLenders);
+  const rest = toLenders - premium;
+  const own = lenderAssets > 0 ? (rest * juniorAssets) / lenderAssets : 0;
+  const protection = (rest - own) * (p.protectionFeeBps / BPS) * filled;
   const fee = (p.protectionFeeBps / BPS) * filled;
-  // What a junior dollar earns on top of the lender yield, which stays finite for the first dollar in
-  const boost =
-    juniorAssets > 0
-      ? (fee * seniorAssets) / juniorAssets
-      : lenderAssets > 0
-        ? (p.protectionFeeBps / BPS) * (seniorAssets / lenderAssets / JUNIOR_TARGET)
-        : 0;
+  // What borrowers pay, spread over everything lent, after the reserve and protocol cuts
+  const lenderYield = lenderAssets > 0 ? (toLenders / lenderAssets) * BPS : 0;
+  const seniorApyBps = seniorAssets > 0 ? ((rest - own - protection) / seniorAssets) * BPS : lenderYield * (1 - fee);
+  // A junior dollar's return stays finite for the first dollar in, where it earns the premium and fee per unit of target
+  const firstDollar =
+    lenderAssets > 0 ? ((toLenders + toLenders * (p.protectionFeeBps / BPS) / target + interest * (p.juniorPremiumBps / BPS) / target) / lenderAssets) * BPS : 0;
+  const juniorApyBps = juniorAssets > 0 ? ((premium + own + protection) / juniorAssets) * BPS : firstDollar;
   // The program counts one virtual share and one virtual dollar in each tranche, and never pays above the plain price
   const perShare = (assets: number, units?: Numeric) => {
     const shares = units === undefined ? 0 : num(units) / 1e6;
@@ -142,7 +149,46 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
     juniorShareValue: perShare(juniorAssets, supply.junior),
     // Share of senior interest that goes to junior lenders right now
     protectionFee: fee,
-    seniorApyBps: lenderYield * (1 - fee),
-    juniorApyBps: lenderYield * (1 + boost),
+    // Share of all borrower interest paid to junior lenders as a premium right now
+    juniorPremium: (p.juniorPremiumBps / BPS) * filled,
+    seniorApyBps,
+    juniorApyBps,
   };
+}
+
+type JuniorExitParams = {
+  juniorMinDelaySecs: number;
+  juniorMaxDelaySecs: number;
+  juniorDelayThresholdBps: number;
+  juniorExitWindowSecs: number;
+};
+
+// Seconds a junior exit queued now would wait, with `queued` junior shares already in the queue
+export function juniorExitDelay(params: JuniorExitParams, queued: Numeric, shares: Numeric, supply: Numeric) {
+  const { juniorMinDelaySecs: min, juniorMaxDelaySecs: max, juniorDelayThresholdBps: threshold } = params;
+  const total = num(supply);
+  // Rounded up like the program, so even the smallest exit moves the wait
+  const share = total > 0 ? Math.min(Math.ceil(((num(queued) + num(shares)) * BPS) / total), threshold) : threshold;
+  return min + Math.ceil(((max - min) * share) / threshold);
+}
+
+// When something set to take effect at `at` really does, mirroring `Pool::effective_at`:
+// a pause of junior exits that began by then moves it to a full activation delay after the pause ends
+export function effectiveAt(
+  pool: { params: { activationDelaySecs: number }; juniorPauseStart: Numeric; juniorPauseEnd: Numeric },
+  at: Numeric,
+) {
+  const [start, end, when] = [num(pool.juniorPauseStart), num(pool.juniorPauseEnd), num(at)];
+  return end > start && start <= when ? Math.max(when, end + pool.params.activationDelaySecs) : when;
+}
+
+// Unix seconds by which a queued exit must be claimed, mirroring `Pool::junior_exit_deadline`
+export function juniorExitDeadline(
+  pool: { params: JuniorExitParams; juniorPauseStart: Numeric; juniorPauseEnd: Numeric },
+  exit: { unlockAt: Numeric; windowSecs: number },
+) {
+  const unlock = num(exit.unlockAt);
+  const window = Math.max(exit.windowSecs, pool.params.juniorExitWindowSecs);
+  const [start, end] = [num(pool.juniorPauseStart), num(pool.juniorPauseEnd)];
+  return end > unlock && start < unlock + window ? end + window : unlock + window;
 }
