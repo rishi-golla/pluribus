@@ -6,8 +6,8 @@ Every setting worth revisiting before mainnet, with the value deployed on devnet
 
 - Pool settings change with `set_params`, asset settings with `set_asset`, LP markets with `set_lp_market` (admin key).
 - Only pure tightening applies at once:
-  - Pool: raising shocks or adding scenarios.
-  - Asset: raising the liquidation cost, lowering the deposit cap, pausing.
+  - Pool: raising shocks (keeping each group's shape across scenarios) or adding scenarios.
+  - Asset: raising the liquidation cost, lowering the deposit cap, lengthening the volatility horizon, pausing.
   - LP market: raising the cost, pausing.
 - Everything else waits out `activation_delay_secs`, then anyone sends `apply_params` / `apply_asset` / `apply_lp_market`.
 - Nothing waiting can apply during a junior exit pause, nor until a full activation delay after it ends.
@@ -63,7 +63,7 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `vol_max_age_secs` | 60 | > 0 | Oldest price a sample accepts. |
 | `vol_conf_cap_bps` | 200 | 1 to 2000 | Widest Pyth band a sample accepts. The band itself is subtracted from each move, so noise doesn't count as volatility. |
 | `max_shock_bps` | 9500 | < 10000 | Ceiling on any shock, table or dynamic. |
-| Asset `vol_horizon_secs` (T) | SOL and LSTs 1d, stock and xStock 3d, USDC 0 | ≤ 30d, 0 = off | Time to liquidate. Stocks need a weekend. Memecoins should be longer than SOL, since selling takes more time. |
+| Asset `vol_horizon_secs` (T) | SOL and LSTs 1d, stock and xStock 3d, USDC 0 | ≤ 30d, 0 = off; non-zero needs non-zero draw and liquidation shocks in its group, and multiplier tokens must have one | Time to liquidate. Stocks need a weekend. Memecoins should be longer than SOL, since selling takes more time. |
 | `sigma_seed_bps` at listing | SOL 8000, LSTs 8000, stock 5000, xStock 4000 | ≤ 100000 | Starting annual volatility until the crank has history. Seed high; it only fades as fast as `vol_tau_slow_secs`. |
 | Keeper vol crank interval | `keeper/index.ts` | | One sample per asset per minimum interval. A crank that stops leaves the last shock in place, so watch for a stalled keeper. |
 
@@ -73,7 +73,7 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 |---|---|---|---|
 | `group` | 3 (LST column) | a column with a non-zero shock | Shares SOL's crash plus a depeg margin. |
 | `liq_cost_bps` | 600 | as for assets | One point more than SOL for thinner LST markets. Should follow each LST's depth. |
-| `rate_source` | FIXED on devnet (mock mints), STAKE_POOL for real SPL pools | NONE / STAKE_POOL / FIXED | Price = min(own Pyth price, backing × SOL). Backing is read from the SPL stake pool (Jito, Sanctum multi-validator) or a fixed rate. mSOL and INF need their own readers and are not supported. |
+| `rate_source` | FIXED on devnet (mock mints), STAKE_POOL for real SPL pools | NONE / STAKE_POOL / FIXED; a backing needs the SOL price's mint and feed, STAKE_POOL the pool account; a backing can't be added after listing, only changed or dropped | Price = min(own Pyth price, backing × SOL). Backing is read from the SPL stake pool (Jito, Sanctum multi-validator) or a fixed rate. mSOL and INF need their own readers and are not supported. |
 | `fixed_rate` | JitoSOL 1.31, JupSOL 1.22 SOL | > 0 | Devnet mocks only. A real LST's rate grows each epoch, so a fixed rate goes stale. |
 | Stake pool staleness | one epoch | constant in `oracle.rs` | The pool must have been updated this epoch or the last. |
 
@@ -83,8 +83,8 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 |---|---|---|---|
 | `liq_price_age_secs` | 4d for the xStock, 1d for others | ≥ `max_price_age_secs` | Oldest price that still counts for liquidations and the liquidation line. Draws keep the short age. Four days covers a long weekend. Longer = bad debt can still be cleared after a long close, but on an older price. |
 | `ui_multiplier` | on for the xStock | | Multiply a per-share price by the mint's corporate-action multiplier. Turn off if the feed already quotes per token. |
-| `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | Around a multiplier change the token backs no new debt, and of the two bases the one that keeps the token's price nearest the last volatility sample is used. A change the issuer applies at once is dated when `sync_mint` (or the volatility crank) first sees it, so the guard runs from then. Widen it if real feeds lag the multiplier by more than an hour. |
-| Multiplier bounds | 0.0001 to 10000 | constant in `token2022.rs` | A multiplier in effect outside this halts only that token (no new debt, valued at the last synced multiplier). One scheduled outside it changes nothing until it applies. |
+| `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | The shortest window around a multiplier change; the window actually used is the larger of this and the asset's `jump_hold_secs` (a day for the devnet xStock). Inside it the price is unclear (no new debt, line at the lower of the price and the last sample, not seized), and of the two bases the one that keeps the token's price nearest the last volatility sample is used, or the lower one before any sample. A change the issuer applies at once is dated when `sync_mint` (or the volatility crank) first sees it, so the window runs from then. A price older than the last two multipliers is valued at the lowest basis it could be on. |
+| Multiplier bounds | 0.0001 to 10000 | constant in `token2022.rs` | A multiplier in effect outside this makes only that token unclear (no new debt, valued at the last synced multiplier, not seized). One scheduled outside it changes nothing until it applies. |
 | Jump band | 1.5x either way | `token2022::far` | A multiplier token's price this far from the last volatility sample is unclear: it backs no new debt, counts toward the liquidation line at the lower of its price and that sample, and can't be seized. Narrow it for calmer stocks, widen it for volatile ones. |
 | `jump_hold_secs` | xStock 1d | 1h to 7d, multiplier tokens only | How long a jump must hold, with no multiplier change, before the crank accepts it as a real move and the token can be seized again. A deeper fall of up to 1.8x per step keeps the hold, so a stock gapping down day after day becomes seizable; a rise or bounce past half again, a split-sized fall, a reversal, or a far price more than a hold after the last one (a weekend) starts it again. Left open: a 3-for-2 or 2-for-3 split (a 1.5x step) the feed reprices first fits inside these bands and can be taken as clear, mispricing by up to 1.5x; and a feed that keeps swinging more than these bands after a crash keeps restarting the hold, so the stock is never seized while it does. Must exceed the longest an issuer could lag the feed in applying a split; it also widens the window around a recorded or scheduled change. While it runs, a crashed xStock that is an account's only collateral can't be liquidated. An unscheduled split where the feed reprices first looks exactly like a crash: the line takes the lower price and other collateral can be sold at the bonus until the issuer applies it. |
 | Vault shortfall | pro rata | `risk.rs`, `borrow.rs`, `liquidate.rs` | If the issuer's delegate takes tokens out of the vault, each booked token is worth vault / books, withdrawals and seizes pay that share, and deposits stop. A frozen vault backs no new debt. |
@@ -108,15 +108,15 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
-| `group` | SOL 0, stock 1, USDC 2 | column in the shock tables | Which crash column the asset falls with. |
-| `liq_cost_bps` | SOL 500, stock 1000, USDC 0 | < 10000; ≥ about 476 at a 5% bonus | Haircut for the cost of liquidating. Should grow with position size and thin liquidity (memecoins). |
+| `group` | SOL 0, stock and xStock 1, USDC 2, LSTs 3 | column in the shock tables | Which crash column the asset falls with. |
+| `liq_cost_bps` | SOL 500, LSTs 600, stock and xStock 1000, USDC 0 | < 10000; ≥ about 476 at a 5% bonus | Haircut for the cost of liquidating. Should grow with position size and thin liquidity (memecoins). |
 | `max_price_age_secs` | 1 day | > 0 | Oldest accepted price. A day is demo-only; mainnet Pyth needs seconds to minutes. |
 | `max_conf_bps` | 200 | 1 to 2000 | Widest accepted Pyth confidence band. |
 | `deposit_cap` | 0 (no cap) | 0 = uncapped | Cap per asset. Should follow on-chain depth for risky assets. |
-| `oracle`, `pyth_feed_id` | SOL Pyth feed, stock placeholder | | The stock needs a real feed before demo mode goes off. |
+| `oracle`, `pyth_feed_id` | SOL Pyth feed (also the LSTs' backing feed), stock and xStock placeholders | | The stock, the xStock and each LST need real feeds before demo mode goes off. |
 | LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca and Raydium positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. |
 | `RAYDIUM_CLMM_PROGRAMS` | mainnet `CAMMCzo5…`, devnet `DRayAUg…` | constant in `constants.rs` | The only programs besides Orca whose pools can list. Raydium can upgrade its program, so recheck the position and pool layouts (offsets in `clmm.rs`) after each Raydium upgrade. |
-| Demo prices (setup.ts) | SOL at the pool price, stock $180 | | Starting demo feed. |
+| Demo prices (setup.ts) | SOL at the pool price, stock $180, xStock $230, LSTs 0.1% under their backing | | Starting demo feed. `scripts/price.ts` moves only SOL and the stock. |
 
 ## Hard caps in `programs/pluribus/src/constants.rs`
 
@@ -131,6 +131,8 @@ These need a program upgrade to change.
 | `MAX_JUNIOR_EXIT_FEE_BPS` | 100 | The exit fee |
 | `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 6 / 3 | Account and table sizes (changing these is a migration) |
 | `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
+| `MIN_EPOCH_SECS` / `MAX_EPOCH_SECS` | 60s / 30d | Yield epoch length when not 0 |
+| `STAKE_POOL_PROGRAMS` | SPL stake pool, Sanctum multi-validator | Programs whose pools can back an LST |
 
 ## Off-chain services and demo
 
@@ -155,7 +157,7 @@ Planned in the earlier research and plans, not implemented:
 - **Fee-implied σ (Panoptic)** for pool tokens without a feed. Left out on purpose for now: it needs a volume crank and can be wash-traded to push σ around.
 - **An emergency switch for a broken LST backing.** If a stake pool account stops reading (for example after an upstream migration), that LST's health checks fail, and the fix (`rate_source` → NONE or FIXED) waits out the activation delay. Liquidations of that LST are frozen meanwhile. Options: let the guardian switch to FIXED at or below the last rate at once, or fall back to the own price with an extra haircut.
 - **Close publish times for the LST's two prices.** The SOL leg is accepted anywhere inside the LST's own age window, so a liquidator can pick the lowest SOL print in that window.
-- **SDK reads the deployment file, not the chain,** for LST backing accounts and the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
+- **SDK reads the deployment file, not the chain,** for LST backing accounts, token programs and extra LP markets, and its price helper ignores the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
 - **Fee harvesting for Raydium positions.** Autopay only collects Orca fees; Raydium positions keep their fees until the owner withdraws the NFT.
 - **One Raydium program per cluster.** Both Raydium ids are accepted everywhere; listing is admin-only, but a build flag could pin each cluster to its own id.
 - **Raydium's admin can turn off `decrease_liquidity` for a pool**, which would leave a liquidator holding an NFT it can't redeem. Watch Raydium pool status for listed markets.
