@@ -598,6 +598,53 @@ fn a_jump_counts_as_held_only_while_the_price_stays_near_it() {
 }
 
 #[test]
+fn a_deeper_fall_keeps_its_hold_but_a_stale_jump_lends_none() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let mint = list(&mut env, &Xstock::default(), 100);
+    let keeper = env.wallet();
+    let crank = |env: &mut Env| env.send(&[env.update_vol_ix(&mint)], &[&keeper]);
+    expect_ok(crank(&mut env));
+    let user = env.user();
+    let me = user.pubkey();
+    env.deposit(&user, &mint, 10 * SHARE);
+    expect_ok(env.draw(&user, 500 * USDC));
+    let liquidator = env.wallet();
+    let usdc = env.usdc;
+    env.fund(&usdc, &liquidator.pubkey(), 1_000 * USDC);
+    env.fund(&mint, &liquidator.pubkey(), 0);
+    let liquidate = |env: &mut Env| env.send(&[env.liquidate_ix(&liquidator.pubkey(), &me, &mint, u64::MAX)], &[&liquidator]);
+    // A fall to $60, then further to $45 half an hour on: the same jump, so its hold runs from the first print
+    env.warp(120);
+    env.set_price(&mint, 60 * USDC);
+    expect_ok(crank(&mut env));
+    let since = env.load::<Asset>(&env.asset_pda(&mint)).jump_since;
+    env.warp(1_800);
+    env.set_price(&mint, 45 * USDC);
+    expect_ok(crank(&mut env));
+    assert_eq!(env.load::<Asset>(&env.asset_pda(&mint)).jump_since, since);
+    expect_err(liquidate(&mut env), PluribusError::PriceUnclear);
+    // An hour after the first print the fall has held and the stock can be seized
+    env.warp(1_800);
+    env.set_price(&mint, 40 * USDC);
+    expect_ok(liquidate(&mut env));
+
+    // On another listing, a jump noted and then left for longer than a hold lends nothing to a later print near it
+    let other = list(&mut env, &Xstock::default(), 100);
+    let crank2 = |env: &mut Env| env.send(&[env.update_vol_ix(&other)], &[&keeper]);
+    expect_ok(crank2(&mut env));
+    let holder = env.user();
+    env.deposit(&holder, &other, 10 * SHARE);
+    env.warp(120);
+    env.set_price(&other, 60 * USDC);
+    expect_ok(crank2(&mut env));
+    env.warp(2 * 3_600);
+    env.set_price(&other, 50 * USDC);
+    let h = env.health(&holder.pubkey());
+    assert_eq!(h.credit_limit, 0);
+}
+
+#[test]
 fn an_xstock_is_never_the_base_of_an_lp_market() {
     let mut env = Env::new();
     let mint = list(&mut env, &Xstock::default(), 100);

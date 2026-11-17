@@ -315,7 +315,8 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         mult_prev_since: 0,
         jump_since: 0,
         jump_price: 0,
-        reserved: [0; 15],
+        jump_seen: 0,
+        reserved: [0; 7],
     });
     Ok(())
 }

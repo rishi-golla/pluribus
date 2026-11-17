@@ -4231,9 +4231,13 @@
           {
             "name": "jump_price",
             "docs": [
-              "The token price of that jump, which it must stay near to count as held"
+              "The latest far token price of that jump and its publish time"
             ],
             "type": "u64"
+          },
+          {
+            "name": "jump_seen",
+            "type": "i64"
           },
           {
             "name": "reserved",
@@ -4243,7 +4247,7 @@
             "type": {
               "array": [
                 "u8",
-                15
+                7
               ]
             }
           }

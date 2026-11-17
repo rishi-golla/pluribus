@@ -4237,9 +4237,13 @@ export type Pluribus = {
           {
             "name": "jumpPrice",
             "docs": [
-              "The token price of that jump, which it must stay near to count as held"
+              "The latest far token price of that jump and its publish time"
             ],
             "type": "u64"
+          },
+          {
+            "name": "jumpSeen",
+            "type": "i64"
           },
           {
             "name": "reserved",
@@ -4249,7 +4253,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                15
+                7
               ]
             }
           }

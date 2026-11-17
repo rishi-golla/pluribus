@@ -150,6 +150,39 @@ pub fn far(asset: &Asset, token_price: u128) -> bool {
     far_from(asset.vol_price as u128, token_price)
 }
 
+/// Whether a token price is on the same side of the last sample as the jump that was noted
+fn with_jump(asset: &Asset, token_price: u128) -> bool {
+    let sample = asset.vol_price as u128;
+    asset.jump_price != 0 && (token_price > sample) == (asset.jump_price as u128 > sample)
+}
+
+/// Whether a jump the crank noted has held for the asset's hold, still the same way, with a far price seen within a hold
+/// A deeper fall counts as the same jump, while a reversal, or a far price long after the last one, does not
+pub fn jump_held(asset: &Asset, token_price: u128, t: i64) -> bool {
+    let hold = asset.params.jump_hold_secs as i64;
+    asset.jump_since != 0 && with_jump(asset, token_price) && t >= asset.jump_since + hold && t <= asset.jump_seen + hold
+}
+
+/// Notes a far token price published at `t`: a first jump, one the other way, or one a whole hold after the last far
+/// price starts the hold, and a further move the same way keeps it. Older prices change nothing
+pub fn note_jump(asset: &mut Asset, token_price: u128, t: i64) {
+    if asset.jump_since != 0 && t <= asset.jump_seen {
+        return;
+    }
+    let hold = asset.params.jump_hold_secs as i64;
+    if asset.jump_since == 0 || !with_jump(asset, token_price) || t > asset.jump_seen + hold {
+        asset.jump_since = t;
+    }
+    asset.jump_price = token_price as u64;
+    asset.jump_seen = t;
+}
+
+pub fn clear_jump(asset: &mut Asset) {
+    asset.jump_since = 0;
+    asset.jump_price = 0;
+    asset.jump_seen = 0;
+}
+
 /// The token price for a per-share `price` published at `t`, and whether it is clear
 /// Unclear when the basis is uncertain or unknown, or when the price jumped far from the last sample and the volatility
 /// crank has not yet seen that hold for the asset's `jump_hold_secs`, which may be the feed repricing for a split the
@@ -162,8 +195,7 @@ pub fn token_price(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> 
         (low, false)
     });
     let token = crate::math::mul_div_floor(price, m, MULTIPLIER_ONE)?;
-    // Held only while the price stays near the jump that was noted, so an old jump never lends its hold to a new one
-    let held = asset.jump_since != 0 && t >= asset.jump_since + asset.params.jump_hold_secs as i64 && !far_from(asset.jump_price as u128, token);
+    let held = jump_held(asset, token, t);
     if sure && (held || !far(asset, token)) {
         return Ok((token, true));
     }
@@ -209,8 +241,7 @@ pub fn sync(asset: &mut Asset, s: &Scaled, now: i64) -> bool {
     asset.mult_exact = exact;
     // Sampling starts over on the new basis, and the last price stays as the reference that tells the bases apart
     asset.vol_time = 0;
-    asset.jump_since = 0;
-    asset.jump_price = 0;
+    clear_jump(asset);
     true
 }
 
