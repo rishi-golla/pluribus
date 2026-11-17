@@ -1,6 +1,6 @@
 // QuickNode Streams filter for the Solana Block dataset: paste into the stream's filter editor
 // Set the stream's batch size to 1 so that batch_start_range is the slot of the block being filtered
-const PROGRAM_ID = "HDnoxq4LZJydvUQdihgjv3H29Sea5oeYGGRKShHmzbRK";
+const PROGRAM_ID = "A4UnuBwwBLbvxj3AnUtCDzkj11kp1wdPh8CydUn5quc7";
 
 function main(stream) {
   const out = [];

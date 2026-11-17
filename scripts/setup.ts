@@ -271,11 +271,20 @@ const previous = fs.existsSync(deploymentFile) ? (JSON.parse(fs.readFileSync(dep
 const old = previous ? (await connection.getAddressLookupTable(new PublicKey(previous))).value : null;
 let table = old?.isActive() && old.state.authority?.equals(me) ? old.key : null;
 if (!table) {
-  // The slot must already be in the slot hashes of the bank that runs the transaction, so a finalized one
-  const recentSlot = await connection.getSlot("finalized");
-  const [create, address] = AddressLookupTableProgram.createLookupTable({ authority: me, payer: me, recentSlot });
-  await send([create]);
-  table = address;
+  // The slot must already be in the slot hashes of the bank that runs the transaction, so a finalized one, and a
+  // load-balanced RPC can still run it on a node that disagrees, so a few tries with a fresh slot
+  for (let attempt = 1; !table; attempt++) {
+    // Some way back from the confirmed tip, further on each try, so it is an ancestor of whichever node runs it
+    const recentSlot = (await connection.getSlot("confirmed")) - [2, 10, 40, 100, 200][attempt - 1];
+    const [create, address] = AddressLookupTableProgram.createLookupTable({ authority: me, payer: me, recentSlot });
+    try {
+      await send([create]);
+      table = address;
+    } catch (e) {
+      if (attempt >= 5) throw e;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
 }
 const listed = new Set(((await connection.getAddressLookupTable(table)).value?.state.addresses ?? []).map((k) => k.toBase58()));
 const missing = lookupAddresses(d).filter((k) => !listed.has(k.toBase58()));

@@ -1,14 +1,14 @@
 {
   "cluster": "devnet",
   "rpcUrl": "https://api.devnet.solana.com",
-  "programId": "HDnoxq4LZJydvUQdihgjv3H29Sea5oeYGGRKShHmzbRK",
+  "programId": "A4UnuBwwBLbvxj3AnUtCDzkj11kp1wdPh8CydUn5quc7",
   "whirlpoolProgramId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
   "admin": "6sXC8nQJ4wx6yyn1LLQpfXMKkpU5FxF6eWdBxXPASrCk",
   "usdcMint": "75bxZeFLwNKqezhQ2KHhUASsuxVBJN31g9D8EuSuRW5U",
   "solMint": "So11111111111111111111111111111111111111112",
   "stockMint": "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij",
-  "shareMint": "8WFzM2z1qxX4NSzFMcBk8rbdTAK6NYinygRVXwHkamN7",
-  "juniorMint": "AHUVppdDidDiiRyhVzmzH97xxhfmwYYJFUKWVCA84PbY",
+  "shareMint": "CLB5PVk3hyTEiSSq5DwV341JC2Js7NLTzRmcZE1uMtFR",
+  "juniorMint": "Gwx2etGL6TmfYarNe1QbZf9C3eoAgKq3LUW8Big5E5Fy",
   "whirlpool": "EHXKciegvkuBAm2P2TUChpkTvRNm4ewwaBa6JmfN8357",
   "whirlpoolVaultA": "AjgMAv3UGjLr94XWpoymSYcjpi19kVJ4Zzntdk1TZqZf",
   "whirlpoolVaultB": "AcKWCm9DvQBQBxQC955aJn2j6LrnxukAvxFexANHKKko",
@@ -25,13 +25,41 @@
       "symbol": "SOL",
       "name": "Solana",
       "decimals": 9,
-      "priceAccount": "GSxiZD8uUok9dqYa668gmfXCHZCy1jwktPA5ywymASZE"
+      "priceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7"
     },
     "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij": {
       "symbol": "NVDAx",
       "name": "NVIDIA tokenized stock (mock)",
       "decimals": 6,
-      "priceAccount": "HLfqjKu3PPYLgfvEgGFNW1cvfyeYmtvrRi9fD93Y9dew"
+      "priceAccount": "FZTCogzKJELoVztPu5GQ9ErJK89dMgqqZbFECJ3ZgwVb"
+    },
+    "HDgRzeChz6fKBY1P5Ytdie3JigAteiq2eqphD5xeMEcm": {
+      "symbol": "AAPLx",
+      "name": "Apple tokenized stock (mock)",
+      "decimals": 8,
+      "priceAccount": "BgZXgJwLeaioJHiyVYafUvX2kBVCBLuxsTWCr5YBzvdC",
+      "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+    },
+    "2FpbByvzXNwxQrq5cqDoGLf2bx8nHdMWx3dcugayk4er": {
+      "symbol": "JitoSOL",
+      "name": "Jito staked SOL (mock)",
+      "decimals": 9,
+      "priceAccount": "7yxnoVNkG2LgptLs33qQ5dRZs4GoEnjy4tvDEQbmpAT2",
+      "backing": {
+        "solPriceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+        "fixedRate": 1.31
+      }
+    },
+    "F1FZjjvG7DRRvF3tnUVp9N8y6a46i7rH2qfYLhnA1dK6": {
+      "symbol": "JupSOL",
+      "name": "Jupiter staked SOL (mock)",
+      "decimals": 9,
+      "priceAccount": "CRD3G47a8NwXAEPKSQohk2DMdiF6cGJcfHF5XUWLApVS",
+      "backing": {
+        "solPriceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+        "fixedRate": 1.22
+      }
     }
-  }
+  },
+  "lookupTable": "A9KAGTcNirqiHQePpGe1pgvjdJrKAS62PemxoZeiiENS"
 }
