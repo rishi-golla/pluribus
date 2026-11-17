@@ -78,4 +78,6 @@ pub enum PluribusError {
     UnsupportedDex,
     #[msg("The vault holds less than its books say, so it takes no deposits")]
     VaultShort,
+    #[msg("This token's price is unclear around a corporate action, so it can't be seized yet")]
+    PriceUnclear,
 }

@@ -174,6 +174,7 @@ pub fn asset_params(group: u8, oracle: u8, feed: [u8; 32], liq_cost_bps: u16) ->
         rate_feed_id: [0; 32],
         liq_price_age_secs: 60,
         ui_multiplier: false,
+        jump_hold_secs: 0,
     }
 }
 

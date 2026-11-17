@@ -72,6 +72,8 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?;
     let (debt, limit) = (a.pool.debt_of(&a.credit)?, h.liquidation_limit());
     require!(debt > limit, PluribusError::NotLiquidatable);
+    // Its price may be off by a split's ratio, so it waits until clear while other collateral can go
+    require!(!h.unclear[i], PluribusError::PriceUnclear);
 
     let held = a.credit.positions[i].amount as u128;
     let bonus = BPS + a.pool.params.liq_bonus_bps as u128;

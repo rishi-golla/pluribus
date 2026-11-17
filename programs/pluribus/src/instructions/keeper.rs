@@ -67,9 +67,12 @@ pub fn handle_update_vol(ctx: Context<UpdateVol>) -> Result<()> {
         if asset.jump_since == 0 || q.publish_time < asset.jump_since {
             asset.jump_since = q.publish_time;
         }
-        if q.publish_time < asset.jump_since + token2022::MULTIPLIER_GUARD_SECS {
+        if q.publish_time < asset.jump_since + asset.params.jump_hold_secs as i64 {
             return Ok(());
         }
+    } else if q.publish_time <= asset.jump_since {
+        // A price from before a noted jump says nothing about whether it held
+        return Ok(());
     }
     asset.jump_since = 0;
     asset.record_vol(q.price as u64, q.conf as u64, q.publish_time, p)?;

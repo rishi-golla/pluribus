@@ -15,6 +15,8 @@ pub struct Health {
     pub market: [u128; MAX_POSITIONS],
     /// Price of the token, or of the LP base token
     pub price: [u128; MAX_POSITIONS],
+    /// A token whose price is unclear right now, around a corporate action, which can't be seized until it is clear
+    pub unclear: [bool; MAX_POSITIONS],
 }
 
 /// The worst scenario for the whole portfolio
@@ -142,14 +144,11 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                         };
                         // A per-share price for a token whose balances carry a corporate-action multiplier
                         let price = match mint.as_ref().and_then(|m| m.scaled).filter(|_| asset.params.ui_multiplier) {
-                            Some(s) => match token2022::token_price(&asset, &s, now, own.publish_time, price)? {
-                                Some((token, sure)) => {
-                                    moving = !sure;
-                                    token
-                                }
-                                // From before the last two multiplier changes: only a newer price can be placed
-                                None => return err!(PluribusError::StalePrice),
-                            },
+                            Some(s) => {
+                                let (token, clear) = token2022::token_price(&asset, &s, now, own.publish_time, price)?;
+                                moving = !clear;
+                                token
+                            }
                             None => price,
                         };
                         // A vault holding less than its books say pays each holder pro rata, so each booked token is worth that share
@@ -167,6 +166,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let short = vault.is_some_and(|(held, frozen)| frozen || held < asset.total_deposited);
                 let halted = mint.is_some_and(|m| m.halted) || short;
                 let paused = asset.params.paused || now < pool.effective_at(asset.active_at) || halted || moving || !fresh;
+                h.unclear[i] = moving;
                 let d = asset.dynamic_shocks(params);
                 (valuer, asset.params.group, asset.params.liq_cost_bps as u128, paused, d)
             }

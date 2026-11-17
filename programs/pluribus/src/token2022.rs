@@ -145,18 +145,24 @@ pub fn far(asset: &Asset, token_price: u128) -> bool {
     r > 0 && (token_price * 2 > r * 3 || token_price * 3 < r * 2)
 }
 
-/// The token price for a per-share `price` published at `t`, whether it can back new debt, or None when it is too old to place
-/// A jump far from the last sample with no multiplier change behind it may be the feed repricing for a split the mint
-/// has not applied yet: until the volatility crank has seen it hold for the guard, the token is valued at the last
-/// sample and backs no new debt
-pub fn token_price(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> Result<Option<(u128, bool)>> {
-    let Some((m, sure)) = multiplier(asset, s, now, t, price) else { return Ok(None) };
+/// The token price for a per-share `price` published at `t`, and whether it is clear
+/// Unclear when the basis is uncertain or unknown, or when the price jumped far from the last sample and the volatility
+/// crank has not yet seen that hold for the asset's `jump_hold_secs`, which may be the feed repricing for a split the
+/// mint has not applied. An unclear token backs no new debt, is not seized, and counts toward the liquidation line at
+/// the lower of its price and the last sample, so a real crash shows at once and a jump up lifts nothing
+pub fn token_price(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> Result<(u128, bool)> {
+    let (m, sure) = multiplier(asset, s, now, t, price).unwrap_or_else(|| {
+        // Too old to place: the lowest basis it could be on
+        let low = (asset.mult_prev as u128).min(asset.mult as u128).min(s.in_effect(now).unwrap_or(u128::MAX));
+        (low, false)
+    });
     let token = crate::math::mul_div_floor(price, m, MULTIPLIER_ONE)?;
-    let held = asset.jump_since != 0 && t >= asset.jump_since + MULTIPLIER_GUARD_SECS;
-    if far(asset, token) && !held {
-        return Ok(Some((asset.vol_price as u128, false)));
+    let held = asset.jump_since != 0 && t >= asset.jump_since + asset.params.jump_hold_secs as i64;
+    if sure && (held || !far(asset, token)) {
+        return Ok((token, true));
     }
-    Ok(Some((token, sure)))
+    let sample = asset.vol_price as u128;
+    Ok((if sample > 0 { token.min(sample) } else { token }, false))
 }
 
 /// Of two multipliers, the one that puts the token's price nearer the last sampled token price

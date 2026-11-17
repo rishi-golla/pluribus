@@ -262,6 +262,8 @@ fn check_asset(pool: &Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
     require!(params.vol_horizon_secs == 0 || (worst(true) > 0 && worst(false) > 0), PluribusError::InvalidParams);
     // The volatility crank's samples are what tell a split from a crash, so a multiplier token needs them
     require!(!params.ui_multiplier || params.vol_horizon_secs > 0, PluribusError::InvalidParams);
+    let hold = params.jump_hold_secs as i64;
+    require!(!params.ui_multiplier || (crate::token2022::MULTIPLIER_GUARD_SECS..=7 * 86_400).contains(&hold), PluribusError::InvalidParams);
     Ok(())
 }
 

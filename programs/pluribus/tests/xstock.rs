@@ -67,6 +67,7 @@ fn xstock_params() -> AssetParams {
         ui_multiplier: true,
         liq_price_age_secs: 4 * DAY as u32,
         vol_horizon_secs: 3 * DAY as u32,
+        jump_hold_secs: 3_600,
         ..asset_params(GROUP_STOCK, ORACLE_PYTH, STOCK_FEED, 1000)
     }
 }
@@ -420,13 +421,17 @@ fn an_after_hours_price_blocks_nothing_the_other_collateral_covers() {
 }
 
 #[test]
-fn a_price_from_before_the_last_two_multiplier_changes_is_refused() {
+fn a_price_from_before_the_last_two_multiplier_changes_takes_the_lowest_basis_and_blocks_nothing_else() {
     let mut env = Env::new();
     env.lender(100_000 * USDC);
     let mint = list(&mut env, &Xstock::default(), 100);
     let keeper = env.wallet();
     let user = env.user();
+    let me = user.pubkey();
     env.deposit(&user, &mint, 10 * SHARE);
+    let sol = env.sol;
+    env.deposit(&user, &sol, 10 * SOL);
+    expect_ok(env.draw(&user, 100 * USDC));
     // Two changes applied at once, each seen soon after, while the last price stays the one from before both
     for m in [0.1, 0.101] {
         env.warp(2 * 3_600);
@@ -436,17 +441,18 @@ fn a_price_from_before_the_last_two_multiplier_changes_is_refused() {
     }
     let asset: Asset = env.load(&env.asset_pda(&mint));
     assert!(asset.mult_prev_since > 0 && asset.mult_since > asset.mult_prev_since);
-    // The asset only remembers the last two multipliers, so that price can't be placed on any basis
-    expect_err(env.draw(&user, USDC), PluribusError::StalePrice);
-    let liquidator = env.wallet();
-    let usdc = env.usdc;
-    env.fund(&usdc, &liquidator.pubkey(), 1_000 * USDC);
-    env.fund(&mint, &liquidator.pubkey(), 0);
-    expect_err(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &user.pubkey(), &mint, u64::MAX)], &[&liquidator]), PluribusError::StalePrice);
+    // That price can't be placed on a known basis: the token counts at the lowest it could be on and backs nothing new,
+    // while the rest of the account still values, withdraws and draws
+    env.set_price(&sol, 150 * USDC);
+    let h = env.health(&me);
+    assert!((h.position_value[0] as f64 / (10.0 * 100.0 * 0.1 * USDC as f64) - 1.0).abs() < 1e-6, "value {}", h.position_value[0]);
+    expect_ok(env.send(&[env.withdraw_token_ix(&me, &sol, SOL)], &[&user]));
+    expect_ok(env.draw(&user, USDC));
     // A new price an hour after the last change is on the new basis
     env.warp(3_600);
     env.set_price(&mint, 990 * USDC);
-    let h = env.health(&user.pubkey());
+    env.set_price(&sol, 150 * USDC);
+    let h = env.health(&me);
     assert!((h.position_value[0] as f64 / (10.0 * 990.0 * 0.101 * USDC as f64) - 1.0).abs() < 1e-6, "value {}", h.position_value[0]);
 }
 
@@ -487,7 +493,7 @@ fn a_feed_that_reprices_before_the_mint_backs_no_new_debt_and_is_not_sampled() {
 }
 
 #[test]
-fn a_real_crash_counts_once_it_has_held_for_the_guard() {
+fn a_real_crash_shows_on_the_liquidation_line_at_once_and_the_token_is_seized_once_it_has_held() {
     let mut env = Env::new();
     env.lender(100_000 * USDC);
     let mint = list(&mut env, &Xstock::default(), 100);
@@ -497,19 +503,59 @@ fn a_real_crash_counts_once_it_has_held_for_the_guard() {
     let user = env.user();
     let me = user.pubkey();
     env.deposit(&user, &mint, 10 * SHARE);
-    // The stock falls 60% with no corporate action: held at the last sample at first, and backing nothing new
+    expect_ok(env.draw(&user, 500 * USDC));
+    // The stock falls 60% with no corporate action: the line takes the lower price at once, but the token isn't seized
+    // while the jump could still be a split the issuer has yet to apply
     env.warp(120);
     env.set_price(&mint, 40 * USDC);
-    assert!((env.health(&me).position_value[0] as f64 / (1_000.0 * USDC as f64) - 1.0).abs() < 1e-6);
+    let h = env.health(&me);
+    assert!((h.position_value[0] as f64 / (400.0 * USDC as f64) - 1.0).abs() < 1e-6, "value {}", h.position_value[0]);
+    assert!(h.credit_limit == 0 && h.debt > h.liquidation_limit);
+    let liquidator = env.wallet();
+    let usdc = env.usdc;
+    env.fund(&usdc, &liquidator.pubkey(), 1_000 * USDC);
+    env.fund(&mint, &liquidator.pubkey(), 0);
+    let liquidate = |env: &mut Env| env.send(&[env.liquidate_ix(&liquidator.pubkey(), &me, &mint, u64::MAX)], &[&liquidator]);
+    expect_err(liquidate(&mut env), PluribusError::PriceUnclear);
     expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
-    // An hour later the crank folds it in as volatility, and the token is worth the new price
+    // Once it has held for the asset's hold the crank folds it in as volatility, and the token can be seized
     env.warp(3_600);
     env.set_price(&mint, 40 * USDC);
     expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
     let after: Asset = env.load(&env.asset_pda(&mint));
     assert_eq!((after.vol_price, after.jump_since), (40 * USDC, 0));
     assert!(after.var_fast > before.var_fast);
-    assert!((env.health(&me).position_value[0] as f64 / (400.0 * USDC as f64) - 1.0).abs() < 1e-6);
+    expect_ok(liquidate(&mut env));
+}
+
+#[test]
+fn a_jump_up_lifts_nothing_and_the_token_is_not_seized_at_the_old_price() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let mint = list(&mut env, &Xstock::default(), 100);
+    let keeper = env.wallet();
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    let user = env.user();
+    let me = user.pubkey();
+    env.deposit(&user, &mint, 10 * SHARE);
+    let sol = env.sol;
+    env.deposit(&user, &sol, 10 * SOL);
+    let limit = env.health(&me).credit_limit;
+    expect_ok(env.draw(&user, limit));
+    // The stock jumps 70% as SOL crashes: the stock still counts at its last sample, and only SOL can be taken
+    env.warp(120);
+    env.set_price(&mint, 170 * USDC);
+    env.set_price(&sol, 50 * USDC);
+    let h = env.health(&me);
+    assert!((h.position_value[0] as f64 / (1_000.0 * USDC as f64) - 1.0).abs() < 1e-6, "value {}", h.position_value[0]);
+    assert!(h.debt > h.liquidation_limit);
+    let liquidator = env.wallet();
+    let usdc = env.usdc;
+    env.fund(&usdc, &liquidator.pubkey(), 10_000 * USDC);
+    env.fund(&mint, &liquidator.pubkey(), 0);
+    env.fund(&sol, &liquidator.pubkey(), 0);
+    expect_err(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &me, &mint, u64::MAX)], &[&liquidator]), PluribusError::PriceUnclear);
+    expect_ok(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &me, &sol, u64::MAX)], &[&liquidator]));
 }
 
 #[test]

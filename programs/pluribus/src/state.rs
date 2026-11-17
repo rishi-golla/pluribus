@@ -638,6 +638,9 @@ pub struct AssetParams {
     pub liq_price_age_secs: u32,
     /// Multiply the per-share price by the mint's corporate-action multiplier, for a per-share feed on a scaled token
     pub ui_multiplier: bool,
+    /// How long a multiplier token's price jump must hold, with no multiplier change, before it counts as a real move:
+    /// longer than the issuer could lag the feed in applying a split
+    pub jump_hold_secs: u32,
 }
 
 impl AssetParams {
