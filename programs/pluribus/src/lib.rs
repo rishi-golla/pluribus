@@ -135,6 +135,10 @@ pub mod pluribus {
         keeper::handle_update_vol(ctx)
     }
 
+    pub fn sync_mint(ctx: Context<SyncMint>) -> Result<()> {
+        keeper::handle_sync_mint(ctx)
+    }
+
     pub fn convert_to_junior(ctx: Context<ConvertToJunior>, shares: u64) -> Result<()> {
         junior::handle_convert_to_junior(ctx, shares)
     }

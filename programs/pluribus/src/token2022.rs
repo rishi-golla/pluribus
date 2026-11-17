@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::error::PluribusError;
+use crate::{error::PluribusError, state::Asset};
 
 // Token-2022 mints keep extensions after the base mint and the account type byte, as type u16 | length u16 | value
 const ACCOUNT_TYPE_AT: usize = 165;
@@ -57,11 +57,15 @@ fn hook_set(value: &[u8]) -> bool {
 pub fn check_listable(acc: &AccountInfo) -> Result<()> {
     let d = acc.try_borrow_data()?;
     for (kind, value) in extensions(&d)? {
+        // The extensions whose values are read must have the exact size the Token-2022 program gives them
         let ok = match kind {
-            CONFIDENTIAL_TRANSFER_MINT | PERMANENT_DELEGATE | METADATA_POINTER | TOKEN_METADATA | GROUP_POINTER | TOKEN_GROUP
-            | GROUP_MEMBER_POINTER | TOKEN_GROUP_MEMBER | SCALED_UI_AMOUNT | PAUSABLE => true,
-            TRANSFER_HOOK => !hook_set(value),
-            DEFAULT_ACCOUNT_STATE => value.first() == Some(&STATE_INITIALIZED),
+            CONFIDENTIAL_TRANSFER_MINT | METADATA_POINTER | TOKEN_METADATA | GROUP_POINTER | TOKEN_GROUP | GROUP_MEMBER_POINTER
+            | TOKEN_GROUP_MEMBER => true,
+            PERMANENT_DELEGATE => value.len() == 32,
+            PAUSABLE => value.len() == 33,
+            SCALED_UI_AMOUNT => value.len() == 56,
+            TRANSFER_HOOK => value.len() == 64 && !hook_set(value),
+            DEFAULT_ACCOUNT_STATE => value == [STATE_INITIALIZED],
             _ => false,
         };
         require!(ok, PluribusError::UnsupportedMint);
@@ -73,32 +77,101 @@ pub fn check_listable(acc: &AccountInfo) -> Result<()> {
 pub const MULTIPLIER_ONE: u128 = 1_000_000_000;
 
 /// This close to a multiplier change, a price might be quoted against either multiplier
-pub const MULTIPLIER_GUARD_SECS: u64 = 3_600;
+pub const MULTIPLIER_GUARD_SECS: i64 = 3_600;
 
-/// A corporate-action multiplier in tokens per share scaled by 1e9: `old` until `at`, `new` from then on
+/// Multipliers that can be priced: up to a 10000-for-1 split or reverse split
+const MULTIPLIER_RANGE: std::ops::RangeInclusive<f64> = 1e-4..=1e4;
+
+/// A corporate-action multiplier in tokens per share scaled by 1e9: `old` until `at`, `new` from then on,
+/// each None when it is outside the range that can be priced
+/// Token-2022 also applies an update at once when its time is not in the future, leaving `old == new`,
+/// so only the asset's own record of what it last saw dates such a change
 #[derive(Clone, Copy)]
 pub struct Scaled {
-    pub old: u128,
-    pub new: u128,
+    pub old: Option<u128>,
+    pub new: Option<u128>,
     pub at: i64,
 }
 
 impl Scaled {
-    /// The multiplier for a price published at `t`, chosen by that publish time rather than the clock, so a Friday price
-    /// is never paired with a split that applied over the weekend
-    /// Within the guard of a change the price could be on either basis: the larger multiplier is used, so no one is
-    /// liquidated over the mix-up, and `true` says the token should back no new debt meanwhile
-    pub fn multiplier_for(&self, t: i64) -> (u128, bool) {
-        if self.old != self.new && t.abs_diff(self.at) < MULTIPLIER_GUARD_SECS {
-            return (self.old.max(self.new), true);
+    pub fn in_effect(&self, now: i64) -> Option<u128> {
+        if now >= self.at {
+            self.new
+        } else {
+            self.old
         }
-        (if t >= self.at { self.new } else { self.old }, false)
     }
+}
 
-    /// Whether a change takes effect after `from` and by `to`
-    pub fn changes_between(&self, from: i64, to: i64) -> bool {
-        self.old != self.new && from < self.at && self.at <= to
+/// The multiplier for a price published at `t`, and whether that basis is certain
+/// Uncertain near a change, or when the mint's multiplier moved without the asset seeing it: the token then backs no
+/// new debt, and of the two bases the one that leaves the token's worth nearest the last sampled price is used
+pub fn multiplier(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> (u128, bool) {
+    let (prev, cur) = (asset.mult_prev as u128, asset.mult as u128);
+    let near = |at: i64| t.abs_diff(at) < MULTIPLIER_GUARD_SECS as u64;
+    let in_effect = s.in_effect(now);
+    if in_effect != Some(cur) {
+        // A change scheduled from the asset's multiplier still says exactly when it applied
+        if let Some(m) = in_effect.filter(|m| s.old == Some(cur) && s.new == Some(*m) && s.at <= now) {
+            return if near(s.at) {
+                (closest(asset, price, cur, m), false)
+            } else {
+                (if t >= s.at { m } else { cur }, true)
+            };
+        }
+        return (closest(asset, price, cur, in_effect.unwrap_or(cur)), false);
     }
+    // A change still ahead might already be in a price quoted shortly before it
+    if let Some(next) = s.new.filter(|n| s.at > now && s.old != Some(*n) && t + MULTIPLIER_GUARD_SECS > s.at) {
+        return (closest(asset, price, cur, next), false);
+    }
+    if asset.mult_since == 0 || t >= asset.mult_since + MULTIPLIER_GUARD_SECS {
+        return (cur, true);
+    }
+    if asset.mult_exact && t + MULTIPLIER_GUARD_SECS <= asset.mult_since {
+        return (prev, true);
+    }
+    (closest(asset, price, prev, cur), false)
+}
+
+/// Of two multipliers, the one that puts the token's price nearer the last sampled token price
+/// A split leaves a token's worth about where it was, so the wrong basis is off by the split's ratio
+/// With no sample to go by, the higher one, so no one is liquidated over the mix-up
+fn closest(asset: &Asset, price: u128, a: u128, b: u128) -> u128 {
+    if a == b {
+        return a;
+    }
+    if asset.vol_price == 0 {
+        return a.max(b);
+    }
+    // Comparison only, never a payout, so floating point is fine here
+    let off = |m: u128| {
+        let r = price as f64 * m as f64 / MULTIPLIER_ONE as f64 / asset.vol_price as f64;
+        r.max(1.0 / r)
+    };
+    if off(a) <= off(b) {
+        a
+    } else {
+        b
+    }
+}
+
+/// Records the multiplier in effect now when it differs from the asset's, and says whether it did
+/// A change scheduled from the asset's multiplier keeps its exact time, any other is dated when first seen
+pub fn sync(asset: &mut Asset, s: &Scaled, now: i64) -> bool {
+    let Some(m) = s.in_effect(now) else { return false };
+    let cur = asset.mult as u128;
+    if m == cur {
+        return false;
+    }
+    let exact = s.old == Some(cur) && s.new == Some(m) && s.at <= now;
+    asset.mult_prev = asset.mult;
+    asset.mult = m as u64;
+    asset.mult_since = if exact { s.at } else { now };
+    asset.mult_exact = exact;
+    // Sampling starts over on the new basis, and the last price stays as the reference that tells the bases apart
+    asset.vol_time = 0;
+    true
 }
 
 /// What a listed Token-2022 mint says right now: whether transfers are stopped, and its multiplier if it has one
@@ -117,18 +190,35 @@ pub fn read_state(acc: &AccountInfo) -> Result<MintState> {
             PAUSABLE => state.halted |= value.get(32).is_some_and(|b| *b != 0),
             TRANSFER_HOOK => state.halted |= hook_set(value),
             // Authority 32 | multiplier f64 | when the new one applies i64 | new multiplier f64
-            SCALED_UI_AMOUNT => {
-                require!(value.len() >= 56, PluribusError::InvalidPriceAccount);
-                let scaled = |raw: &[u8]| -> Result<u128> {
+            SCALED_UI_AMOUNT if value.len() == 56 => {
+                let parse = |raw: &[u8]| {
                     let m = f64::from_le_bytes(raw.try_into().unwrap());
-                    require!(m.is_finite() && (0.01..=100.0).contains(&m), PluribusError::InvalidPriceAccount);
-                    Ok((m * 1e9) as u128)
+                    (m.is_finite() && MULTIPLIER_RANGE.contains(&m)).then(|| (m * 1e9) as u128)
                 };
                 let at = i64::from_le_bytes(value[40..48].try_into().unwrap());
-                state.scaled = Some(Scaled { old: scaled(&value[32..40])?, new: scaled(&value[48..56])?, at });
+                state.scaled = Some(Scaled { old: parse(&value[32..40]), new: parse(&value[48..56]), at });
             }
             _ => {}
         }
     }
     Ok(state)
+}
+
+/// The multiplier a newly listed asset starts from: the one in effect, or one for a mint without the extension
+pub fn listing_multiplier(acc: &AccountInfo, now: i64) -> Result<u128> {
+    Ok(match read_state(acc)?.scaled {
+        Some(s) => s.in_effect(now).ok_or_else(|| error!(PluribusError::UnsupportedMint))?,
+        None => MULTIPLIER_ONE,
+    })
+}
+
+/// A Token-2022 vault's balance and whether it is frozen
+/// The issuer's permanent delegate can move tokens out and its freeze authority can freeze the vault, neither of
+/// which the program's books see
+pub fn read_vault(acc: &AccountInfo) -> Result<(u64, bool)> {
+    require_keys_eq!(*acc.owner, anchor_spl::token_2022::ID, PluribusError::AccountMismatch);
+    let d = acc.try_borrow_data()?;
+    // Layout: mint 32 | owner 32 | amount u64 | delegate 36 | state u8 at 108, where 2 is frozen
+    require!(d.len() >= 165, PluribusError::AccountMismatch);
+    Ok((u64::from_le_bytes(d[64..72].try_into().unwrap()), d[108] == 2))
 }

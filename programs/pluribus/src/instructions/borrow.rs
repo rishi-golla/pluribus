@@ -63,6 +63,8 @@ pub fn handle_deposit_token(ctx: Context<MoveToken>, amount: u64) -> Result<()> 
     let total = a.asset.total_deposited.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
     // A cap of zero means uncapped
     require!(a.asset.params.deposit_cap == 0 || total <= a.asset.params.deposit_cap, PluribusError::DepositCap);
+    // A vault short of its books would hand part of this deposit to earlier holders
+    require!(a.vault.amount >= a.asset.total_deposited, PluribusError::VaultShort);
 
     a.credit.add_token(&a.mint.key(), amount)?;
     a.asset.total_deposited = total;
@@ -76,9 +78,10 @@ pub fn handle_withdraw_token(ctx: Context<MoveToken>, amount: u64) -> Result<()>
     let a = ctx.accounts;
     require!(amount > 0, PluribusError::ZeroAmount);
     a.pool.accrue(now)?;
+    let sent = pro_rata(amount, a.vault.amount, a.asset.total_deposited)?;
     a.credit.remove_token(&a.mint.key(), amount)?;
     a.asset.total_deposited = a.asset.total_deposited.saturating_sub(amount);
-    push(&a.token_program, &a.mint, &a.vault, &a.owner_token, &a.pool, amount)?;
+    push(&a.token_program, &a.mint, &a.vault, &a.owner_token, &a.pool, sent)?;
     require_within_limit(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
     emit!(CollateralChanged { account: a.credit.key(), mint: a.mint.key(), kind: KIND_TOKEN, amount, deposit: false });
     Ok(())
@@ -166,6 +169,15 @@ pub fn handle_withdraw_lp(ctx: Context<WithdrawLp>) -> Result<()> {
     require_within_limit(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
     emit!(CollateralChanged { account: a.credit.key(), mint: a.position_mint.key(), kind: KIND_LP, amount: 1, deposit: false });
     Ok(())
+}
+
+/// What `amount` booked tokens pay out of a vault holding `held` against `booked`: in full, or pro rata when the vault is short
+/// Only a Token-2022 issuer's delegate can take tokens out of a vault behind the program's back
+pub fn pro_rata(amount: u64, held: u64, booked: u64) -> Result<u64> {
+    if held >= booked {
+        return Ok(amount);
+    }
+    to_u64(crate::math::mul_div_floor(amount as u128, held as u128, booked as u128)?)
 }
 
 /// Sends a position NFT out of its vault and closes the vault, returning rent to `rent_to`

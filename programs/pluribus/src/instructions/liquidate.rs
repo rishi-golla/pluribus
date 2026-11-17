@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::{
-    constants::*, error::PluribusError, events::*, instructions::borrow::release_nft, math::*, risk::*, state::*, token::*,
+    constants::*, error::PluribusError, events::*, instructions::borrow::{pro_rata, release_nft}, math::*, risk::*, state::*, token::*,
 };
 
 /// Health is the margin between the liquidation limit and the debt, and a liquidation must not shrink it
@@ -93,11 +93,13 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     require_not_worse(debt, limit, debt - repay, worst(&after, h.scenarios()))?;
 
     let (repay, seize) = (to_u64(repay)?, to_u64(seize)?);
+    // The health check already priced each booked token at its share of a short vault
+    let sent = pro_rata(seize, a.vault.amount, a.asset.total_deposited)?;
     a.pool.repay(&mut a.credit, repay)?;
     a.credit.remove_token(&mint, seize)?;
     a.asset.total_deposited = a.asset.total_deposited.saturating_sub(seize);
     pull(&a.token_program, &a.usdc_mint, &a.liquidator_usdc, &a.usdc_vault, &a.liquidator, repay)?;
-    push(&a.collateral_token_program, &a.collateral_mint, &a.vault, &a.liquidator_collateral, &a.pool, seize)?;
+    push(&a.collateral_token_program, &a.collateral_mint, &a.vault, &a.liquidator_collateral, &a.pool, sent)?;
     emit!(Liquidated {
         account: a.credit.key(),
         liquidator: a.liquidator.key(),

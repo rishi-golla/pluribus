@@ -676,6 +676,8 @@ impl AssetParams {
                 && self.rate_source <= RATE_FIXED
                 && (self.rate_source == RATE_NONE || self.oracle == ORACLE_PYTH)
                 && (self.rate_source != RATE_FIXED || self.fixed_rate > 0)
+                // A backing is valued with a SOL price, by its demo account or its Pyth feed
+                && (self.rate_source == RATE_NONE || (self.rate_base_mint != Pubkey::default() && self.rate_feed_id != [0; 32]))
                 && (self.rate_source == RATE_NONE || self.rate_base_mint != Pubkey::default())
                 && (self.rate_source != RATE_STAKE_POOL || self.rate_account != Pubkey::default())
                 && self.liq_price_age_secs >= self.max_price_age_secs,
@@ -708,8 +710,15 @@ pub struct Asset {
     pub vol_time: i64,
     /// Classic SPL Token or Token-2022, which every transfer of this asset must go through
     pub token_program: Pubkey,
+    /// For a Token-2022 token with a corporate-action multiplier: the one in effect when last synced and the one before,
+    /// in tokens per share scaled by 1e9
+    pub mult: u64,
+    pub mult_prev: u64,
+    /// When `mult` took effect: exactly for a change scheduled ahead, otherwise when it was first seen; 0 before any change
+    pub mult_since: i64,
+    pub mult_exact: bool,
     /// Room for fields added later without moving the ones above
-    pub reserved: [u8; 64],
+    pub reserved: [u8; 39],
 }
 
 impl Asset {
@@ -760,13 +769,6 @@ impl Asset {
         Ok(())
     }
 
-    /// Measures from this price again without folding in the move since the last sample, for a move that is not volatility
-    pub fn restart_vol(&mut self, price: u64, publish_time: i64, p: &PoolParams) -> Result<()> {
-        require!(publish_time >= self.vol_time + p.vol_min_interval_secs as i64, PluribusError::VolTooSoon);
-        self.vol_price = price;
-        self.vol_time = publish_time;
-        Ok(())
-    }
 }
 
 /// A whitelisted Orca Whirlpool or Raydium CLMM pool whose positions count as collateral, always quoted in USDC

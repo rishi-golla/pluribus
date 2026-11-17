@@ -498,7 +498,7 @@ impl Env {
         }
         let asset: Asset = self.load(&self.asset_pda(mint));
         if asset.token_program == TOKEN_2022 {
-            keys.push(*mint);
+            keys.extend([*mint, asset.vault]);
         }
         keys.push(self.price_account(mint));
         if asset.params.rate_source != RATE_NONE {
@@ -560,10 +560,14 @@ impl Env {
     pub fn update_vol_ix(&self, mint: &Pubkey) -> Instruction {
         let mut metas = pluribus::accounts::UpdateVol { pool: self.pool, asset: self.asset_pda(mint), price: self.price_account(mint) }.to_account_metas(None);
         // What its health check reads besides the asset and its own price: a Token-2022 mint, a staking token's backing
-        let price = self.price_account(mint);
-        let extra = self.token_health_keys(mint).into_iter().skip(1).filter(|k| *k != price);
+        let (price, vault) = (self.price_account(mint), self.vault_pda(mint));
+        let extra = self.token_health_keys(mint).into_iter().skip(1).filter(|k| *k != price && *k != vault);
         metas.extend(extra.map(|k| AccountMeta::new_readonly(k, false)));
         self.ix(pluribus::instruction::UpdateVol {}.data(), metas, None)
+    }
+
+    pub fn sync_mint_ix(&self, mint: &Pubkey) -> Instruction {
+        self.ix(pluribus::instruction::SyncMint {}.data(), pluribus::accounts::SyncMint { asset: self.asset_pda(mint), mint: *mint }.to_account_metas(None), None)
     }
 
     pub fn set_asset_ix(&self, admin: &Pubkey, mint: &Pubkey, params: AssetParams) -> Instruction {

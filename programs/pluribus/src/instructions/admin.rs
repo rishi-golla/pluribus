@@ -257,9 +257,9 @@ fn check_asset(pool: &Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
         if params.oracle == ORACLE_FIXED { is_usdc } else { !is_usdc && pool.params.bonus_fits(params.liq_cost_bps) },
         PluribusError::InvalidParams
     );
-    // A dynamic shock is laid over its group's column, so it needs a group with a column that shocks something
-    let worst = (0..pool.params.num_scenarios as usize).map(|s| pool.params.shock(true, s, params.group)).max().unwrap_or(0);
-    require!(params.vol_horizon_secs == 0 || worst > 0, PluribusError::InvalidParams);
+    // A dynamic shock is laid over its group's columns, so it needs a group whose columns shock something
+    let worst = |init: bool| (0..pool.params.num_scenarios as usize).map(|s| pool.params.shock(init, s, params.group)).max().unwrap_or(0);
+    require!(params.vol_horizon_secs == 0 || (worst(true) > 0 && worst(false) > 0), PluribusError::InvalidParams);
     Ok(())
 }
 
@@ -278,14 +278,16 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
     record_asset(&mut ctx.accounts.pool, &ctx.accounts.mint.key(), &params)?;
     require!(sigma_seed_bps <= 100_000, PluribusError::InvalidParams);
     let token_program = ctx.accounts.token_program.key();
+    let now = Clock::get()?.unix_timestamp;
+    let mut mult = crate::token2022::MULTIPLIER_ONE;
     if token_program == anchor_spl::token_2022::ID {
         crate::token2022::check_listable(&ctx.accounts.mint.to_account_info())?;
+        mult = crate::token2022::listing_multiplier(&ctx.accounts.mint.to_account_info(), now)?;
     } else {
         require_keys_eq!(token_program, anchor_spl::token::ID, PluribusError::UnsupportedMint);
     }
     // USDC is moved with the classic program everywhere
     require!(ctx.accounts.mint.key() != ctx.accounts.pool.usdc_mint || token_program == anchor_spl::token::ID, PluribusError::UnsupportedMint);
-    let now = Clock::get()?.unix_timestamp;
     let seed = Asset::seed_variance(sigma_seed_bps);
     ctx.accounts.asset.set_inner(Asset {
         mint: ctx.accounts.mint.key(),
@@ -302,7 +304,11 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         vol_price: 0,
         vol_time: 0,
         token_program,
-        reserved: [0; 64],
+        mult: mult as u64,
+        mult_prev: mult as u64,
+        mult_since: 0,
+        mult_exact: false,
+        reserved: [0; 39],
     });
     Ok(())
 }

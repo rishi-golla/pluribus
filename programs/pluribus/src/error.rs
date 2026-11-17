@@ -76,4 +76,6 @@ pub enum PluribusError {
     VolTooSoon,
     #[msg("This needs an Orca market with the base token first")]
     UnsupportedDex,
+    #[msg("The vault holds less than its books say, so it takes no deposits")]
+    VaultShort,
 }
