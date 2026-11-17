@@ -82,6 +82,11 @@ type PoolLike = {
   juniorAssets: Numeric;
   borrowIndex: Numeric[];
   debtShares: Numeric[];
+  yieldBuffer: Numeric;
+  epochStart: Numeric;
+  epochEnd: Numeric;
+  epochSeniorBudget: Numeric;
+  epochJuniorBudget: Numeric;
   params: {
     baseRateBps: number;
     slope1Bps: number;
@@ -89,11 +94,14 @@ type PoolLike = {
     kinkBps: number;
     reserveFactorBps: number;
     protocolFeeBps: number;
-    protectionFeeBps: number;
     juniorTargetBps: number;
     juniorPremiumBps: number;
+    yieldMarginBps: number;
+    epochSecs: number;
   };
 };
+
+const SECONDS_PER_YEAR = 31_536_000;
 
 // Pool totals in USDC as of the last accrual, with rates in bps a year
 // Give each share mint's supply in base units to get what one share of that tranche is worth
@@ -108,28 +116,29 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
     utilization <= kink
       ? p.baseRateBps + (p.slope1Bps * utilization) / kink
       : p.baseRateBps + p.slope1Bps + (p.slope2Bps * (utilization - kink)) / (1 - kink);
-  const lenderAssets = Math.max(cash + debt - reserves - protocolFees, 0);
+  const yieldBuffer = num(pool.yieldBuffer) / 1e6;
+  // Interest still waiting in the yield buffer belongs to no lender yet
+  const lenderAssets = Math.max(cash + debt - reserves - protocolFees - yieldBuffer, 0);
   const juniorAssets = Math.min(num(pool.juniorAssets) / 1e6, lenderAssets);
   const seniorAssets = lenderAssets - juniorAssets;
-  // Mirrors `Pool::accrue`: a year of interest at today's rate, the premium off the top of the lenders' part,
-  // juniors' own share of the rest, then the protection fee out of the seniors' share
-  // Premium and fee are paid in full only once junior lenders fill the target share of the pool
+  // Mirrors `Pool::split_weights`: payouts split senior : junior as S : J + premium x filled x S,
+  // the premium in full once junior lenders hold the target share of the pool
   const target = p.juniorTargetBps / BPS;
+  const premiumRate = p.juniorPremiumBps / BPS;
   const filled = lenderAssets > 0 ? Math.min(juniorAssets / lenderAssets / target, 1) : 0;
+  const juniorWeight = juniorAssets + premiumRate * filled * seniorAssets;
+  const weights = seniorAssets + juniorWeight;
   const interest = (borrowRateBps / BPS) * debt;
   const toLenders = interest * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
-  const premium = Math.min(interest * (p.juniorPremiumBps / BPS) * filled, toLenders);
-  const rest = toLenders - premium;
-  const own = lenderAssets > 0 ? (rest * juniorAssets) / lenderAssets : 0;
-  const protection = (rest - own) * (p.protectionFeeBps / BPS) * filled;
-  const fee = (p.protectionFeeBps / BPS) * filled;
-  // What borrowers pay, spread over everything lent, after the reserve and protocol cuts
-  const lenderYield = lenderAssets > 0 ? (toLenders / lenderAssets) * BPS : 0;
-  const seniorApyBps = seniorAssets > 0 ? ((rest - own - protection) / seniorAssets) * BPS : lenderYield * (1 - fee);
-  // A junior dollar's return stays finite for the first dollar in, where it earns the premium and fee per unit of target
-  const firstDollar =
-    lenderAssets > 0 ? ((toLenders + toLenders * (p.protectionFeeBps / BPS) / target + interest * (p.juniorPremiumBps / BPS) / target) / lenderAssets) * BPS : 0;
-  const juniorApyBps = juniorAssets > 0 ? ((premium + own + protection) / juniorAssets) * BPS : firstDollar;
+  // With weekly epochs the rate is the epoch's fixed budget over the tranche's size now, otherwise today's interest as it accrues
+  const weekly = p.epochSecs > 0 && num(pool.epochEnd) > num(pool.epochStart);
+  const perYear = SECONDS_PER_YEAR / Math.max(num(pool.epochEnd) - num(pool.epochStart), 1);
+  const seniorYear = weekly ? (num(pool.epochSeniorBudget) / 1e6) * perYear : weights > 0 ? (toLenders * seniorAssets) / weights : toLenders;
+  const juniorYear = weekly ? (num(pool.epochJuniorBudget) / 1e6) * perYear : weights > 0 ? (toLenders * juniorWeight) / weights : 0;
+  // An empty tranche shows what its first dollar would earn: the senior rate, and for juniors the premium per unit of target on top
+  const seniorRate = seniorAssets > 0 ? seniorYear / seniorAssets : lenderAssets > 0 ? toLenders / lenderAssets : 0;
+  const seniorApyBps = seniorRate * BPS;
+  const juniorApyBps = (juniorAssets > 0 ? juniorYear / juniorAssets : seniorRate * (1 + (premiumRate * seniorAssets) / Math.max(lenderAssets * target, 1e-9))) * BPS;
   // The program counts one virtual share and one virtual dollar in each tranche, and never pays above the plain price
   const perShare = (assets: number, units?: Numeric) => {
     const shares = units === undefined ? 0 : num(units) / 1e6;
@@ -147,10 +156,12 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
     borrowRateBps,
     seniorShareValue: perShare(seniorAssets, supply.senior),
     juniorShareValue: perShare(juniorAssets, supply.junior),
-    // Share of senior interest that goes to junior lenders right now
-    protectionFee: fee,
-    // Share of all borrower interest paid to junior lenders as a premium right now
-    juniorPremium: (p.juniorPremiumBps / BPS) * filled,
+    yieldBuffer,
+    // The premium juniors earn on senior yield right now, after scaling below the target share
+    juniorPremium: premiumRate * filled,
+    // Shares of the lenders' interest each tranche gets
+    seniorShare: weights > 0 ? seniorAssets / weights : 1,
+    juniorShare: weights > 0 ? juniorWeight / weights : 0,
     seniorApyBps,
     juniorApyBps,
   };

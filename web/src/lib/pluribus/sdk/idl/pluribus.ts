@@ -3684,6 +3684,19 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "epochOpened",
+      "discriminator": [
+        136,
+        166,
+        130,
+        170,
+        78,
+        145,
+        67,
+        78
+      ]
+    },
+    {
       "name": "juniorExitCancelled",
       "discriminator": [
         252,
@@ -4126,6 +4139,13 @@ export type Pluribus = {
             "type": "u64"
           },
           {
+            "name": "coveredByBuffer",
+            "docs": [
+              "Lenders' interest not yet paid out, which takes losses first"
+            ],
+            "type": "u64"
+          },
+          {
             "name": "coveredByReserves",
             "type": "u64"
           },
@@ -4314,6 +4334,37 @@ export type Pluribus = {
           },
           {
             "name": "debt",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "epochOpened",
+      "docs": [
+        "A payout epoch opened: `senior_budget` and `junior_budget` are paid out evenly until `end`, out of `buffer`"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "start",
+            "type": "i64"
+          },
+          {
+            "name": "end",
+            "type": "i64"
+          },
+          {
+            "name": "seniorBudget",
+            "type": "u64"
+          },
+          {
+            "name": "juniorBudget",
+            "type": "u64"
+          },
+          {
+            "name": "buffer",
             "type": "u64"
           }
         ]
@@ -4823,6 +4874,41 @@ export type Pluribus = {
           {
             "name": "pendingAt",
             "type": "i64"
+          },
+          {
+            "name": "yieldBuffer",
+            "docs": [
+              "Lenders' interest not yet paid out: it collects here and is paid out evenly over the next epoch",
+              "It belongs to no lender until paid, so it takes losses first"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "epochStart",
+            "docs": [
+              "The current payout epoch and what each tranche gets over it, fixed when it opened"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "epochEnd",
+            "type": "i64"
+          },
+          {
+            "name": "epochSeniorBudget",
+            "type": "u64"
+          },
+          {
+            "name": "epochJuniorBudget",
+            "type": "u64"
+          },
+          {
+            "name": "epochSeniorPaid",
+            "type": "u64"
+          },
+          {
+            "name": "epochJuniorPaid",
+            "type": "u64"
           }
         ]
       }
@@ -4910,11 +4996,19 @@ export type Pluribus = {
             "type": "u16"
           },
           {
-            "name": "protectionFeeBps",
+            "name": "yieldMarginBps",
             "docs": [
-              "Share of the senior lenders' interest paid to junior lenders for taking losses first"
+              "Share of the yield buffer held back when an epoch opens, so it carries into the next one",
+              "It smooths the yield from week to week and takes losses before anyone else"
             ],
             "type": "u16"
+          },
+          {
+            "name": "epochSecs",
+            "docs": [
+              "Length of a payout epoch, aligned to Fridays at 00:00 UTC, or 0 to pay lenders' interest out as it accrues"
+            ],
+            "type": "u32"
           },
           {
             "name": "tierDiscountBps",
@@ -4937,14 +5031,15 @@ export type Pluribus = {
           {
             "name": "juniorTargetBps",
             "docs": [
-              "Junior share of lender assets at which junior lenders earn the whole protection fee and premium"
+              "Junior share of lender assets at which junior lenders earn the whole premium, below it the premium scales down"
             ],
             "type": "u16"
           },
           {
             "name": "juniorPremiumBps",
             "docs": [
-              "Share of all borrower interest paid to junior lenders on top of their own share, for taking losses first"
+              "Risk premium: junior lenders earn the senior rate plus this share of the senior yield on every senior dollar they cover",
+              "Junior rate = senior rate x (1 + premium x senior / junior), the premium scaled down below the target share"
             ],
             "type": "u16"
           },
