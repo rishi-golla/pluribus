@@ -4336,7 +4336,7 @@
     {
       "name": "EpochOpened",
       "docs": [
-        "A payout epoch opened: `senior_budget` and `junior_budget` are paid out evenly until `end`, out of `buffer`"
+        "A payout epoch opened: `budget` is paid out of `buffer` evenly until `end`, split between the tranches by their weights"
       ],
       "type": {
         "kind": "struct",
@@ -4350,11 +4350,7 @@
             "type": "i64"
           },
           {
-            "name": "senior_budget",
-            "type": "u64"
-          },
-          {
-            "name": "junior_budget",
+            "name": "budget",
             "type": "u64"
           },
           {
@@ -4880,7 +4876,7 @@
           {
             "name": "epoch_start",
             "docs": [
-              "The current payout epoch and what each tranche gets over it, fixed when it opened"
+              "The current payout epoch and the budget it pays out evenly, fixed when it opened"
             ],
             "type": "i64"
           },
@@ -4889,19 +4885,11 @@
             "type": "i64"
           },
           {
-            "name": "epoch_senior_budget",
+            "name": "epoch_budget",
             "type": "u64"
           },
           {
-            "name": "epoch_junior_budget",
-            "type": "u64"
-          },
-          {
-            "name": "epoch_senior_paid",
-            "type": "u64"
-          },
-          {
-            "name": "epoch_junior_paid",
+            "name": "epoch_paid",
             "type": "u64"
           }
         ]

@@ -85,8 +85,7 @@ type PoolLike = {
   yieldBuffer: Numeric;
   epochStart: Numeric;
   epochEnd: Numeric;
-  epochSeniorBudget: Numeric;
-  epochJuniorBudget: Numeric;
+  epochBudget: Numeric;
   params: {
     baseRateBps: number;
     slope1Bps: number;
@@ -130,13 +129,19 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const weights = seniorAssets + juniorWeight;
   const interest = (borrowRateBps / BPS) * debt;
   const toLenders = interest * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
-  // With weekly epochs the rate is the epoch's fixed budget over the tranche's size now, otherwise today's interest as it accrues
-  const weekly = p.epochSecs > 0 && num(pool.epochEnd) > num(pool.epochStart);
-  const perYear = SECONDS_PER_YEAR / Math.max(num(pool.epochEnd) - num(pool.epochStart), 1);
-  const seniorYear = weekly ? (num(pool.epochSeniorBudget) / 1e6) * perYear : weights > 0 ? (toLenders * seniorAssets) / weights : toLenders;
-  const juniorYear = weekly ? (num(pool.epochJuniorBudget) / 1e6) * perYear : weights > 0 ? (toLenders * juniorWeight) / weights : 0;
+  // With weekly epochs lenders share the epoch's fixed budget by their weights, otherwise today's interest as it accrues
+  // An epoch that has ended opens at the next accrual with the buffer less the margin
+  const now = Date.now() / 1000;
+  const [epochStart, epochEnd] = [num(pool.epochStart), num(pool.epochEnd)];
+  const weekly = p.epochSecs > 0;
+  const live = now < epochEnd && epochEnd > epochStart;
+  const budget = live ? num(pool.epochBudget) / 1e6 : yieldBuffer * (1 - p.yieldMarginBps / BPS);
+  const perYear = SECONDS_PER_YEAR / (live ? epochEnd - epochStart : p.epochSecs || 1);
+  const lenderYear = weekly ? budget * perYear : toLenders;
+  const seniorYear = weights > 0 ? (lenderYear * seniorAssets) / weights : lenderYear;
+  const juniorYear = weights > 0 ? (lenderYear * juniorWeight) / weights : 0;
   // An empty tranche shows what its first dollar would earn: the senior rate, and for juniors the premium per unit of target on top
-  const seniorRate = seniorAssets > 0 ? seniorYear / seniorAssets : lenderAssets > 0 ? toLenders / lenderAssets : 0;
+  const seniorRate = seniorAssets > 0 ? seniorYear / seniorAssets : lenderAssets > 0 ? lenderYear / lenderAssets : 0;
   const seniorApyBps = seniorRate * BPS;
   const juniorApyBps = (juniorAssets > 0 ? juniorYear / juniorAssets : seniorRate * (1 + (premiumRate * seniorAssets) / Math.max(lenderAssets * target, 1e-9))) * BPS;
   // The program counts one virtual share and one virtual dollar in each tranche, and never pays above the plain price

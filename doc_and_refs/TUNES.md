@@ -26,8 +26,8 @@ Every setting worth revisiting before mainnet, with the value deployed on devnet
 | `junior_max_pause_secs` | 90d | ≤ 90d | Longest single governance pause. |
 | `junior_pause_gap_secs` | 14d | ≥ max wait + 3d, ≥ activation delay | Unpaused time between two pauses. |
 | `activation_delay_secs` | 8d | ≥ max wait + claim window, ≤ 30d | How long new collateral and loosening changes wait. Must leave juniors time to queue, wait and claim first. |
-| `junior_premium_bps` | 1500 | ≤ 10000 | Yuzu-style risk premium: junior rate = senior rate × (1 + premium × senior / junior). At 15% and juniors at 10% of the pool, juniors earn 2.35× the senior rate. Main lever for junior APY. |
-| `junior_target_bps` | 1000 | 1 to 10000 | Junior share of the pool at which the premium is paid in full; below it the premium scales down. |
+| `junior_premium_bps` | 1500 | ≤ 5000 | Yuzu-style risk premium: junior rate = senior rate × (1 + premium × senior / junior). At 15% and juniors at 10% of the pool, juniors earn 2.35× the senior rate. Main lever for junior APY. |
+| `junior_target_bps` | 1000 | 100 to 10000 | Junior share of the pool at which the premium is paid in full; below it the premium scales down. |
 | `SEED_USDC` (setup.ts) | 1M senior, 100k junior | | Initial deposits from the admin on a fresh deployment. |
 
 The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up to `junior_max_pause_secs`.
@@ -36,7 +36,7 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
-| `epoch_secs` | 7d (Friday 00:00 UTC) | 0, or 60s to 30d | Lenders' interest collects in a buffer and is paid out over the next epoch. 0 pays interest as it accrues (used on localnet). |
+| `epoch_secs` | 7d (Friday 00:00 UTC) | 0, or 60s to 30d | Lenders' interest collects in a buffer and is paid out evenly over the next epoch, each moment's slice split by the tranches' weights. 0 pays interest as it accrues (used on localnet); a leftover buffer still pays out on its schedule. Lengths that don't divide a week aren't Friday-aligned. |
 | `yield_margin_bps` | 1000 | ≤ 5000 | Share of the buffer held back when an epoch opens. It carries into the next week, smoothing the yield and taking losses before the reserve. Higher = steadier yield and a bigger loss cushion, lower = lenders paid sooner. |
 
 ## Crash scenarios and liquidation

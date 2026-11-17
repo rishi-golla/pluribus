@@ -225,8 +225,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       /** The most the premium can be, and the junior share of the pool at which it is paid in full */
       juniorPremiumMax: params.juniorPremiumBps / 1e4,
       juniorTarget: params.juniorTargetBps / 1e4,
-      /** This week's payout: budgets fixed when the epoch opened on Friday, paid out evenly until `end` (unix seconds) */
-      epoch: params.epochSecs > 0 ? { end: pool.epochEnd.toNumber(), senior: num(pool.epochSeniorBudget), junior: num(pool.epochJuniorBudget), buffer: stats.yieldBuffer } : null,
+      /** This week's payout: a budget fixed when the epoch opened on Friday, paid out evenly until `end` (unix seconds) */
+      epoch: params.epochSecs > 0 ? { end: pool.epochEnd.toNumber(), budget: num(pool.epochBudget), buffer: stats.yieldBuffer } : null,
       kink: params.kinkBps / 1e4,
       badDebt: num(pool.badDebt),
       // Borrower interest to date, implied by the insurance reserve's fixed cut of it

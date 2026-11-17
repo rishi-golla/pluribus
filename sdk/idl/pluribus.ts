@@ -4342,7 +4342,7 @@ export type Pluribus = {
     {
       "name": "epochOpened",
       "docs": [
-        "A payout epoch opened: `senior_budget` and `junior_budget` are paid out evenly until `end`, out of `buffer`"
+        "A payout epoch opened: `budget` is paid out of `buffer` evenly until `end`, split between the tranches by their weights"
       ],
       "type": {
         "kind": "struct",
@@ -4356,11 +4356,7 @@ export type Pluribus = {
             "type": "i64"
           },
           {
-            "name": "seniorBudget",
-            "type": "u64"
-          },
-          {
-            "name": "juniorBudget",
+            "name": "budget",
             "type": "u64"
           },
           {
@@ -4886,7 +4882,7 @@ export type Pluribus = {
           {
             "name": "epochStart",
             "docs": [
-              "The current payout epoch and what each tranche gets over it, fixed when it opened"
+              "The current payout epoch and the budget it pays out evenly, fixed when it opened"
             ],
             "type": "i64"
           },
@@ -4895,19 +4891,11 @@ export type Pluribus = {
             "type": "i64"
           },
           {
-            "name": "epochSeniorBudget",
+            "name": "epochBudget",
             "type": "u64"
           },
           {
-            "name": "epochJuniorBudget",
-            "type": "u64"
-          },
-          {
-            "name": "epochSeniorPaid",
-            "type": "u64"
-          },
-          {
-            "name": "epochJuniorPaid",
+            "name": "epochPaid",
             "type": "u64"
           }
         ]
