@@ -1,0 +1,108 @@
+# Tunes
+
+Every setting worth revisiting before mainnet, with the value deployed on devnet and the limits the program enforces.
+
+## How a change lands
+
+- Pool settings change with `set_params`, asset settings with `set_asset`, LP markets with `set_lp_market` (admin key).
+- Only pure tightening applies at once:
+  - Pool: raising shocks or adding scenarios.
+  - Asset: raising the liquidation cost, lowering the deposit cap, pausing.
+  - LP market: raising the cost, pausing.
+- Everything else waits out `activation_delay_secs`, then anyone sends `apply_params` / `apply_asset` / `apply_lp_market`.
+- Nothing waiting can apply during a junior exit pause, nor until a full activation delay after it ends.
+- The guardian (`scripts/.keys/devnet/guardian.json`) can drop a waiting change or pause an asset or market. It cannot loosen anything or pause exits.
+- On localnet `scripts/setup.ts` runs the same rules on seconds (`WAITS`), so the e2e scripts finish in minutes.
+
+## Junior tranche
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `junior_min_delay_secs` | 6d | > 0 if max > 0 | Shortest exit wait. Longer stops juniors fleeing a coming loss; shorter makes the tranche easier to sell. |
+| `junior_max_delay_secs` | 6d | ≤ 30d, ≥ min | Equal to min means a fixed wait. Above min, the wait grows as the queue fills (jrDOLA uses 1 to 10 days). |
+| `junior_delay_threshold_bps` | 10000 | 1 to 10000 | Share of junior supply in the queue at which the wait reaches max. Only matters when min < max. |
+| `junior_exit_window_secs` | 2d | 60s to 3d | Time to claim after the wait; unclaimed exits lapse. |
+| `junior_exit_fee_bps` | 5 | ≤ 100 | Kept by the juniors who stay. Discourages churn. |
+| `junior_max_pause_secs` | 90d | ≤ 90d | Longest single governance pause. |
+| `junior_pause_gap_secs` | 14d | ≥ max wait + 3d, ≥ activation delay | Unpaused time between two pauses. |
+| `activation_delay_secs` | 8d | ≥ max wait + claim window, ≤ 30d | How long new collateral and loosening changes wait. Must leave juniors time to queue, wait and claim first. |
+| `junior_premium_bps` | 500 | ≤ 5000 | Share of all borrower interest paid to juniors on top of their normal share. Main lever for junior APY. |
+| `junior_target_bps` | 1000 | 1 to 10000 | Junior share of the pool at which the premium and protection fee are paid in full; below it they scale down. |
+| `protection_fee_bps` | 2000 | ≤ 5000 | Share of senior interest paid to juniors. |
+| `SEED_USDC` (setup.ts) | 1M senior, 100k junior | | Initial deposits from the admin on a fresh deployment. |
+
+The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up to `junior_max_pause_secs`.
+
+## Crash scenarios and liquidation
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `num_scenarios` | 3 | 1 to 4 | Crypto crash, equity crash, broad selloff. |
+| `init_shock_bps` (SOL, stock, USDC per scenario) | 3000/1500/300, 1500/3500/300, 2500/2500/300 | < 10000 | Sets the credit limit. The biggest single lever on how much users can borrow. Should come from volatility (z·σ·√T) or depth data, not by hand. |
+| `maint_shock_bps` | 2000/1000/100, 1000/2500/100, 1700/1700/100 | ≤ the init shock | Liquidation line. The gap to init is the buffer before liquidation. |
+| `liq_bonus_bps` | 500 | ≤ 2000, and each asset's cost must cover it | Liquidator reward. Too low and nobody liquidates; too high and borrowers lose more. |
+| `close_factor_bps` | 5000 | 1 to 5000 | Most of the debt one liquidation can repay. |
+| `warn_health_bps` | 11000 | ≥ 10000 | Health below this drops the account to the base rate tier. |
+
+## Interest and loyalty tiers
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `base_rate_bps` | 200 | | Rate at 0% utilization. |
+| `slope1_bps` | 800 | | Rate added up to the kink. |
+| `slope2_bps` | 6000 | | Steep rate above the kink, which pulls repayments in when lenders can't exit. |
+| `kink_bps` | 9000 | 1 to 9999 | Utilization where the steep slope starts. |
+| `reserve_factor_bps` | 1000 | reserve + protocol ≤ 5000 | Feeds the insurance reserve, which takes losses before juniors. |
+| `protocol_fee_bps` | 1000 | reserve + protocol ≤ 5000 | Protocol revenue; uncollected fees also take losses before juniors. |
+| `tier_discount_bps` | 0 / 40 / 80 | starts at 0, never decreases | Rate discount per loyalty tier. |
+| `tier_min_healthy_secs` | 0 / 7d / 30d | starts at 0, increasing | Healthy time needed for each tier. |
+
+## Per asset and LP market
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `group` | SOL 0, stock 1, USDC 2 | column in the shock tables | Which crash column the asset falls with. |
+| `liq_cost_bps` | SOL 500, stock 1000, USDC 0 | < 10000; ≥ about 476 at a 5% bonus | Haircut for the cost of liquidating. Should grow with position size and thin liquidity (memecoins). |
+| `max_price_age_secs` | 1 day | > 0 | Oldest accepted price. A day is demo-only; mainnet Pyth needs seconds to minutes. |
+| `max_conf_bps` | 200 | 1 to 2000 | Widest accepted Pyth confidence band. |
+| `deposit_cap` | 0 (no cap) | 0 = uncapped | Cap per asset. Should follow on-chain depth for risky assets. |
+| `oracle`, `pyth_feed_id` | SOL Pyth feed, stock placeholder | | The stock needs a real feed before demo mode goes off. |
+| LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca positions. |
+| Demo prices (setup.ts) | SOL at the pool price, stock $180 | | Starting demo feed. |
+
+## Hard caps in `programs/pluribus/src/constants.rs`
+
+These need a program upgrade to change.
+
+| Constant | Value | What it bounds |
+|---|---|---|
+| `MAX_JUNIOR_PAUSE_SECS` | 90d | Any single pause |
+| `MAX_JUNIOR_DELAY_SECS` | 30d | The exit wait |
+| `MAX_ACTIVATION_DELAY_SECS` | 30d | How long the admin can lock itself out of loosening |
+| `MIN_JUNIOR_EXIT_WINDOW_SECS` / `MAX_JUNIOR_EXIT_WINDOW_SECS` | 60s / 3d | The claim window; the max also sets the minimum pause gap |
+| `MAX_JUNIOR_EXIT_FEE_BPS` | 100 | The exit fee |
+| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 4 / 3 | Account and table sizes (changing these is a migration) |
+| `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
+
+## Off-chain services and demo
+
+| Setting | Where | Default | Notes |
+|---|---|---|---|
+| `INTERVAL_MS` | keeper env | 5000 | How often the keeper checks for liquidations and tiers. |
+| `AUTOPAY_INTERVAL_MS` | keeper env | 600000 | How often each LP position's fees are harvested. |
+| `GRANT` | `web/src/app/api/faucet/route.ts` | 0.05 SOL (10 on localnet), 50 stock, 5000 USDC | Test tokens per wallet. |
+| Faucet stock | `scripts/faucet-stock.ts` flags | 0.4 SOL, 5 positions of $20 on devnet | What the faucet wallet holds to hand out. |
+| `MAX_MOVE` | `web/src/app/api/demo/price/route.ts` | 20x | Largest demo price move per request. |
+| `SWAP_USD` | `web/src/app/api/demo/harvest/route.ts` | $1000 | Trade size used to generate LP fees in the demo. |
+| `demo_mode` | pool flag | on | The admin sets prices, which gets around every delay. Turn it off (one way) before real money. |
+
+## Not yet settings
+
+Planned in the earlier research and plans, not implemented:
+
+- **Per-asset risk premium** for memecoins and thin stocks, routed to juniors. Today `junior_premium_bps` is one flat rate.
+- **Coverage gate:** block risky draws when junior deposits fall below X% of risky debt.
+- **Depth-based limits:** cap liquidation size and deposits at the Orca depth within the bonus (`D(m)`), and size haircuts with it.
+- **Volatility-driven shocks** from oracle history or Panoptic's fee-implied σ.
+- **A cap on each instant shock raise**, so one tightening cannot make every borrower liquidatable at once.
+- **Reopening a wiped tranche with a fresh share mint (a bug to fix before mainnet).** After a 100% junior loss, the dead shares still count in the share price, so every new dollar mints about `dead_supply` shares. Token supply is a u64, so the tranche can then never hold more than about `$18.4T / dead_supply_in_USDC` (10M dead caps it near $1.8M; the 100k devnet seed near $184M). Deposits and `convert_to_junior` past that cap fail with `MathOverflow`. The senior tranche has the same maths. Fix: an admin instruction allowed only when junior assets are 0 that opens a new junior mint and escrow (seeded by an epoch counter), so new money starts again at $1 a share and the old mint is retired. Exits still queued on the old mint close out at $0.
