@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Activity, ArrowRight, Award, ChevronDown, ChevronRight, Info, Plus, ShieldCheck, TrendingUp, TriangleAlert } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Chip, KV, Label, StatusDot, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
@@ -691,7 +691,13 @@ function StressPanel({ highlight }: { highlight: boolean }) {
   const sc = scenarios[sel];
   // The x axis is the fall of the asset the scenario hits hardest, and the other asset falls in the scenario's proportion
   const lead = Math.max(sc.sol, sc.stock);
-  const leadName = sc.sol === sc.stock ? "SOL and stocks" : sc.sol > sc.stock ? "SOL" : "stocks";
+  const follower = Math.round((Math.min(sc.sol, sc.stock) / (lead || 1)) * 100);
+  const xTitle =
+    sc.sol === sc.stock
+      ? "Fall in SOL, LP positions and stocks"
+      : sc.sol > sc.stock
+        ? `Fall in SOL and LP positions → stocks fall ${follower}% as far`
+        : `Fall in stocks → SOL and LP positions fall ${follower}% as far`;
   const dropAt = (s: number) => ({ sol: lead ? Math.min(0.99, (s / 100) * (sc.sol / lead)) : 0, stock: lead ? Math.min(0.99, (s / 100) * (sc.stock / lead)) : 0 });
   const pct = (v: number) => `-${Math.round(v * 100)}%`;
   const describe = (s: number) => {
@@ -734,14 +740,14 @@ function StressPanel({ highlight }: { highlight: boolean }) {
           ))}
         </div>
         <p className="mt-3 text-[12.5px] text-t3">
-          Plays the {sc.name.toLowerCase()} at growing strength. The axis is the fall in {leadName}
-          {sc.sol !== sc.stock && `, and ${sc.sol > sc.stock ? "stocks fall" : "SOL and LP positions fall"} ${Math.round((Math.min(sc.sol, sc.stock) / lead) * 100)}% as far`}. The marker is the scenario as the pool defines it.
+          Plays the {sc.name.toLowerCase()} at growing strength. The marker is the scenario as the pool defines it.
         </p>
         <div className="mt-4">
           <LineChart
             width={634}
-            height={236}
-            pad={{ top: 10, right: 40, bottom: 26, left: 8 }}
+            height={254}
+            pad={{ top: 10, right: 40, bottom: 44, left: 8 }}
+            xTitle={xTitle}
             lines={[{ key: "hf", label: "Health factor", color: "#3ddc97", data: hf, fill: 0.14 }]}
             yMin={0.5}
             yMax={2.5}
@@ -776,8 +782,37 @@ function StressPanel({ highlight }: { highlight: boolean }) {
 const FEES = series(30, 6, 8, 5, 3).map((v) => Math.max(2.2, v));
 const DAY_MS = 86_400_000;
 
+/** Test control: trades the pool and harvests once a second instead of waiting hours for real fees and the keeper */
+function useFastHarvest(live: Live | null) {
+  const [running, setRunning] = useState(false);
+  const [total, setTotal] = useState({ usd: 0, runs: 0 });
+  const harvest = useRef(live?.harvest);
+  useEffect(() => {
+    harvest.current = live?.harvest;
+  });
+  useEffect(() => {
+    if (!running) return;
+    let stop = false;
+    (async () => {
+      while (!stop) {
+        const started = Date.now();
+        const got = await harvest.current?.();
+        if (!got) break;
+        if (!stop) setTotal((t) => ({ usd: t.usd + got.repaid + got.keptUsdc + got.sol * got.solPrice, runs: t.runs + 1 }));
+        await new Promise((r) => setTimeout(r, Math.max(0, 1000 - (Date.now() - started))));
+      }
+      if (!stop) setRunning(false);
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [running]);
+  return { running, total, toggle: () => setRunning((r) => !r) };
+}
+
 function AutopayPanel() {
   const { live, months, today, autopayPerMonth } = useAccount();
+  const fast = useFastHarvest(live);
   const [enabled, setOn] = useState(true);
   // On-chain anyone may harvest a deposited LP position, so a borrower cannot switch autopay off
   const on = live ? live.collateral.some((c) => c.lp) : enabled;
@@ -802,6 +837,17 @@ function AutopayPanel() {
             {on ? "Active" : live ? "No LP position" : "Paused"}
           </Tag>
         </h3>
+        {live?.canHarvest && on && (
+          <button
+            type="button"
+            onClick={fast.toggle}
+            aria-pressed={fast.running}
+            title="Test only: trades the pool and collects LP fees every second"
+            className={`ml-auto mr-3 cursor-pointer rounded-md border px-2 py-0.5 text-[11.5px] font-medium transition-colors ${fast.running ? "border-green/50 text-green" : "border-line text-t3 hover:border-line-2 hover:text-t1"}`}
+          >
+            {fast.running ? "Stop 1s harvest" : "Test: harvest every 1s"}
+          </button>
+        )}
         <button
           type="button"
           role="switch"
@@ -815,7 +861,11 @@ function AutopayPanel() {
         </button>
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
-        <div className="text-[13px] text-t2">Keepers harvest your LP fees every 6 hours and repay debt with the USDC part.</div>
+        <div className="text-[13px] text-t2">
+          {fast.running || fast.total.runs > 0
+            ? `Test harvest: ${fast.total.runs} runs, ${usd(fast.total.usd)} collected. The USDC part repays debt and the SOL part becomes collateral.`
+            : "Keepers harvest your LP fees every 6 hours and repay debt with the USDC part."}
+        </div>
         <div className="mt-[18px] flex items-center justify-between">
           <Label>Daily fees repaid, 30D</Label>
           <span className="text-[12.5px] text-t2">
@@ -864,7 +914,7 @@ function AutopayPanel() {
           {[
             ["This month", <Num key="m" value={autopayPerMonth} decimals={2} prefix="$" countUp className="text-green" />],
             ["Lifetime", <Num key="l" value={live ? paid.reduce((s, e) => s + e.amount, 0) : 1847.2} decimals={2} prefix="$" countUp />],
-            ["Next harvest", live ? (on ? "By keeper" : "-") : on ? "3h 12m" : "Paused"],
+            ["Next harvest", fast.running ? "Every 1s" : live ? (on ? "By keeper" : "-") : on ? "3h 12m" : "Paused"],
           ].map(([k, v]) => (
             <div key={k as string} className="bg-s1 px-3.5 py-3">
               <Label>{k}</Label>
