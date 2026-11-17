@@ -520,12 +520,12 @@ try {
     usd(n(bad.loss)),
   );
   const after = await tranches();
-  const [loss, fromReserves, fromFees, fromJunior] = [bad.loss, bad.coveredByReserves, bad.coveredByProtocolFees, bad.coveredByJunior].map(n);
+  const [loss, fromBuffer, fromReserves, fromFees, fromJunior] = [bad.loss, bad.coveredByBuffer, bad.coveredByReserves, bad.coveredByProtocolFees, bad.coveredByJunior].map(n);
   check(
-    "Reserves take the loss first, then protocol fees, then junior lenders",
+    "Unpaid interest takes the loss first, then reserves, then protocol fees, then junior lenders",
     fromReserves >= n(poolBefore.reserves) && fromReserves > 0 && poolAfter.reserves.isZero() &&
       fromFees >= n(poolBefore.protocolFees) && poolAfter.protocolFees.isZero() &&
-      fromJunior > 0 && fromJunior === loss - fromReserves - fromFees,
+      fromBuffer === n(poolBefore.yieldBuffer) && fromJunior > 0 && fromJunior === loss - fromBuffer - fromReserves - fromFees,
     `${fromReserves} micro-USDC from reserves, ${fromFees} from protocol fees, ${usd(fromJunior)} from junior lenders`,
   );
   // The write-off accrues first, so the tranches also move by the interest of the second or so since the last transaction

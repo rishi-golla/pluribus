@@ -17,6 +17,8 @@ const WAITS =
   cluster === "localnet"
     ? { exit: 5, window: 60, gap: 3 * DAY + 5, activation: 70 }
     : { exit: 6 * DAY, window: 2 * DAY, gap: 14 * DAY, activation: 8 * DAY };
+// Weekly payout epochs from Friday 00:00 UTC; localnet pays interest as it accrues so the e2e run sees it at once
+const EPOCH_SECS = cluster === "localnet" ? 0 : 7 * DAY;
 
 const fixtureFile = path.join(root, "scripts/out", `${cluster}.json`);
 if (!fs.existsSync(fixtureFile)) throw new Error(`${fixtureFile} is missing, run orca:fixture first`);
@@ -49,12 +51,14 @@ const params: PoolParams = {
   kinkBps: 9000,
   reserveFactorBps: 1000,
   protocolFeeBps: 1000,
-  protectionFeeBps: 2000,
+  // Each Friday the yield buffer less this margin becomes the week's budget, and the margin carries over
+  yieldMarginBps: 1000,
+  epochSecs: EPOCH_SECS,
   tierDiscountBps: [0, 40, 80],
   tierMinHealthySecs: [0, 7 * DAY, 30 * DAY].map((s) => new BN(s)),
-  // Junior tranche: full premium and protection fee once juniors hold a tenth of the pool, 5% of borrower interest as premium
+  // Junior lenders earn the senior rate plus 15% of the senior yield per senior dollar they cover, in full once they hold a tenth of the pool
   juniorTargetBps: 1000,
-  juniorPremiumBps: 500,
+  juniorPremiumBps: 1500,
   // Exits wait the same whatever the queue, must be claimed within the window, and leave 5 bps with the juniors who stay
   juniorMinDelaySecs: WAITS.exit,
   juniorMaxDelaySecs: WAITS.exit,
