@@ -111,7 +111,8 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `max_conf_bps` | 200 | 1 to 2000 | Widest accepted Pyth confidence band. |
 | `deposit_cap` | 0 (no cap) | 0 = uncapped | Cap per asset. Should follow on-chain depth for risky assets. |
 | `oracle`, `pyth_feed_id` | SOL Pyth feed, stock placeholder | | The stock needs a real feed before demo mode goes off. |
-| LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca positions. |
+| LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca and Raydium positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. |
+| `RAYDIUM_CLMM_PROGRAMS` | mainnet `CAMMCzo5…`, devnet `DRayAUg…` | constant in `constants.rs` | The only programs besides Orca whose pools can list. Raydium can upgrade its program, so recheck the position and pool layouts (offsets in `clmm.rs`) after each Raydium upgrade. |
 | Demo prices (setup.ts) | SOL at the pool price, stock $180 | | Starting demo feed. |
 
 ## Hard caps in `programs/pluribus/src/constants.rs`
@@ -151,5 +152,7 @@ Planned in the earlier research and plans, not implemented:
 - **An emergency switch for a broken LST backing.** If a stake pool account stops reading (for example after an upstream migration), that LST's health checks fail, and the fix (`rate_source` → NONE or FIXED) waits out the activation delay. Liquidations of that LST are frozen meanwhile. Options: let the guardian switch to FIXED at or below the last rate at once, or fall back to the own price with an extra haircut.
 - **Close publish times for the LST's two prices.** The SOL leg is accepted anywhere inside the LST's own age window, so a liquidator can pick the lowest SOL print in that window.
 - **SDK reads the deployment file, not the chain,** for LST backing accounts and the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
+- **Fee harvesting for Raydium positions.** Autopay only collects Orca fees; Raydium positions keep their fees until the owner withdraws the NFT.
+- **Meteora DLMM positions.** Deferred: positions can't be handed over like an NFT, so custody would need CPI for every action and a new liquidation path.
 - **A cap on each instant shock raise**, so one tightening cannot make every borrower liquidatable at once.
 - **Reopening a wiped tranche with a fresh share mint (a bug to fix before mainnet).** After a 100% junior loss, the dead shares still count in the share price, so every new dollar mints about `dead_supply` shares. Token supply is a u64, so the tranche can then never hold more than about `$18.4T / dead_supply_in_USDC` (10M dead caps it near $1.8M; the 100k devnet seed near $184M). Deposits and `convert_to_junior` past that cap fail with `MathOverflow`. The senior tranche has the same maths. Fix: an admin instruction allowed only when junior assets are 0 that opens a new junior mint and escrow (seeded by an epoch counter), so new money starts again at $1 a share and the old mint is retired. Exits still queued on the old mint close out at $0.

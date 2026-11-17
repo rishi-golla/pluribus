@@ -173,7 +173,9 @@ async function autopay(owner: PublicKey, positionMint: PublicKey) {
   const id = positionMint.toBase58();
   if (Date.now() - (lastFeeCheck.get(id) ?? 0) < autopayMs) return;
   lastFeeCheck.set(id, Date.now());
-  const position = await orca.getPosition(pda.orcaPosition(positionMint), IGNORE_CACHE);
+  // Only Orca positions in the main whirlpool are harvested, Raydium positions keep their fees until withdrawn
+  const position = await orca.getPosition(pda.orcaPosition(positionMint), IGNORE_CACHE).catch(() => null);
+  if (!position?.getData().whirlpool.equals(new PublicKey(d.whirlpool))) return;
   // The pool's tokens are classic SPL tokens, which the program requires of every asset, so no transfer fee applies
   const fees = collectFeesQuote({
     whirlpool: position.getWhirlpoolData(),

@@ -957,65 +957,7 @@ export type Pluribus = {
           }
         },
         {
-          "name": "position",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  111,
-                  115,
-                  105,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "positionMint"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                14,
-                3,
-                104,
-                95,
-                142,
-                144,
-                144,
-                83,
-                228,
-                88,
-                18,
-                28,
-                102,
-                245,
-                167,
-                106,
-                237,
-                199,
-                112,
-                106,
-                161,
-                28,
-                130,
-                248,
-                170,
-                149,
-                42,
-                143,
-                43,
-                120,
-                121,
-                169
-              ]
-            }
-          }
+          "name": "position"
         },
         {
           "name": "positionMint"
@@ -4092,6 +4034,11 @@ export type Pluribus = {
       "code": 6035,
       "name": "volTooSoon",
       "msg": "A volatility sample needs a newer price"
+    },
+    {
+      "code": 6036,
+      "name": "unsupportedDex",
+      "msg": "This needs an Orca market with the base token first"
     }
   ],
   "types": [
@@ -4832,13 +4779,16 @@ export type Pluribus = {
     {
       "name": "lpMarket",
       "docs": [
-        "A whitelisted Orca Whirlpool whose positions count as collateral, always quoted in USDC"
+        "A whitelisted Orca Whirlpool or Raydium CLMM pool whose positions count as collateral, always quoted in USDC"
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "whirlpool",
+            "docs": [
+              "The pool, Orca or Raydium"
+            ],
             "type": "pubkey"
           },
           {
@@ -4878,6 +4828,20 @@ export type Pluribus = {
           {
             "name": "pendingAt",
             "type": "i64"
+          },
+          {
+            "name": "dexProgram",
+            "docs": [
+              "The program that owns the pool and its positions"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "baseFirst",
+            "docs": [
+              "Whether the base token is the pool's first token and USDC its second, which turns the range around when it is not"
+            ],
+            "type": "bool"
           }
         ]
       }
@@ -5341,7 +5305,7 @@ export type Pluribus = {
           {
             "name": "mint",
             "docs": [
-              "Token mint, or the Orca position NFT mint"
+              "Token mint, or the position NFT mint of an LP"
             ],
             "type": "pubkey"
           },
@@ -5355,7 +5319,7 @@ export type Pluribus = {
           {
             "name": "bump",
             "docs": [
-              "Bump of Orca's address for an LP position, so the health check can confirm it cheaply"
+              "Bump of the dex's address for an LP position, so the health check can confirm it cheaply"
             ],
             "type": "u8"
           }

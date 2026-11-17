@@ -19,7 +19,9 @@ import {
   WHIRLPOOL_PROGRAM_ID,
   decodeOrcaPosition,
   fetchCredit,
+  type CreditAccount,
   healthAccounts,
+  locateLps,
   pda,
 } from "./core";
 
@@ -138,14 +140,33 @@ export async function withdrawToken(
     await program.methods
       .withdrawToken(bn(amount))
       .accountsStrict(moveToken(owner, mint, programOf(d, mint)))
-      .remainingAccounts(healthAccounts(program, d, credit, { skip: emptied ? mint : undefined }))
+      .remainingAccounts(await health(program, d, credit, { skip: emptied ? mint : undefined }))
       .instruction(),
     ...(mint.equals(NATIVE_MINT) ? [unwrap(owner)] : []),
   ];
 }
 
-export async function depositLp(program: PluribusProgram, d: Deployment, owner: PublicKey, positionMint: PublicKey): Ixs {
-  const nft = await nftProgram(program, positionMint);
+// The accounts a health check reads, with each LP position found on its own dex
+const health = async (program: PluribusProgram, d: Deployment, credit: CreditAccount, opts: { skip?: PublicKey } = {}) =>
+  healthAccounts(program, d, credit, { ...opts, lps: await locateLps(program.provider.connection, d, credit) });
+
+// A listed LP market's dex and base token: the main whirlpool, or one of the deployment's `lpMarkets`
+const lpMarketOf = (d: Deployment, pool: PublicKey) => {
+  if (pool.equals(key(d.whirlpool))) return { dexProgram: WHIRLPOOL_PROGRAM_ID, baseMint: key(d.solMint) };
+  const m = d.lpMarkets?.find((x) => x.pool === pool.toBase58());
+  if (!m) throw new Error(`No LP market for pool ${pool.toBase58()} in the ${d.cluster} deployment`);
+  return { dexProgram: key(m.dexProgram), baseMint: key(m.baseMint) };
+};
+
+// `pool` is the position's Orca whirlpool or Raydium pool, the main whirlpool unless given
+export async function depositLp(
+  program: PluribusProgram,
+  d: Deployment,
+  owner: PublicKey,
+  positionMint: PublicKey,
+  pool = key(d.whirlpool),
+): Ixs {
+  const [nft, market] = [await nftProgram(program, positionMint), lpMarketOf(d, pool)];
   return [
     await program.methods
       .depositLp()
@@ -153,9 +174,9 @@ export async function depositLp(program: PluribusProgram, d: Deployment, owner: 
         owner,
         credit: pda.credit(owner),
         pool: pda.pool(),
-        lpMarket: pda.lpMarket(key(d.whirlpool)),
-        baseAsset: pda.asset(key(d.solMint)),
-        position: pda.orcaPosition(positionMint),
+        lpMarket: pda.lpMarket(pool),
+        baseAsset: pda.asset(market.baseMint),
+        position: pda.lpPosition(market.dexProgram, positionMint),
         positionMint,
         ownerNft: ata(positionMint, owner, nft),
         vaultNft: ata(positionMint, pda.pool(), nft),
@@ -183,7 +204,7 @@ export async function withdrawLp(program: PluribusProgram, d: Deployment, owner:
         ownerNft: ata(positionMint, owner, nft),
         tokenProgram: nft,
       })
-      .remainingAccounts(healthAccounts(program, d, credit, { skip: positionMint }))
+      .remainingAccounts(await health(program, d, credit, { skip: positionMint }))
       .instruction(),
   ];
 }
@@ -201,7 +222,7 @@ export async function draw(program: PluribusProgram, d: Deployment, owner: Publi
         credit: pda.credit(owner),
         ownerUsdc: ata(key(d.usdcMint), owner),
       })
-      .remainingAccounts(healthAccounts(program, d, credit))
+      .remainingAccounts(await health(program, d, credit))
       .instruction(),
   ];
 }
@@ -248,7 +269,7 @@ export async function repayFromCollateral(
         usdcAsset: pda.asset(usdc),
         usdcCollateralVault: pda.vault(usdc),
       })
-      .remainingAccounts(healthAccounts(program, d, credit))
+      .remainingAccounts(await health(program, d, credit))
       .instruction(),
   ];
 }
@@ -444,7 +465,7 @@ export async function liquidate(
         liquidatorCollateral: ata(mint, liquidator, programOf(d, mint)),
         collateralTokenProgram: programOf(d, mint),
       })
-      .remainingAccounts(healthAccounts(program, d, credit))
+      .remainingAccounts(await health(program, d, credit))
       .instruction(),
   ];
 }
@@ -477,7 +498,7 @@ export async function liquidateLp(
         owner,
         nftTokenProgram: nft,
       })
-      .remainingAccounts(healthAccounts(program, d, credit))
+      .remainingAccounts(await health(program, d, credit))
       .instruction(),
   ];
 }
@@ -489,12 +510,13 @@ export async function refreshTier(program: PluribusProgram, d: Deployment, owner
     await program.methods
       .refreshTier()
       .accountsStrict({ credit: pda.credit(owner), pool: pda.pool() })
-      .remainingAccounts(healthAccounts(program, d, credit))
+      .remainingAccounts(await health(program, d, credit))
       .instruction(),
   ];
 }
 
 // Collects a deposited position's Orca fees: the USDC part repays `owner`'s debt and the SOL part becomes collateral
+// Only for the main whirlpool: other markets keep their fees in the position
 export async function autopay(
   program: PluribusProgram,
   d: Deployment,

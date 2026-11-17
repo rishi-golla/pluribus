@@ -45,6 +45,8 @@ export type Deployment = {
   // A tick array covers 88 * tickSpacing ticks, see `pda.tickArray`
   tickSpacing: number;
   demoMode: boolean;
+  // LP markets besides `whirlpool`, such as Raydium CLMM pools, each with the program that owns it and its base token
+  lpMarkets?: { pool: string; dexProgram: string; baseMint: string }[];
   // Indexed by mint, and USDC has no price account because it is fixed at $1
   // A liquid staking token also names the SOL price account its backing is valued with, its stake pool or fixed rate
   assets: Record<
@@ -74,6 +76,10 @@ export type Wallet = ConstructorParameters<typeof AnchorProvider>[1];
 
 export const PROGRAM_ID = new PublicKey(idl.address);
 export const WHIRLPOOL_PROGRAM_ID = new PublicKey("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc");
+// Raydium CLMM on mainnet and devnet, the other dex whose positions the program accepts
+export const RAYDIUM_CLMM_PROGRAM_IDS = ["CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK", "DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH"].map(
+  (k) => new PublicKey(k),
+);
 export const KIND_TOKEN = 1;
 export const KIND_LP = 2;
 export const MAX_U64 = new BN("18446744073709551615");
@@ -105,6 +111,8 @@ export const pda = {
   credit: (owner: PublicKey) => find(PROGRAM_ID, "credit", owner),
   demoPrice: (mint: PublicKey) => find(PROGRAM_ID, "demo_price", mint),
   orcaPosition: (positionMint: PublicKey) => find(WHIRLPOOL_PROGRAM_ID, "position", positionMint),
+  // Where Orca or Raydium keeps the position an NFT controls
+  lpPosition: (dexProgram: PublicKey, positionMint: PublicKey) => find(dexProgram, "position", positionMint),
   // Where the upgradeable loader keeps the program's upgrade authority
   programData: () => find(new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111"), PROGRAM_ID),
   // The tick array that holds `tick`
@@ -156,7 +164,7 @@ export function healthAccounts(
   _program: PluribusProgram,
   d: Deployment,
   credit: CreditAccount,
-  opts: { skip?: PublicKey } = {},
+  opts: { skip?: PublicKey; lps?: Map<string, LpLocation> } = {},
 ): AccountMeta[] {
   const keys: PublicKey[] = [];
   for (const p of credit.positions) {
@@ -170,15 +178,46 @@ export function healthAccounts(
       if (backing) keys.push(new PublicKey(backing.solPriceAccount));
       if (backing?.stakePool) keys.push(new PublicKey(backing.stakePool));
     } else if (p.kind === KIND_LP) {
+      // Without `lps` from `locateLps` every LP is taken to be an Orca position in the main whirlpool
+      const at = opts.lps?.get(p.mint.toBase58());
+      const base = at?.baseMint.toBase58() ?? d.solMint;
       keys.push(
-        pda.lpMarket(new PublicKey(d.whirlpool)),
-        pda.orcaPosition(p.mint),
-        pda.asset(new PublicKey(d.solMint)),
-        priceAccount(d, d.solMint),
+        at?.market ?? pda.lpMarket(new PublicKey(d.whirlpool)),
+        at?.position ?? pda.orcaPosition(p.mint),
+        pda.asset(new PublicKey(base)),
+        priceAccount(d, base),
       );
     }
   }
   return keys.map((pubkey) => ({ pubkey, isSigner: false, isWritable: false }));
+}
+
+// Where an LP position lives: its market, the dex's position account, the pool, the dex and the market's base token
+export type LpLocation = { market: PublicKey; position: PublicKey; pool: PublicKey; dexProgram: PublicKey; baseMint: PublicKey };
+
+// Finds each LP position of `credit` on Orca or Raydium, keyed by NFT mint
+// With only Orca markets listed every position is in the main whirlpool, so nothing is fetched
+export async function locateLps(connection: Connection, d: Deployment, credit: CreditAccount): Promise<Map<string, LpLocation>> {
+  const lps = credit.positions.filter((p) => p.kind === KIND_LP);
+  const markets = [{ pool: d.whirlpool, dexProgram: WHIRLPOOL_PROGRAM_ID.toBase58(), baseMint: d.solMint }, ...(d.lpMarkets ?? [])];
+  const orcaOnly = markets.every((m) => m.dexProgram === WHIRLPOOL_PROGRAM_ID.toBase58());
+  const programs = orcaOnly ? [WHIRLPOOL_PROGRAM_ID] : [...new Set(markets.map((m) => m.dexProgram))].map((k) => new PublicKey(k));
+  const candidates = lps.flatMap((p) => programs.map((dexProgram) => ({ mint: p.mint, dexProgram, position: pda.lpPosition(dexProgram, p.mint) })));
+  const accounts = orcaOnly || !candidates.length ? [] : await connection.getMultipleAccountsInfo(candidates.map((c) => c.position));
+  const found = new Map<string, LpLocation>();
+  candidates.forEach((c, i) => {
+    if (found.has(c.mint.toBase58())) return;
+    let pool = new PublicKey(d.whirlpool);
+    if (!orcaOnly) {
+      const account = accounts[i];
+      if (!account?.owner.equals(c.dexProgram)) return;
+      pool = decodeLpPosition(c.dexProgram, account.data).pool;
+    }
+    const market = markets.find((m) => m.pool === pool.toBase58());
+    if (!market) return;
+    found.set(c.mint.toBase58(), { market: pda.lpMarket(pool), position: c.position, pool, dexProgram: c.dexProgram, baseMint: new PublicKey(market.baseMint) });
+  });
+  return found;
 }
 
 // The program's own numbers for an account, or null when the owner has not opened one
@@ -188,7 +227,7 @@ export async function fetchHealth(program: PluribusProgram, d: Deployment, owner
   const view = await program.methods
     .health()
     .accountsStrict({ credit: pda.credit(owner), pool: pda.pool() })
-    .remainingAccounts(healthAccounts(program, d, credit))
+    .remainingAccounts(healthAccounts(program, d, credit, { lps: await locateLps(program.provider.connection, d, credit) }))
     .instruction();
   // Nothing is signed: any funded account can stand in as the fee payer
   const message = new TransactionMessage({
@@ -225,28 +264,36 @@ export type PositionInfo = {
 export async function fetchPositions(program: PluribusProgram, d: Deployment, credit: CreditAccount): Promise<PositionInfo[]> {
   const held = credit.positions.map((p, slot) => ({ ...p, slot })).filter((p) => p.kind !== 0);
   const lps = held.filter((p) => p.kind === KIND_LP);
-  const priced = [...new Set(held.map((p) => (p.kind === KIND_LP ? d.solMint : p.mint.toBase58())))];
-  const [assets, market, pool, orca] = await Promise.all([
+  const where = await locateLps(program.provider.connection, d, credit);
+  const located = lps.map((p) => where.get(p.mint.toBase58()));
+  // An LP is priced with its market's base token
+  const mintOf = (p: (typeof held)[number]) => (p.kind === KIND_LP ? (where.get(p.mint.toBase58())?.baseMint.toBase58() ?? d.solMint) : p.mint.toBase58());
+  const priced = [...new Set(held.map(mintOf))];
+  const [assets, markets, pool, lpAccounts] = await Promise.all([
     program.account.asset.fetchMultiple(priced.map((m) => pda.asset(new PublicKey(m)))),
-    lps.length ? fetchLpMarket(program, new PublicKey(d.whirlpool)) : null,
+    lps.length ? program.account.lpMarket.fetchMultiple(located.map((l) => l?.market ?? pda.lpMarket(new PublicKey(d.whirlpool)))) : [],
     fetchPool(program),
-    program.provider.connection.getMultipleAccountsInfo(lps.map((p) => pda.orcaPosition(p.mint))),
+    lps.length ? program.provider.connection.getMultipleAccountsInfo(located.map((l, i) => l?.position ?? pda.orcaPosition(lps[i].mint))) : [],
   ]);
   // A listing still in its activation delay backs no new debt, the same as a paused one
   const now = Date.now() / 1000;
   const waiting = (activeAt: BN) => now < effectiveAt(pool, activeAt);
   return held.map((p) => {
     const lp = p.kind === KIND_LP;
-    const mint = lp ? d.solMint : p.mint.toBase58();
+    const mint = mintOf(p);
     const asset = assets[priced.indexOf(mint)];
     if (!asset) throw new Error(`Asset ${mint} is not whitelisted`);
     const shockBps = dynamicShocks(asset, pool.params);
     const base = { mint, group: asset.params.group, paused: asset.params.paused || waiting(asset.activeAt), shockBps };
     let risk: RiskPosition;
     if (lp) {
-      const data = orca[lps.indexOf(p)]?.data;
-      if (!data || !market) throw new Error(`Orca position for ${p.mint.toBase58()} is missing`);
-      const { liquidity, tickLower, tickUpper } = decodeOrcaPosition(data);
+      const i = lps.indexOf(p);
+      const [data, market] = [lpAccounts[i]?.data, markets[i]];
+      if (!data || !market) throw new Error(`LP position for ${p.mint.toBase58()} is missing`);
+      const raw = decodeLpPosition(market.dexProgram, data);
+      const liquidity = raw.liquidity;
+      // With USDC first the range is turned around to price the base token in USDC, as the program does
+      const [tickLower, tickUpper] = market.baseFirst ? [raw.tickLower, raw.tickUpper] : [-raw.tickUpper, -raw.tickLower];
       risk = {
         ...base,
         liquidity,
@@ -284,6 +331,21 @@ export function decodeOrcaPosition(data: Buffer) {
     liquidity: new BN(data.subarray(72, 88), "le"),
     tickLower: data.readInt32LE(88),
     tickUpper: data.readInt32LE(92),
+  };
+}
+
+// A position of either dex, its ticks as the pool keeps them
+// Raydium layout: disc 8 | bump 1 | nft mint 32 | pool 32 | tick lower i32 | tick upper i32 | liquidity u128
+export function decodeLpPosition(dexProgram: PublicKey, data: Buffer) {
+  if (dexProgram.equals(WHIRLPOOL_PROGRAM_ID)) {
+    const p = decodeOrcaPosition(data);
+    return { pool: p.whirlpool, liquidity: p.liquidity, tickLower: p.tickLower, tickUpper: p.tickUpper };
+  }
+  return {
+    pool: new PublicKey(data.subarray(41, 73)),
+    liquidity: new BN(data.subarray(81, 97), "le"),
+    tickLower: data.readInt32LE(73),
+    tickUpper: data.readInt32LE(77),
   };
 }
 
