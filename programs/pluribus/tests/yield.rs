@@ -160,10 +160,14 @@ fn a_deposit_held_across_the_friday_opening_earns_only_for_the_seconds_it_sat_th
 fn unpaid_interest_takes_losses_before_the_reserve_and_junior_lenders() {
     let mut env = pool_with_both_tranches(1_000);
     let (sol, usdc) = (env.sol, env.usdc);
-    // Twelve weeks of interest, all still in the buffer the moment the next epoch opens
-    let at = next_friday(&env) + 11 * WEEK;
-    until(&mut env, at);
-    let user = borrow(&mut env, SOL / 2, None);
+    // More debt for a fuller buffer, and a week with daily transactions so it all waits for Friday
+    borrow(&mut env, 1_000 * SOL, Some(3_900 * USDC));
+    let friday = next_friday(&env);
+    for d in (1..7).rev() {
+        until(&mut env, friday - d * DAY);
+    }
+    until(&mut env, friday);
+    let user = borrow(&mut env, SOL / 20, None);
     env.set_price(&sol, 10 * USDC);
     let liquidator = env.wallet();
     env.fund(&usdc, &liquidator.pubkey(), 1_000 * USDC);
@@ -209,23 +213,25 @@ fn a_buffer_cut_short_by_a_loss_pays_what_it_holds_and_never_more() {
 }
 
 #[test]
-fn after_skipped_weeks_the_current_epoch_opens_with_everything_in_the_buffer() {
+fn after_skipped_weeks_the_lenders_who_were_there_are_paid_and_the_new_epoch_gets_one_weeks_interest() {
     let mut env = pool_with_both_tranches(1_000);
+    let (opened, before) = (env.now(), tranches(&env));
     let friday = next_friday(&env);
     // Nobody touches the pool for three weeks and two days
-    until(&mut env, friday + 3 * WEEK + 2 * DAY);
+    let now = friday + 3 * WEEK + 2 * DAY;
+    until(&mut env, now);
     let pool = env.pool_state();
     assert_eq!(pool.epoch_start, friday + 3 * WEEK);
-    let budget = pool.epoch_budget as u128;
-    // Two of seven days of the budget are already paid
-    let paid = pool.epoch_paid as u128;
-    close(paid, budget * 2 / 7, 2);
-    // The buffer filled for about 27.7 days before this Friday, so the budget is a week's worth of it:
-    // 90% x 7 / 27.7 of that interest, while the last two days' interest arrived after the epoch opened
-    let earned = (pool.yield_buffer as u128 + paid) as f64;
-    let share = budget as f64 / (0.9 * earned);
-    let expected = (27.67 / 29.67) * (7.0 / 27.67);
-    assert!((share / expected - 1.0).abs() < 0.02, "budget is {share} of 90% of everything earned, expected {expected}");
+    // Lenders' interest over the whole time, at a steady rate: they get 80% of it and the reserve 10%
+    let earned = pool.reserves as f64 * 8.0;
+    let per_sec = earned / (now - opened) as f64;
+    // The new epoch is funded by the last week before this Friday, less the margin
+    let budget = pool.epoch_budget as f64;
+    assert!((budget / (0.9 * per_sec * WEEK as f64) - 1.0).abs() < 0.02, "budget {budget} against a week of {per_sec}/s");
+    // Everything earned before that week was paid out to the lenders who were there, and two days of the budget too
+    let paid = (tranches(&env).0 + tranches(&env).1 - before.0 - before.1) as f64;
+    let before_week = per_sec * (friday + 2 * WEEK - opened) as f64;
+    assert!((paid / (before_week + budget * 2.0 / 7.0) - 1.0).abs() < 0.02, "paid {paid}");
 }
 
 #[test]
@@ -340,15 +346,19 @@ fn a_new_length_chosen_while_the_buffer_is_empty_starts_at_once_and_pays_no_burs
         until(&mut env, friday);
         let start = env.pool_state().epoch_start;
         let big = lend(&mut env, 1_000_000 * USDC, false);
-        until(&mut env, start.max(friday) + 60);
+        // Through three one-minute epochs, with someone accruing at each boundary
+        for minute in 1..=3 {
+            until(&mut env, start.max(friday) + 60 * minute);
+        }
+        until(&mut env, start.max(friday) + 200);
         let shares = env.balance(&env.share_mint.clone(), &big.pubkey());
         expect_ok(env.send(&[env.lend_withdraw_ix(&big.pubkey(), shares)], &[&big]));
         let usdc = env.usdc;
         env.balance(&usdc, &big.pubkey()) as i128 - 1_000_000 * USDC as i128
     };
     let (weekly_gain, minute_gain) = (run(false), run(true));
-    // A day's interest buffered under one-minute epochs pays a minute's worth per minute, not all at once
-    assert!(minute_gain < 100_000, "one-minute epochs gave a minute of deposit {minute_gain}, weekly gave {weekly_gain}");
+    // A day's interest buffered under one-minute epochs went to the lenders of that day, so the deposit earns only its minutes
+    assert!(minute_gain < 100_000, "one-minute epochs gave three minutes of deposit {minute_gain}, weekly gave {weekly_gain}");
 }
 
 #[test]

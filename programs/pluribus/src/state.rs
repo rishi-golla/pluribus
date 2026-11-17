@@ -390,17 +390,27 @@ impl Pool {
         // After a change of length the aligned start can fall inside the old epoch, which is never paid twice
         let start = aligned.max(self.epoch_end);
         // Interest accrues evenly over the gap, so it splits at the boundary by time
-        let gap = (now - self.last_accrual).max(1);
-        let after = (now - start.max(self.last_accrual)).clamp(0, gap);
+        let last = self.last_accrual;
+        let gap = (now - last).max(1);
+        let after = (now - start.max(last)).clamp(0, gap);
         let later = mul_div_wide(to_lenders, after as u128, gap as u128)?;
         self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], to_lenders - later);
         let end = self.epoch_end;
         self.pay_epoch(end, weights)?;
-        // The buffer can hold more than one epoch's interest after weeks with no transactions,
-        // so an epoch pays at most one epoch's worth of what came in and the rest carries on
-        let filled_over = (start - self.epoch_start).max(len) as u128;
-        let full = mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?;
-        let budget = to_u64(mul_div_floor(full, len as u128, filled_over)?)?;
+        // Whole epochs went by with no transaction: their payouts would all have gone to the same lenders in the same ratio,
+        // since nobody can enter or leave without accruing, so everything but the last epoch's interest is paid to them now
+        // That leaves the new epoch funded by one epoch of interest, never a pile collected over a long gap
+        if start - len >= end {
+            let window = (start - (start - len).max(last)).clamp(0, gap);
+            let recent = to_u64(mul_div_wide(to_lenders, window as u128, gap as u128)? / DUST)?;
+            let stale = self.yield_buffer.saturating_sub(recent);
+            let (senior, junior) = weights;
+            if stale > 0 && senior + junior > 0 {
+                let to_junior = to_u64(mul_div_wide(stale as u128, junior, senior + junior)?)?;
+                self.pay(stale - to_junior, to_junior);
+            }
+        }
+        let budget = to_u64(mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?)?;
         self.open_epoch(start, aligned + len, budget);
         self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], later);
         self.pay_epoch(now, weights)
