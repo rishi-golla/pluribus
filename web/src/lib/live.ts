@@ -157,7 +157,9 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
 
   const tokenMarket = (mint: string, asset: typeof solAsset): LiveMarket => ({
     collateral: num(asset.totalDeposited, asset.decimals) * prices[mint],
-    crashLtv: math.limits([{ mint, group: asset.params.group, liqCostBps: asset.params.liqCostBps, amount: 1 }], shock, prices).creditLimit / prices[mint],
+    crashLtv:
+      math.limits([{ mint, group: asset.params.group, liqCostBps: asset.params.liqCostBps, amount: 1, shockBps: math.dynamicShocks(asset, params) }], shock, prices)
+        .creditLimit / prices[mint],
     liqCostBps: asset.params.liqCostBps,
   });
   /** What the SDK's limits helper needs to value an Orca position in the whitelisted pool */
@@ -166,6 +168,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     group: solAsset.params.group,
     liqCostBps: lpMarket.liqCostBps,
     paused: lpMarket.paused || solAsset.params.paused || waiting(lpMarket.activeAt) || waiting(solAsset.activeAt),
+    shockBps: math.dynamicShocks(solAsset, params),
     liquidity: lp.liquidity,
     tickLower: lp.tickLower,
     tickUpper: lp.tickUpper,
@@ -205,7 +208,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     tokenRisk: (mint: string, amount: number): Risk => {
       const asset = mint === d.solMint ? solAsset : stockAsset;
       const { group, liqCostBps, paused } = asset.params;
-      return { mint, group, liqCostBps, paused: paused || waiting(asset.activeAt), amount };
+      return { mint, group, liqCostBps, paused: paused || waiting(asset.activeAt), amount, shockBps: math.dynamicShocks(asset, params) };
     },
     pool: {
       supplied: stats.cash + stats.debt,

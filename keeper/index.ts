@@ -225,7 +225,7 @@ async function volatility(pool: Pool, now: number) {
     if (published < asset.volTime.toNumber() + p.volMinIntervalSecs || now - published > p.volMaxAgeSecs) continue;
     const mint = new PublicKey(m);
     await attempt(`Volatility of ${symbol(mint)}`, async () =>
-      send(`Volatility of ${symbol(mint)} sampled`, await ix.updateVol(program, mint, priceAccount)),
+      send(`Volatility of ${symbol(mint)} sampled`, await ix.updateVol(program, d, mint)),
     );
   }
 }

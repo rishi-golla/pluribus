@@ -67,16 +67,20 @@ const usdcAccounts = (d: Deployment) => ({
   tokenProgram,
 });
 
-const moveToken = (owner: PublicKey, mint: PublicKey) => ({
+// `program` is the asset's token program: classic, or Token-2022 for tokens like xStocks
+const moveToken = (owner: PublicKey, mint: PublicKey, program = TOKEN_PROGRAM_ID) => ({
   owner,
   credit: pda.credit(owner),
   pool: pda.pool(),
   asset: pda.asset(mint),
   mint,
   vault: pda.vault(mint),
-  ownerToken: ata(mint, owner),
-  tokenProgram,
+  ownerToken: ata(mint, owner, program),
+  tokenProgram: program,
 });
+
+// The token program a deployment lists `mint` under
+const programOf = (d: Deployment, mint: PublicKey) => key(d.assets[mint.toBase58()]?.tokenProgram ?? TOKEN_PROGRAM_ID.toBase58());
 
 // The share mint passed in decides the tranche
 type Tranche = { junior?: boolean };
@@ -97,18 +101,24 @@ export async function openAccount(program: PluribusProgram, owner: PublicKey): I
 }
 
 // SOL collateral is wrapped on the way in, and the temporary wSOL account is closed again
-export async function depositToken(program: PluribusProgram, owner: PublicKey, mint: PublicKey, amount: Amount): Ixs {
+export async function depositToken(
+  program: PluribusProgram,
+  owner: PublicKey,
+  mint: PublicKey,
+  amount: Amount,
+  tokenProgram = TOKEN_PROGRAM_ID,
+): Ixs {
   const sol = mint.equals(NATIVE_MINT);
-  const token = ata(mint, owner);
+  const token = ata(mint, owner, tokenProgram);
   return [
-    createAta(owner, mint),
+    createAta(owner, mint, tokenProgram),
     ...(sol
       ? [
           SystemProgram.transfer({ fromPubkey: owner, toPubkey: token, lamports: BigInt(amount.toString()) }),
           createSyncNativeInstruction(token),
         ]
       : []),
-    await program.methods.depositToken(bn(amount)).accountsStrict(moveToken(owner, mint)).instruction(),
+    await program.methods.depositToken(bn(amount)).accountsStrict(moveToken(owner, mint, tokenProgram)).instruction(),
     ...(sol ? [unwrap(owner)] : []),
   ];
 }
@@ -124,10 +134,10 @@ export async function withdrawToken(
   const emptied = credit.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(mint) && p.amount.eq(bn(amount)));
   return [
     budget(),
-    createAta(owner, mint),
+    createAta(owner, mint, programOf(d, mint)),
     await program.methods
       .withdrawToken(bn(amount))
-      .accountsStrict(moveToken(owner, mint))
+      .accountsStrict(moveToken(owner, mint, programOf(d, mint)))
       .remainingAccounts(healthAccounts(program, d, credit, { skip: emptied ? mint : undefined }))
       .instruction(),
     ...(mint.equals(NATIVE_MINT) ? [unwrap(owner)] : []),
@@ -420,7 +430,7 @@ export async function liquidate(
   const credit = await creditOf(program, owner);
   return [
     budget(),
-    createAta(liquidator, mint),
+    createAta(liquidator, mint, programOf(d, mint)),
     await program.methods
       .liquidate(bn(repayAmount))
       .accountsStrict({
@@ -431,7 +441,8 @@ export async function liquidate(
         asset: pda.asset(mint),
         collateralMint: mint,
         vault: pda.vault(mint),
-        liquidatorCollateral: ata(mint, liquidator),
+        liquidatorCollateral: ata(mint, liquidator, programOf(d, mint)),
+        collateralTokenProgram: programOf(d, mint),
       })
       .remainingAccounts(healthAccounts(program, d, credit))
       .instruction(),
@@ -585,7 +596,15 @@ export async function initialize(
 }
 
 // `sigmaSeedBps` is the annual volatility the asset's dynamic shock starts from until the crank has prices of its own
-export async function initAsset(program: PluribusProgram, admin: PublicKey, mint: PublicKey, params: AssetParams, sigmaSeedBps = 0): Ixs {
+// `tokenProgram` is Token-2022 for tokens like xStocks, whose extensions the program checks against its allow-list
+export async function initAsset(
+  program: PluribusProgram,
+  admin: PublicKey,
+  mint: PublicKey,
+  params: AssetParams,
+  sigmaSeedBps = 0,
+  tokenProgram = TOKEN_PROGRAM_ID,
+): Ixs {
   return [
     await program.methods
       .initAsset(params, sigmaSeedBps)
@@ -603,9 +622,19 @@ export async function initAsset(program: PluribusProgram, admin: PublicKey, mint
 }
 
 // Permissionless: folds the asset's latest price into its volatility, at most once per minimum interval of publish time
-export async function updateVol(program: PluribusProgram, mint: PublicKey, priceAccount: PublicKey): Ixs {
+// A staking token also passes its SOL price and stake pool, since its price is capped by that backing,
+// and a Token-2022 token its mint, whose multiplier scales its price
+export async function updateVol(program: PluribusProgram, d: Deployment, mint: PublicKey): Ixs {
+  const a = d.assets[mint.toBase58()];
+  // The same order as a health check: a Token-2022 asset's mint for its multiplier, then a staking token's backing
+  const t22 = a.tokenProgram && a.tokenProgram !== TOKEN_PROGRAM_ID.toBase58() ? mint.toBase58() : undefined;
+  const backing = [t22, a.backing?.solPriceAccount, a.backing?.stakePool].filter((k): k is string => !!k);
   return [
-    await program.methods.updateVol().accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price: priceAccount }).instruction(),
+    await program.methods
+      .updateVol()
+      .accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price: key(a.priceAccount!) })
+      .remainingAccounts(backing.map((k) => ({ pubkey: key(k), isSigner: false, isWritable: false })))
+      .instruction(),
   ];
 }
 

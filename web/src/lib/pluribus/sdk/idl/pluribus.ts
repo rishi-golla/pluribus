@@ -2144,7 +2144,17 @@ export type Pluribus = {
           "writable": true
         },
         {
-          "name": "tokenProgram"
+          "name": "tokenProgram",
+          "docs": [
+            "Moves the USDC, which is always a classic token"
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "collateralTokenProgram",
+          "docs": [
+            "Moves the collateral, classic or Token-2022 as the asset was listed"
+          ]
         }
       ],
       "args": [
@@ -4182,6 +4192,13 @@ export type Pluribus = {
             "type": "i64"
           },
           {
+            "name": "tokenProgram",
+            "docs": [
+              "Classic SPL Token or Token-2022, which every transfer of this asset must go through"
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4284,6 +4301,21 @@ export type Pluribus = {
                 32
               ]
             }
+          },
+          {
+            "name": "liqPriceAgeSecs",
+            "docs": [
+              "Oldest price that still counts for liquidations and the liquidation line, at least `max_price_age_secs`",
+              "Longer for stocks so a weekend's last price still lets bad debt be liquidated, while draws keep the short limit"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "uiMultiplier",
+            "docs": [
+              "Multiply the per-share price by the mint's corporate-action multiplier, for a per-share feed on a scaled token"
+            ],
+            "type": "bool"
           }
         ]
       }
@@ -5275,13 +5307,8 @@ export type Pluribus = {
           {
             "name": "volMinIntervalSecs",
             "docs": [
-              "A volatility sample needs a price this much newer than the last one, at most this old and this certain,",
-              "and counts at most `vol_max_dt_secs` of elapsed time"
+              "A volatility sample needs a price this much newer than the last one, at most this old and this certain"
             ],
-            "type": "u32"
-          },
-          {
-            "name": "volMaxDtSecs",
             "type": "u32"
           },
           {

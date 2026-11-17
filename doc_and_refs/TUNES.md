@@ -44,11 +44,49 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
 | `num_scenarios` | 3 | 1 to 4 | Crypto crash, equity crash, broad selloff. |
-| `init_shock_bps` (SOL, stock, USDC per scenario) | 3000/1500/300, 1500/3500/300, 2500/2500/300 | < 10000 | Sets the credit limit. The biggest single lever on how much users can borrow. Should come from volatility (z·σ·√T) or depth data, not by hand. |
-| `maint_shock_bps` | 2000/1000/100, 1000/2500/100, 1700/1700/100 | ≤ the init shock | Liquidation line. The gap to init is the buffer before liquidation. |
+| `init_shock_bps` (SOL, stock, USDC, LST per scenario) | 3000/1500/300/3500, 1500/3500/300/2000, 2500/2500/300/3000 | ≤ `max_shock_bps` | Sets the credit limit. The biggest single lever on how much users can borrow. A group's dynamic shock rescales its column, so the table now sets the shape across scenarios and the floor. |
+| `maint_shock_bps` | 2000/1000/100/2300, 1000/2500/100/1300, 1700/1700/100/2000 | ≤ the init shock | Liquidation line. The gap to init is the buffer before liquidation. |
+| LST depeg add-on | +500 draw / +300 liquidation on the SOL shock | | The LST column is SOL's plus a depeg margin. Should follow observed LST/SOL discounts in past crashes (stETH reached about 7%). |
 | `liq_bonus_bps` | 500 | ≤ 2000, and each asset's cost must cover it | Liquidator reward. Too low and nobody liquidates; too high and borrowers lose more. |
 | `close_factor_bps` | 5000 | 1 to 5000 | Most of the debt one liquidation can repay. |
 | `warn_health_bps` | 11000 | ≥ 10000 | Health below this drops the account to the base rate tier. |
+
+## Dynamic shocks (d = max(table, z·σ·√T), capped)
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `z_init_x100` | 300 | ≤ 1000, ≥ the maint z | z for draws, about 99.9% one-sided. It uses the higher of the fast and slow variance, so a burst stops new debt at once. |
+| `z_maint_x100` | 233 | ≤ the init z | z for the liquidation line, about 99%. It uses only the slow variance, so one sample can't make a healthy account liquidatable. |
+| `vol_tau_fast_secs` | 1h | > 0, ≤ slow | How fast a volatility spike enters the draw shock. |
+| `vol_tau_slow_secs` | 7d | ≥ fast | How slowly volatility fades from the liquidation line. Longer = steadier liquidation line, but slower to react to a regime change. |
+| `vol_min_interval_secs` | 60 | > 0, ≤ fast tau | Minimum publish-time gap between samples. |
+| `vol_max_age_secs` | 60 | > 0 | Oldest price a sample accepts. |
+| `vol_conf_cap_bps` | 200 | 1 to 2000 | Widest Pyth band a sample accepts. The band itself is subtracted from each move, so noise doesn't count as volatility. |
+| `max_shock_bps` | 9500 | < 10000 | Ceiling on any shock, table or dynamic. |
+| Asset `vol_horizon_secs` (T) | SOL and LSTs 1d, stock and xStock 3d, USDC 0 | ≤ 30d, 0 = off | Time to liquidate. Stocks need a weekend. Memecoins should be longer than SOL, since selling takes more time. |
+| `sigma_seed_bps` at listing | SOL 8000, LSTs 8000, stock 5000, xStock 4000 | ≤ 100000 | Starting annual volatility until the crank has history. Seed high; it only fades as fast as `vol_tau_slow_secs`. |
+| Keeper vol crank interval | `keeper/index.ts` | | One sample per asset per minimum interval. A crank that stops leaves the last shock in place, so watch for a stalled keeper. |
+
+## Liquid staking tokens
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `group` | 3 (LST column) | a column with a non-zero shock | Shares SOL's crash plus a depeg margin. |
+| `liq_cost_bps` | 600 | as for assets | One point more than SOL for thinner LST markets. Should follow each LST's depth. |
+| `rate_source` | FIXED on devnet (mock mints), STAKE_POOL for real SPL pools | NONE / STAKE_POOL / FIXED | Price = min(own Pyth price, backing × SOL). Backing is read from the SPL stake pool (Jito, Sanctum multi-validator) or a fixed rate. mSOL and INF need their own readers and are not supported. |
+| `fixed_rate` | JitoSOL 1.31, JupSOL 1.22 SOL | > 0 | Devnet mocks only. A real LST's rate grows each epoch, so a fixed rate goes stale. |
+| Stake pool staleness | one epoch | constant in `oracle.rs` | The pool must have been updated this epoch or the last. |
+
+## Tokenized stocks (xStocks, Token-2022)
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `liq_price_age_secs` | 4d for the xStock, 1d for others | ≥ `max_price_age_secs` | Oldest price that still counts for liquidations and the liquidation line. Draws keep the short age. Four days covers a long weekend. Longer = bad debt can still be cleared after a long close, but on an older price. |
+| `ui_multiplier` | on for the xStock | | Multiply a per-share price by the mint's corporate-action multiplier. Turn off if the feed already quotes per token. |
+| `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | Around a multiplier change, the token backs no new debt and takes the larger multiplier for the liquidation line, so a feed that is a little early or late on a split can't liquidate anyone. Widen it if real feeds lag the multiplier by more than an hour. |
+| Multiplier bounds | 0.01 to 100 | constant in `token2022.rs` | Anything outside stops the asset's health checks. |
+| Extension allow-list | delegate, pause, multiplier, metadata, groups, confidential transfer, an unset hook, default state Initialized | constant in `token2022.rs` | Fees, interest, a live hook and frozen default accounts are refused at listing. A pause or a hook switched on later halts the token: no new debt, still counts toward the liquidation line. |
+| Issuer trust | | | The permanent delegate can move or burn tokens out of the vault. Size `deposit_cap` for that issuer risk. |
 
 ## Interest and loyalty tiers
 
@@ -87,7 +125,7 @@ These need a program upgrade to change.
 | `MAX_ACTIVATION_DELAY_SECS` | 30d | How long the admin can lock itself out of loosening |
 | `MIN_JUNIOR_EXIT_WINDOW_SECS` / `MAX_JUNIOR_EXIT_WINDOW_SECS` | 60s / 3d | The claim window; the max also sets the minimum pause gap |
 | `MAX_JUNIOR_EXIT_FEE_BPS` | 100 | The exit fee |
-| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 4 / 3 | Account and table sizes (changing these is a migration) |
+| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 6 / 3 | Account and table sizes (changing these is a migration) |
 | `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
 
 ## Off-chain services and demo
@@ -109,6 +147,9 @@ Planned in the earlier research and plans, not implemented:
 - **Per-asset risk premium** for memecoins and thin stocks, routed to juniors. Today `junior_premium_bps` is one flat rate on senior yield.
 - **Coverage gate:** block risky draws when junior deposits fall below X% of risky debt.
 - **Depth-based limits:** cap liquidation size and deposits at the Orca depth within the bonus (`D(m)`), and size haircuts with it.
-- **Volatility-driven shocks** from oracle history or Panoptic's fee-implied σ.
+- **Fee-implied σ (Panoptic)** for pool tokens without a feed. Left out on purpose for now: it needs a volume crank and can be wash-traded to push σ around.
+- **An emergency switch for a broken LST backing.** If a stake pool account stops reading (for example after an upstream migration), that LST's health checks fail, and the fix (`rate_source` → NONE or FIXED) waits out the activation delay. Liquidations of that LST are frozen meanwhile. Options: let the guardian switch to FIXED at or below the last rate at once, or fall back to the own price with an extra haircut.
+- **Close publish times for the LST's two prices.** The SOL leg is accepted anywhere inside the LST's own age window, so a liquidator can pick the lowest SOL print in that window.
+- **SDK reads the deployment file, not the chain,** for LST backing accounts and the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
 - **A cap on each instant shock raise**, so one tightening cannot make every borrower liquidatable at once.
 - **Reopening a wiped tranche with a fresh share mint (a bug to fix before mainnet).** After a 100% junior loss, the dead shares still count in the share price, so every new dollar mints about `dead_supply` shares. Token supply is a u64, so the tranche can then never hold more than about `$18.4T / dead_supply_in_USDC` (10M dead caps it near $1.8M; the 100k devnet seed near $184M). Deposits and `convert_to_junior` past that cap fail with `MathOverflow`. The senior tranche has the same maths. Fix: an admin instruction allowed only when junior assets are 0 that opens a new junior mint and escrow (seeded by an epoch counter), so new money starts again at $1 a share and the old mint is retired. Exits still queued on the old mint close out at $0.

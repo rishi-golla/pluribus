@@ -34,10 +34,16 @@ export function shockFor(params: ShockParams, init: boolean, scenario: number, g
   return Math.min(Math.max(t, scaled), params.maxShockBps ?? BPS - 1);
 }
 
-// Mirrors `Asset::dynamic_shock`: z x sigma x sqrt(T) in bps from the higher of the two variance averages
-export function dynamicShock(asset: { varFast: Numeric; varSlow: Numeric; params: { volHorizonSecs: number } }, zX100: number) {
-  const variance = Math.max(Number(asset.varFast.toString()), Number(asset.varSlow.toString()));
-  return (zX100 * Math.sqrt(variance * asset.params.volHorizonSecs)) / 1e7;
+// Mirrors `Asset::dynamic_shocks`: z x sigma x sqrt(T) in bps, draws from the higher of the two variance averages,
+// the liquidation line from the slow one alone and never above the draw shock
+export function dynamicShocks(
+  asset: { varFast: Numeric; varSlow: Numeric; params: { volHorizonSecs: number } },
+  p: { zInitX100: number; zMaintX100: number },
+) {
+  const shock = (v: number, z: number) => (z * Math.sqrt(v * asset.params.volHorizonSecs)) / 1e7;
+  const [fast, slow] = [Number(asset.varFast.toString()), Number(asset.varSlow.toString())];
+  const init = shock(Math.max(fast, slow), p.zInitX100);
+  return { init, maint: Math.min(shock(slow, p.zMaintX100), init) };
 }
 // The pool quotes micro-USDC per lamport, so a dollar price per SOL is the raw price times 10^(9 - 6)
 const RAW = 1000;

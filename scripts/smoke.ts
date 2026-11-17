@@ -74,9 +74,18 @@ if (!positions.some((p) => p.kind === KIND_LP)) {
   await send(await ix.depositLp(program, d, who, position.positionMint), [borrower]);
 }
 
+// A Token-2022 tokenized stock, when the deployment lists one
+const xstock = Object.entries(d.assets).find(([, a]) => a.tokenProgram)?.[0];
+if (xstock && !positions.some((p) => p.mint.toBase58() === xstock)) {
+  await faucet(d, who, { tokens: { [xstock]: 0.5 } });
+  await send(await ix.depositToken(program, who, new PublicKey(xstock), 50_000_000, new PublicKey(d.assets[xstock].tokenProgram!)), [borrower]);
+}
+const extra = [lst && "a staking token", xstock && "an xStock"].filter(Boolean);
 credit = (await fetchCredit(program, who))!;
-const kinds = lst ? "SOL, the stock token, a staking token and an Orca position" : "SOL, the stock token and an Orca position";
-check(`The account holds ${kinds}`, credit.positions.filter((p) => p.kind !== 0).length === (lst ? 4 : 3));
+check(
+  `The account holds SOL, the stock token${extra.map((e) => `, ${e}`).join("")} and an Orca position`,
+  credit.positions.filter((p) => p.kind !== 0).length === 3 + extra.length,
+);
 
 const [pool, prices, risks] = await Promise.all([fetchPool(program), fetchPrices(program, d), fetchPositions(program, d, credit)]);
 const want = math.limits(risks.map((p) => p.risk), pool.params, prices);

@@ -4,6 +4,7 @@ import path from "node:path";
 import { IGNORE_CACHE, PDAUtil, PoolUtil, PriceMath, WhirlpoolIx, toTx } from "@orca-so/whirlpools-sdk";
 import {
   TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
   createMintToInstruction,
   createSyncNativeInstruction,
@@ -127,10 +128,12 @@ export async function faucet(d: Deployment, to: PublicKey, o: FaucetOptions): Pr
   ] as const) {
     if (!whole) continue;
     const key = new PublicKey(mint);
-    const account = getAssociatedTokenAddressSync(key, to, true);
+    // Token-2022 mocks, like the xStock, mint through their own program
+    const program = new PublicKey(d.assets[mint].tokenProgram ?? TOKEN_PROGRAM_ID.toBase58());
+    const account = getAssociatedTokenAddressSync(key, to, true, program);
     mints.push(
-      createAssociatedTokenAccountIdempotentInstruction(me, account, to, key),
-      createMintToInstruction(key, account, me, units(whole, d.assets[mint].decimals)),
+      createAssociatedTokenAccountIdempotentInstruction(me, account, to, key, program),
+      createMintToInstruction(key, account, me, units(whole, d.assets[mint].decimals), [], program),
     );
   }
   if (mints.length) await send(mints);

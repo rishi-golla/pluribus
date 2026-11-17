@@ -1,8 +1,21 @@
 // Idempotent bootstrap of the protocol on top of what orca:fixture created
 import fs from "node:fs";
 import path from "node:path";
-import { NATIVE_MINT, createMint, getMint } from "@solana/spl-token";
-import { PublicKey } from "@solana/web3.js";
+import {
+  ExtensionType,
+  NATIVE_MINT,
+  TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  createInitializeMintInstruction,
+  createInitializePausableConfigInstruction,
+  createInitializePermanentDelegateInstruction,
+  createInitializeScaledUiAmountConfigInstruction,
+  createInitializeTransferHookInstruction,
+  createMint,
+  getMint,
+  getMintLen,
+} from "@solana/spl-token";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import BN from "bn.js";
 import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, math, pda } from "../sdk/index.ts";
 import { deploymentFile, exists, faucet, program, send } from "./lib.ts";
@@ -41,6 +54,32 @@ const LSTS = [
 ].map((l) => ({ ...l, mint: key(l.keyName).publicKey }));
 for (const l of LSTS) {
   if (!(await exists(l.mint))) await createMint(connection, wallet, me, null, 9, key(l.keyName));
+}
+
+// A tokenized stock laid out like Backed's xStocks: a Token-2022 mint with the issuer's delegate, pause and
+// corporate-action multiplier, and a transfer hook that points nowhere
+const xstockKey = key("aaplx-mint");
+const xstock = xstockKey.publicKey;
+if (!(await exists(xstock))) {
+  const extensions = [ExtensionType.PermanentDelegate, ExtensionType.PausableConfig, ExtensionType.ScaledUiAmountConfig, ExtensionType.TransferHook];
+  const space = getMintLen(extensions);
+  await send(
+    [
+      SystemProgram.createAccount({
+        fromPubkey: me,
+        newAccountPubkey: xstock,
+        space,
+        lamports: await connection.getMinimumBalanceForRentExemption(space),
+        programId: TOKEN_2022_PROGRAM_ID,
+      }),
+      createInitializePermanentDelegateInstruction(xstock, me, TOKEN_2022_PROGRAM_ID),
+      createInitializePausableConfigInstruction(xstock, me, TOKEN_2022_PROGRAM_ID),
+      createInitializeScaledUiAmountConfigInstruction(xstock, me, 1, TOKEN_2022_PROGRAM_ID),
+      createInitializeTransferHookInstruction(xstock, me, PublicKey.default, TOKEN_2022_PROGRAM_ID),
+      createInitializeMintInstruction(xstock, 8, me, null, TOKEN_2022_PROGRAM_ID),
+    ],
+    [wallet, xstockKey],
+  );
 }
 
 // Scenarios are crypto crash, equity crash and broad selloff, with columns for the SOL, stock and USDC groups
@@ -87,9 +126,8 @@ const params: PoolParams = {
   // Volatility rises in over about an hour and fades over about a week
   volTauFastSecs: 3_600,
   volTauSlowSecs: 7 * DAY,
-  // A sample needs a price at least a minute newer, under a minute old and within 2%, and counts at most an hour of gap
+  // A sample needs a price at least a minute newer, under a minute old and within 2%
   volMinIntervalSecs: 60,
-  volMaxDtSecs: 3_600,
   volMaxAgeSecs: 60,
   volConfCapBps: 200,
   // No scenario takes more than 95% off a price
@@ -116,6 +154,8 @@ const asset = (group: number, oracle: number, feed: string, liqCostBps: number, 
   fixedRate: new BN(0),
   rateBaseMint: PublicKey.default,
   rateFeedId: Array(32).fill(0),
+  liqPriceAgeSecs: DAY,
+  uiMultiplier: false,
 });
 // A staking token's own price comes from its demo account, its backing from SOL's at a fixed rate
 function staked(rate: number): AssetParams {
@@ -136,8 +176,13 @@ for (const [mint, assetParams, sigma] of [
   [stock, asset(1, 1, "", 1000, 3 * DAY), 5_000],
   // Staking tokens in the LST group, priced at the lower of their own price and their SOL backing, a point more to sell than SOL
   ...LSTS.map((l) => [l.mint, staked(l.rate), 8_000] as const),
+  // The xStock in the stock group: per-share price times the mint's multiplier, and four days of last price for liquidations
+  [xstock, { ...asset(1, 1, "", 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true }, 4_000],
 ] as const) {
-  if (!(await exists(pda.asset(mint)))) await send(await ix.initAsset(program, me, mint, assetParams, sigma));
+  if (!(await exists(pda.asset(mint)))) {
+    const tokenProgram = mint.equals(xstock) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+    await send(await ix.initAsset(program, me, mint, assetParams, sigma, tokenProgram));
+  }
 }
 if (!(await exists(pda.lpMarket(whirlpool)))) await send(await ix.initLpMarket(program, me, whirlpool, NATIVE_MINT, 500));
 
@@ -153,6 +198,7 @@ if (!pool.guardian.equals(guardian)) await send(await ix.setGuardian(program, me
 for (const [mint, price] of [
   [NATIVE_MINT, solPrice],
   [stock, 180],
+  [xstock, 230],
   ...LSTS.map((l) => [l.mint, Math.round(solPrice * l.rate * 0.999 * 100) / 100] as const),
 ] as const) {
   if (!(await exists(pda.demoPrice(mint)))) await send(await ix.setDemoPrice(program, me, mint, Math.round(price * 1e6)));
@@ -187,6 +233,13 @@ const d: Deployment = {
       name: "NVIDIA tokenized stock (mock)",
       decimals: 6,
       priceAccount: pda.demoPrice(stock).toBase58(),
+    },
+    [xstock.toBase58()]: {
+      symbol: "AAPLx",
+      name: "Apple tokenized stock (mock)",
+      decimals: 8,
+      priceAccount: pda.demoPrice(xstock).toBase58(),
+      tokenProgram: TOKEN_2022_PROGRAM_ID.toBase58(),
     },
     ...Object.fromEntries(
       LSTS.map((l) => [

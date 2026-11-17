@@ -21,9 +21,11 @@ import BN from "bn.js";
 import { Buffer } from "buffer";
 import idl from "./idl/pluribus.json";
 import type { Pluribus } from "./idl/pluribus";
-import { type RiskPosition, dynamicShock, effectiveAt, lpAmounts, lpValue, tickToPrice } from "./math";
+import { type RiskPosition, dynamicShocks, effectiveAt, lpAmounts, lpValue, tickToPrice } from "./math";
 
 export type { Pluribus };
+
+const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 
 export type Deployment = {
   cluster: string;
@@ -44,7 +46,19 @@ export type Deployment = {
   tickSpacing: number;
   demoMode: boolean;
   // Indexed by mint, and USDC has no price account because it is fixed at $1
-  assets: Record<string, { symbol: string; name: string; decimals: number; priceAccount: string | null }>;
+  // A liquid staking token also names the SOL price account its backing is valued with, its stake pool or fixed rate
+  assets: Record<
+    string,
+    {
+      symbol: string;
+      name: string;
+      decimals: number;
+      priceAccount: string | null;
+      backing?: { solPriceAccount: string; stakePool?: string; fixedRate?: number };
+      // Token-2022 assets, like xStocks: their mint is read in every health check
+      tokenProgram?: string;
+    }
+  >;
 };
 
 export type PluribusProgram = Program<Pluribus>;
@@ -121,6 +135,12 @@ export async function fetchPrices(program: PluribusProgram, d: Deployment): Prom
     const a = accounts[i];
     if (a) prices[m] = a.price.sub(a.conf).toNumber() / 1e6;
   });
+  // A staking token is worth no more than its SOL backing, as the program values it
+  // Shortcut: fixed rates only, a stake pool's rate would need its account read too
+  for (const m of mints) {
+    const fixed = d.assets[m].backing?.fixedRate;
+    if (fixed && prices[m] !== undefined && prices[d.solMint] !== undefined) prices[m] = Math.min(prices[m], fixed * prices[d.solMint]);
+  }
   return prices;
 }
 
@@ -143,7 +163,12 @@ export function healthAccounts(
     if (opts.skip?.equals(p.mint)) continue;
     if (p.kind === KIND_TOKEN) {
       keys.push(pda.asset(p.mint));
+      if (d.assets[p.mint.toBase58()]?.tokenProgram === TOKEN_2022) keys.push(p.mint);
       if (p.mint.toBase58() !== d.usdcMint) keys.push(priceAccount(d, p.mint.toBase58()));
+      // A staking token's backing: the SOL price, then its stake pool when it has one
+      const backing = d.assets[p.mint.toBase58()]?.backing;
+      if (backing) keys.push(new PublicKey(backing.solPriceAccount));
+      if (backing?.stakePool) keys.push(new PublicKey(backing.stakePool));
     } else if (p.kind === KIND_LP) {
       keys.push(
         pda.lpMarket(new PublicKey(d.whirlpool)),
@@ -215,7 +240,7 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
     const mint = lp ? d.solMint : p.mint.toBase58();
     const asset = assets[priced.indexOf(mint)];
     if (!asset) throw new Error(`Asset ${mint} is not whitelisted`);
-    const shockBps = { init: dynamicShock(asset, pool.params.zInitX100), maint: dynamicShock(asset, pool.params.zMaintX100) };
+    const shockBps = dynamicShocks(asset, pool.params);
     const base = { mint, group: asset.params.group, paused: asset.params.paused || waiting(asset.activeAt), shockBps };
     let risk: RiskPosition;
     if (lp) {
