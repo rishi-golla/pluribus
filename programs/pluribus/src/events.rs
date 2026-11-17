@@ -131,6 +131,15 @@ pub struct EpochOpened {
     pub buffer: u64,
 }
 
+/// A price sample folded into `mint`'s volatility, with the dynamic shocks it now gives in bps
+#[event]
+pub struct VolUpdated {
+    pub mint: Pubkey,
+    pub price: u64,
+    pub shock_init_bps: u64,
+    pub shock_maint_bps: u64,
+}
+
 #[event]
 pub struct ChangeApplied {
     pub target: Pubkey,

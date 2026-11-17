@@ -270,9 +270,12 @@ fn record_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<
     Ok(())
 }
 
-pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams) -> Result<()> {
+/// `sigma_seed_bps` is the annual volatility the dynamic shock starts from, until the volatility crank has prices of its own
+pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_seed_bps: u32) -> Result<()> {
     record_asset(&mut ctx.accounts.pool, &ctx.accounts.mint.key(), &params)?;
+    require!(sigma_seed_bps <= 100_000, PluribusError::InvalidParams);
     let now = Clock::get()?.unix_timestamp;
+    let seed = Asset::seed_variance(sigma_seed_bps);
     ctx.accounts.asset.set_inner(Asset {
         mint: ctx.accounts.mint.key(),
         vault: ctx.accounts.vault.key(),
@@ -283,6 +286,11 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams) -> Result
         active_at: now + ctx.accounts.pool.params.activation_delay_secs as i64,
         pending: params,
         pending_at: 0,
+        var_fast: seed,
+        var_slow: seed,
+        vol_price: 0,
+        vol_time: 0,
+        reserved: [0; 64],
     });
     Ok(())
 }

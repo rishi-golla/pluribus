@@ -72,4 +72,6 @@ pub enum PluribusError {
     NotYetActive,
     #[msg("The epoch length can only change once the yield buffer is paid out, or to 0")]
     EpochChangeNotAllowed,
+    #[msg("A volatility sample needs a newer price")]
+    VolTooSoon,
 }

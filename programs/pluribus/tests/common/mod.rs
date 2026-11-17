@@ -102,6 +102,15 @@ pub fn default_params() -> PoolParams {
         junior_max_pause_secs: 90 * DAY as u32,
         junior_pause_gap_secs: 3 * DAY as u32,
         activation_delay_secs: 0,
+        z_init_x100: 300,
+        z_maint_x100: 233,
+        vol_tau_fast_secs: 3_600,
+        vol_tau_slow_secs: 7 * DAY as u32,
+        vol_min_interval_secs: 60,
+        vol_max_dt_secs: 3_600,
+        vol_max_age_secs: 60,
+        vol_conf_cap_bps: 200,
+        max_shock_bps: 9_500,
     }
 }
 
@@ -118,7 +127,18 @@ pub fn timed_params() -> PoolParams {
 }
 
 pub fn asset_params(group: u8, oracle: u8, feed: [u8; 32], liq_cost_bps: u16) -> AssetParams {
-    AssetParams { group, oracle, pyth_feed_id: feed, liq_cost_bps, max_price_age_secs: 60, max_conf_bps: 200, deposit_cap: 0, paused: false }
+    // No dynamic shock unless a test asks for one, so the tables alone decide
+    AssetParams {
+        group,
+        oracle,
+        pyth_feed_id: feed,
+        liq_cost_bps,
+        max_price_age_secs: 60,
+        max_conf_bps: 200,
+        deposit_cap: 0,
+        paused: false,
+        vol_horizon_secs: 0,
+    }
 }
 
 pub struct Env {
@@ -428,8 +448,13 @@ impl Env {
     // Instructions
 
     pub fn init_asset_ix(&self, mint: &Pubkey, params: AssetParams) -> Instruction {
+        self.init_asset_seeded_ix(mint, params, 0)
+    }
+
+    /// Lists an asset whose dynamic shock starts from `sigma_seed_bps` of annual volatility
+    pub fn init_asset_seeded_ix(&self, mint: &Pubkey, params: AssetParams, sigma_seed_bps: u32) -> Instruction {
         self.ix(
-            pluribus::instruction::InitAsset { params }.data(),
+            pluribus::instruction::InitAsset { params, sigma_seed_bps }.data(),
             pluribus::accounts::InitAsset {
                 admin: self.admin.pubkey(),
                 pool: self.pool,
@@ -440,6 +465,14 @@ impl Env {
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn update_vol_ix(&self, mint: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::UpdateVol {}.data(),
+            pluribus::accounts::UpdateVol { pool: self.pool, asset: self.asset_pda(mint), price: self.price_account(mint) }.to_account_metas(None),
             None,
         )
     }

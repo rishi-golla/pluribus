@@ -37,8 +37,8 @@ pub mod pluribus {
         admin::handle_set_admin(ctx, new_admin)
     }
 
-    pub fn init_asset(ctx: Context<InitAsset>, params: AssetParams) -> Result<()> {
-        admin::handle_init_asset(ctx, params)
+    pub fn init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_seed_bps: u32) -> Result<()> {
+        admin::handle_init_asset(ctx, params, sigma_seed_bps)
     }
 
     pub fn set_asset(ctx: Context<SetAsset>, params: AssetParams) -> Result<()> {
@@ -127,6 +127,10 @@ pub mod pluribus {
 
     pub fn health(ctx: Context<ViewHealth>) -> Result<HealthView> {
         keeper::handle_health(ctx)
+    }
+
+    pub fn update_vol(ctx: Context<UpdateVol>) -> Result<()> {
+        keeper::handle_update_vol(ctx)
     }
 
     pub fn convert_to_junior(ctx: Context<ConvertToJunior>, shares: u64) -> Result<()> {

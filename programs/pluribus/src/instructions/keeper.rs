@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{constants::*, events::*, math::*, risk::*, state::*};
+use crate::{constants::*, error::PluribusError, events::*, math::*, oracle::*, risk::*, state::*};
 
 #[derive(Accounts)]
 pub struct Accrue<'info> {
@@ -10,6 +10,38 @@ pub struct Accrue<'info> {
 
 pub fn handle_accrue(ctx: Context<Accrue>) -> Result<()> {
     ctx.accounts.pool.accrue(Clock::get()?.unix_timestamp)
+}
+
+#[derive(Accounts)]
+pub struct UpdateVol<'info> {
+    #[account(seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+    /// CHECK: The asset's own price account, checked by the quote reader against the asset's feed or mint
+    pub price: UncheckedAccount<'info>,
+}
+
+/// Permissionless: folds the asset's latest price into its volatility, which sets its dynamic shock
+/// Only a fresh, certain price that is newer than the last sample by the minimum interval counts,
+/// and its own publish time measures the gap, so calling more often changes nothing
+pub fn handle_update_vol(ctx: Context<UpdateVol>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let (pool, asset) = (&ctx.accounts.pool, &mut ctx.accounts.asset);
+    let p = &pool.params;
+    require!(asset.params.oracle != ORACLE_FIXED, PluribusError::InvalidPriceAccount);
+    let q = read_quote(pool, asset, &ctx.accounts.price)?;
+    require!(q.price > 0 && q.price <= u64::MAX as u128, PluribusError::InvalidPriceAccount);
+    require!(now.saturating_sub(q.publish_time) <= p.vol_max_age_secs as i64, PluribusError::StalePrice);
+    require!(q.conf * BPS <= q.price * p.vol_conf_cap_bps as u128, PluribusError::PriceTooUncertain);
+    asset.record_vol(q.price as u64, q.publish_time, p)?;
+    emit!(VolUpdated {
+        mint: asset.mint,
+        price: q.price as u64,
+        shock_init_bps: asset.dynamic_shock(p.z_init_x100) as u64,
+        shock_maint_bps: asset.dynamic_shock(p.z_maint_x100) as u64,
+    });
+    Ok(())
 }
 
 #[derive(Accounts)]

@@ -7,10 +7,10 @@ const PRICE_UPDATE_DISCRIMINATOR: [u8; 8] = [0x22, 0xf1, 0x23, 0x63, 0x9d, 0x7e,
 /// Borsh tag of VerificationLevel::Full
 const VERIFICATION_FULL: u8 = 1;
 
-struct Quote {
-    price: u128,
-    conf: u128,
-    publish_time: i64,
+pub struct Quote {
+    pub price: u128,
+    pub conf: u128,
+    pub publish_time: i64,
 }
 
 /// Loads one of this program's accounts from the remaining accounts, checking owner and discriminator
@@ -22,12 +22,21 @@ pub fn load<T: AccountDeserialize>(acc: &AccountInfo) -> Result<T> {
 /// Collateral price for `asset` in USDC with 6 decimals, taken at the low end of the confidence band
 /// Fails when the price is stale or too uncertain, so anything that needs a health check stops
 pub fn read_price(pool: &Pool, asset: &Asset, acc: &AccountInfo, now: i64) -> Result<u128> {
-    let q = if pool.demo_mode { demo_quote(asset, acc)? } else { pyth_quote(asset, acc)? };
+    let q = read_quote(pool, asset, acc)?;
     let p = &asset.params;
     require!(q.price > 0, PluribusError::InvalidPriceAccount);
     require!(now.saturating_sub(q.publish_time) <= p.max_price_age_secs as i64, PluribusError::StalePrice);
     require!(q.conf * BPS <= q.price * p.max_conf_bps as u128, PluribusError::PriceTooUncertain);
     Ok(q.price - q.conf)
+}
+
+/// The raw quote for `asset`, from its demo account in demo mode or its Pyth account otherwise, checked for the right feed
+pub fn read_quote(pool: &Pool, asset: &Asset, acc: &AccountInfo) -> Result<Quote> {
+    if pool.demo_mode {
+        demo_quote(asset, acc)
+    } else {
+        pyth_quote(asset, acc)
+    }
 }
 
 fn demo_quote(asset: &Asset, acc: &AccountInfo) -> Result<Quote> {

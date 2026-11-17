@@ -24,7 +24,7 @@ pub const JUNIOR_ESCROW_SEED: &[u8] = b"junior_escrow";
 pub const JUNIOR_EXIT_SEED: &[u8] = b"junior_exit";
 
 pub const MAX_POSITIONS: usize = 5;
-pub const MAX_GROUPS: usize = 4;
+pub const MAX_GROUPS: usize = 6;
 pub const MAX_SCENARIOS: usize = 4;
 pub const TIERS: usize = 3;
 
@@ -50,6 +50,8 @@ pub const MAX_JUNIOR_EXIT_WINDOW_SECS: u32 = 3 * 86_400;
 pub const EPOCH_ANCHOR: i64 = 86_400;
 pub const MIN_EPOCH_SECS: u32 = 60;
 pub const MAX_EPOCH_SECS: u32 = 30 * 86_400;
+/// Scale of an asset's variance per second, so a return of 1% over a second reads as 1e14
+pub const VOL_SCALE: u128 = 1_000_000_000_000_000_000;
 /// Scale at which fractions of a base unit are carried between interest accruals
 pub const DUST: u128 = 1_000_000_000;
 pub const USDC_DECIMALS: u8 = 6;

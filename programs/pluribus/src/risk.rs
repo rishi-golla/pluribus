@@ -105,7 +105,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
     let mut next = || accs.next().ok_or_else(|| error!(PluribusError::MissingAccount));
 
     for (i, pos) in credit.positions.iter().enumerate() {
-        let (valuer, group, cost, paused) = match pos.kind {
+        let (valuer, group, cost, paused, d) = match pos.kind {
             KIND_TOKEN => {
                 let asset: Asset = load(next()?)?;
                 require_keys_eq!(asset.mint, pos.mint, PluribusError::AccountMismatch);
@@ -114,7 +114,9 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                     _ => read_price(pool, &asset, next()?, now)?,
                 };
                 let valuer = Valuer::Token { amount: pos.amount, decimals: asset.decimals };
-                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, asset.params.paused || now < pool.effective_at(asset.active_at))
+                let paused = asset.params.paused || now < pool.effective_at(asset.active_at);
+                let d = (asset.dynamic_shock(params.z_init_x100), asset.dynamic_shock(params.z_maint_x100));
+                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, paused, d)
             }
             KIND_LP => {
                 let market: LpMarket = load(next()?)?;
@@ -133,7 +135,8 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let (lower, upper) = range_sqrt_prices(orca.tick_lower, orca.tick_upper)?;
                 let valuer = Valuer::Lp { liquidity: orca.liquidity, lower, upper, decimals: asset.decimals };
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at);
-                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting)
+                let d = (asset.dynamic_shock(params.z_init_x100), asset.dynamic_shock(params.z_maint_x100));
+                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d)
             }
             _ => continue,
         };
@@ -141,16 +144,20 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
         if want_maint {
             h.market[i] = valuer.at(h.price[i], 0, &mut roots)?;
         }
+        // The table's shocks with the asset's own volatility laid over them
+        // A liquidation line never sits below the draw limit, so each liquidation shock is capped at the draw shock
+        let init_shocks = params.shocks_for(true, group, d.0);
+        let maint_shocks = params.shocks_for(false, group, d.1);
         for s in 0..n {
             if want_maint {
-                let shocked = cut(h.price[i], params.shock(false, s, group))?;
+                let shocked = cut(h.price[i], maint_shocks[s].min(init_shocks[s]))?;
                 let maint = cut(valuer.at(shocked, params.shock(false, s, pool.usdc_group), &mut roots)?, cost)?;
                 h.pos_maint[i][s] = maint;
                 h.maint[s] += maint;
             }
             // Paused collateral, and a listing still in its activation delay, backs no new debt but keeps protecting what is already drawn
             if want_init && !paused {
-                let shocked = cut(h.price[i], params.shock(true, s, group))?;
+                let shocked = cut(h.price[i], init_shocks[s])?;
                 h.init[s] += cut(valuer.at(shocked, params.shock(true, s, pool.usdc_group), &mut roots)?, cost)?;
             }
         }

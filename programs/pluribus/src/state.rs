@@ -53,6 +53,20 @@ pub struct PoolParams {
     /// Wait before new collateral, or any change that is not a pure tightening, takes effect
     /// At least the longest junior wait plus the claim window, so juniors who disagree can leave first
     pub activation_delay_secs: u32,
+    /// Dynamic shock d = z x sigma x sqrt(T) per asset, with z in hundredths for the draw and liquidation tables
+    pub z_init_x100: u16,
+    pub z_maint_x100: u16,
+    /// Two averages of each asset's variance: the fast one lets a rise in volatility in quickly, the slow one makes it fade slowly
+    pub vol_tau_fast_secs: u32,
+    pub vol_tau_slow_secs: u32,
+    /// A volatility sample needs a price this much newer than the last one, at most this old and this certain,
+    /// and counts at most `vol_max_dt_secs` of elapsed time
+    pub vol_min_interval_secs: u32,
+    pub vol_max_dt_secs: u32,
+    pub vol_max_age_secs: u32,
+    pub vol_conf_cap_bps: u16,
+    /// Largest shock any scenario can apply, dynamic or not
+    pub max_shock_bps: u16,
 }
 
 impl PoolParams {
@@ -95,6 +109,16 @@ impl PoolParams {
             && self.junior_pause_gap_secs as u64 >= self.junior_max_delay_secs as u64 + MAX_JUNIOR_EXIT_WINDOW_SECS as u64
             && self.junior_pause_gap_secs >= self.activation_delay_secs
             && self.activation_delay_secs <= MAX_ACTIVATION_DELAY_SECS
+            && self.z_maint_x100 <= self.z_init_x100
+            && self.z_init_x100 <= 1_000
+            && 0 < self.vol_tau_fast_secs
+            && self.vol_tau_fast_secs <= self.vol_tau_slow_secs
+            && 0 < self.vol_min_interval_secs
+            && self.vol_min_interval_secs <= self.vol_max_dt_secs
+            && self.vol_max_age_secs > 0
+            && (1..=2_000).contains(&self.vol_conf_cap_bps)
+            && (self.max_shock_bps as u128) < BPS
+            && self.init_shock_bps.iter().all(|s| *s <= self.max_shock_bps)
             // A junior who queues the moment a change is announced can wait out the longest delay and still claim
             // before it applies, so applying it and pausing in one go never traps them; with no queue they leave at once
             && (self.junior_max_delay_secs == 0
@@ -138,6 +162,21 @@ impl PoolParams {
         let table = if init { &self.init_shock_bps } else { &self.maint_shock_bps };
         // Assets outside every group (USDC) are never shocked
         table.get(scenario * MAX_GROUPS + group as usize).filter(|_| (group as usize) < MAX_GROUPS).map_or(0, |b| *b as u128)
+    }
+
+    /// An asset's shock in every scenario, with its dynamic shock `d` (bps) laid over the table
+    /// The scenario where the asset's group falls hardest takes all of `d`, the others the same fraction of it as in the table,
+    /// so a volatile asset falls further without breaking the joint scenarios. Never below the table, never above the cap
+    pub fn shocks_for(&self, init: bool, group: u8, d: u128) -> [u128; MAX_SCENARIOS] {
+        let n = self.num_scenarios as usize;
+        let mut out = [0u128; MAX_SCENARIOS];
+        let worst = (0..n).map(|s| self.shock(init, s, group)).max().unwrap_or(0);
+        for (s, slot) in out.iter_mut().enumerate().take(n) {
+            let table = self.shock(init, s, group);
+            let scaled = if worst == 0 { 0 } else { d.saturating_mul(table) / worst };
+            *slot = table.max(scaled).min(self.max_shock_bps as u128);
+        }
+        out
     }
 }
 
@@ -573,16 +612,28 @@ pub struct AssetParams {
     pub max_conf_bps: u16,
     pub deposit_cap: u64,
     pub paused: bool,
+    /// Liquidation horizon T for the dynamic shock, about a day for crypto and three for stocks so a weekend fits, 0 for none
+    pub vol_horizon_secs: u32,
 }
 
 impl AssetParams {
-    /// True when `next` can only make the asset safer: a higher liquidation cost, a smaller cap or a pause
+    /// True when `next` can only make the asset safer: a higher liquidation cost, a smaller cap, a longer horizon or a pause
     /// Oracle limits always wait, since a stricter one can stop liquidations as surely as a looser one adds risk
     pub fn only_tightens(&self, next: &AssetParams) -> bool {
         // A cap of zero means uncapped
         let cap_ok = next.deposit_cap == self.deposit_cap || (next.deposit_cap != 0 && (self.deposit_cap == 0 || next.deposit_cap < self.deposit_cap));
-        let rest_same = AssetParams { liq_cost_bps: self.liq_cost_bps, deposit_cap: self.deposit_cap, paused: self.paused, ..*next } == *self;
-        rest_same && cap_ok && next.liq_cost_bps >= self.liq_cost_bps && (next.paused || !self.paused)
+        let rest_same = AssetParams {
+            liq_cost_bps: self.liq_cost_bps,
+            deposit_cap: self.deposit_cap,
+            paused: self.paused,
+            vol_horizon_secs: self.vol_horizon_secs,
+            ..*next
+        } == *self;
+        rest_same
+            && cap_ok
+            && next.liq_cost_bps >= self.liq_cost_bps
+            && (next.paused || !self.paused)
+            && next.vol_horizon_secs >= self.vol_horizon_secs
     }
 }
 
@@ -593,7 +644,10 @@ impl AssetParams {
                 && self.oracle <= ORACLE_PYTH
                 // A zero age or band would make the asset unusable, and a band near 100% lets the price reach zero
                 && self.max_price_age_secs > 0
-                && (1..=2_000).contains(&self.max_conf_bps),
+                && (1..=2_000).contains(&self.max_conf_bps)
+                // A fixed price has no volatility to measure
+                && (self.oracle != ORACLE_FIXED || self.vol_horizon_secs == 0)
+                && self.vol_horizon_secs <= 30 * 86_400,
             PluribusError::InvalidParams
         );
         Ok(())
@@ -615,6 +669,58 @@ pub struct Asset {
     /// Looser parameters waiting out the activation delay, live from `pending_at`, which is 0 when nothing waits
     pub pending: AssetParams,
     pub pending_at: i64,
+    /// Fast and slow averages of the price's variance per second, scaled by VOL_SCALE
+    pub var_fast: u128,
+    pub var_slow: u128,
+    /// The price and publish time of the last volatility sample
+    pub vol_price: u64,
+    pub vol_time: i64,
+    /// Room for fields added later without moving the ones above
+    pub reserved: [u8; 64],
+}
+
+impl Asset {
+    /// The dynamic shock z x sigma x sqrt(T) in bps, from the higher of the two variance averages
+    pub fn dynamic_shock(&self, z_x100: u16) -> u128 {
+        let var = self.var_fast.max(self.var_slow);
+        let spread = var.saturating_mul(self.params.vol_horizon_secs as u128).isqrt();
+        // sqrt(var x T) carries a scale of 1e9, so z / 100 x that / 1e9 x 1e4 bps
+        (z_x100 as u128).saturating_mul(spread) / 10_000_000
+    }
+
+    /// Variance per second for an annual volatility in bps, used to seed a new listing
+    pub fn seed_variance(sigma_bps: u32) -> u128 {
+        let s = sigma_bps as u128;
+        s * s * (VOL_SCALE / BPS / BPS) / SECONDS_PER_YEAR
+    }
+
+    /// Folds one price sample into both averages: the squared simple return per second, weighted by elapsed time over each average's span
+    pub fn record_vol(&mut self, price: u64, publish_time: i64, p: &PoolParams) -> Result<()> {
+        if self.vol_time != 0 && self.vol_price > 0 {
+            require!(publish_time >= self.vol_time + p.vol_min_interval_secs as i64, PluribusError::VolTooSoon);
+            // A long gap, like a weekend, counts at most this long, so the jump that ends it reads as large
+            let dt = (publish_time - self.vol_time).clamp(p.vol_min_interval_secs as i64, p.vol_max_dt_secs as i64) as u128;
+            let (p0, p1) = (self.vol_price as u128, price as u128);
+            let r = p1.abs_diff(p0);
+            let overflow = || error!(PluribusError::MathOverflow);
+            let r2 = r.checked_mul(r).ok_or_else(overflow)?;
+            let base = p0.checked_mul(p0).and_then(|x| x.checked_mul(dt)).ok_or_else(overflow)?;
+            let sample = mul_div_wide(r2, VOL_SCALE, base)?;
+            let fold = |v: u128, tau: u32| -> Result<u128> {
+                let tau = tau as u128;
+                if dt >= tau {
+                    return Ok(sample);
+                }
+                let step = mul_div_floor(sample.abs_diff(v), dt, tau)?;
+                Ok(if sample >= v { v.saturating_add(step) } else { v - step })
+            };
+            self.var_fast = fold(self.var_fast, p.vol_tau_fast_secs)?;
+            self.var_slow = fold(self.var_slow, p.vol_tau_slow_secs)?;
+        }
+        self.vol_price = price;
+        self.vol_time = publish_time;
+        Ok(())
+    }
 }
 
 /// A whitelisted Orca Whirlpool whose positions count as collateral, always quoted in USDC
