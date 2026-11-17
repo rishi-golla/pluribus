@@ -3176,6 +3176,48 @@
       ]
     },
     {
+      "name": "sync_mint",
+      "discriminator": [
+        232,
+        88,
+        240,
+        75,
+        34,
+        163,
+        204,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "unpause_junior_exits",
       "discriminator": [
         1,
@@ -4033,6 +4075,11 @@
       "code": 6036,
       "name": "UnsupportedDex",
       "msg": "This needs an Orca market with the base token first"
+    },
+    {
+      "code": 6037,
+      "name": "VaultShort",
+      "msg": "The vault holds less than its books say, so it takes no deposits"
     }
   ],
   "types": [
@@ -4140,6 +4187,29 @@
             "type": "pubkey"
           },
           {
+            "name": "mult",
+            "docs": [
+              "For a Token-2022 token with a corporate-action multiplier: the one in effect when last synced and the one before,",
+              "in tokens per share scaled by 1e9"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "mult_prev",
+            "type": "u64"
+          },
+          {
+            "name": "mult_since",
+            "docs": [
+              "When `mult` took effect: exactly for a change scheduled ahead, otherwise when it was first seen; 0 before any change"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "mult_exact",
+            "type": "bool"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4147,7 +4217,7 @@
             "type": {
               "array": [
                 "u8",
-                64
+                39
               ]
             }
           }

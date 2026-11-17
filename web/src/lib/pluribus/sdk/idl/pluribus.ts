@@ -3182,6 +3182,48 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "syncMint",
+      "discriminator": [
+        232,
+        88,
+        240,
+        75,
+        34,
+        163,
+        204,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "unpauseJuniorExits",
       "discriminator": [
         1,
@@ -4039,6 +4081,11 @@ export type Pluribus = {
       "code": 6036,
       "name": "unsupportedDex",
       "msg": "This needs an Orca market with the base token first"
+    },
+    {
+      "code": 6037,
+      "name": "vaultShort",
+      "msg": "The vault holds less than its books say, so it takes no deposits"
     }
   ],
   "types": [
@@ -4146,6 +4193,29 @@ export type Pluribus = {
             "type": "pubkey"
           },
           {
+            "name": "mult",
+            "docs": [
+              "For a Token-2022 token with a corporate-action multiplier: the one in effect when last synced and the one before,",
+              "in tokens per share scaled by 1e9"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "multPrev",
+            "type": "u64"
+          },
+          {
+            "name": "multSince",
+            "docs": [
+              "When `mult` took effect: exactly for a change scheduled ahead, otherwise when it was first seen; 0 before any change"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "multExact",
+            "type": "bool"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4153,7 +4223,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                64
+                39
               ]
             }
           }

@@ -643,18 +643,25 @@ export async function initAsset(
   ];
 }
 
+// Permissionless: records a Token-2022 asset's new corporate-action multiplier, so a change the issuer applied at once
+// is dated as soon as anyone sees it
+export async function syncMint(program: PluribusProgram, mint: PublicKey): Ixs {
+  return [await program.methods.syncMint().accountsStrict({ asset: pda.asset(mint), mint }).instruction()];
+}
+
 // Permissionless: folds the asset's latest price into its volatility, at most once per minimum interval of publish time
 // A staking token also passes its SOL price and stake pool, since its price is capped by that backing,
 // and a Token-2022 token its mint, whose multiplier scales its price
 export async function updateVol(program: PluribusProgram, d: Deployment, mint: PublicKey): Ixs {
   const a = d.assets[mint.toBase58()];
+  if (!a?.priceAccount) throw new Error(`${mint.toBase58()} has no price account in the ${d.cluster} deployment`);
   // The same order as a health check: a Token-2022 asset's mint for its multiplier, then a staking token's backing
   const t22 = a.tokenProgram && a.tokenProgram !== TOKEN_PROGRAM_ID.toBase58() ? mint.toBase58() : undefined;
   const backing = [t22, a.backing?.solPriceAccount, a.backing?.stakePool].filter((k): k is string => !!k);
   return [
     await program.methods
       .updateVol()
-      .accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price: key(a.priceAccount!) })
+      .accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price: key(a.priceAccount) })
       .remainingAccounts(backing.map((k) => ({ pubkey: key(k), isSigner: false, isWritable: false })))
       .instruction(),
   ];

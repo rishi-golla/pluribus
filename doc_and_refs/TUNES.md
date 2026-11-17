@@ -83,10 +83,11 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 |---|---|---|---|
 | `liq_price_age_secs` | 4d for the xStock, 1d for others | ≥ `max_price_age_secs` | Oldest price that still counts for liquidations and the liquidation line. Draws keep the short age. Four days covers a long weekend. Longer = bad debt can still be cleared after a long close, but on an older price. |
 | `ui_multiplier` | on for the xStock | | Multiply a per-share price by the mint's corporate-action multiplier. Turn off if the feed already quotes per token. |
-| `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | Around a multiplier change, the token backs no new debt and takes the larger multiplier for the liquidation line, so a feed that is a little early or late on a split can't liquidate anyone. Widen it if real feeds lag the multiplier by more than an hour. |
-| Multiplier bounds | 0.01 to 100 | constant in `token2022.rs` | Anything outside stops the asset's health checks. |
+| `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | Around a multiplier change the token backs no new debt, and of the two bases the one that keeps the token's price nearest the last volatility sample is used. A change the issuer applies at once is dated when `sync_mint` (or the volatility crank) first sees it, so the guard runs from then. Widen it if real feeds lag the multiplier by more than an hour. |
+| Multiplier bounds | 0.0001 to 10000 | constant in `token2022.rs` | A multiplier in effect outside this halts only that token (no new debt, valued at the last synced multiplier). One scheduled outside it changes nothing until it applies. |
+| Vault shortfall | pro rata | `risk.rs`, `borrow.rs`, `liquidate.rs` | If the issuer's delegate takes tokens out of the vault, each booked token is worth vault / books, withdrawals and seizes pay that share, and deposits stop. A frozen vault backs no new debt. |
 | Extension allow-list | delegate, pause, multiplier, metadata, groups, confidential transfer, an unset hook, default state Initialized | constant in `token2022.rs` | Fees, interest, a live hook and frozen default accounts are refused at listing. A pause or a hook switched on later halts the token: no new debt, still counts toward the liquidation line. |
-| Issuer trust | | | The permanent delegate can move or burn tokens out of the vault. Size `deposit_cap` for that issuer risk. |
+| Issuer trust | | | The permanent delegate can move or burn tokens out of the vault, and the loss is shared by everyone holding that token here. Size `deposit_cap` for that issuer risk. |
 
 ## Interest and loyalty tiers
 

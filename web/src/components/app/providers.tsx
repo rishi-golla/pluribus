@@ -320,7 +320,10 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
             const key = new PublicKey(mint);
             const held = data.collateral.find((c) => c.mint === mint);
             const units = BigInt(Math.round(amount * 10 ** d.assets[mint].decimals));
-            if (deposit) return [...(await open()), ...(await ix.depositToken(program, me, key, units))];
+            // Token-2022 assets like xStocks move through their own token program
+            const listed = d.assets[mint].tokenProgram;
+            const tokenProgram = listed ? new PublicKey(listed) : undefined;
+            if (deposit) return [...(await open()), ...(await ix.depositToken(program, me, key, units, tokenProgram))];
             // Typed amounts are rounded, so taking everything uses the exact balance and leaves no dust
             return ix.withdrawToken(program, d, me, key, held && amount >= Math.floor(held.amount * 1e4) / 1e4 ? BigInt(held.raw) : units);
           }, onStage),

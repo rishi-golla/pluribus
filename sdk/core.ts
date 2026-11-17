@@ -171,7 +171,8 @@ export function healthAccounts(
     if (opts.skip?.equals(p.mint)) continue;
     if (p.kind === KIND_TOKEN) {
       keys.push(pda.asset(p.mint));
-      if (d.assets[p.mint.toBase58()]?.tokenProgram === TOKEN_2022) keys.push(p.mint);
+      // A Token-2022 asset's mint and vault: its issuer can pause it, scale balances, or move tokens out of the vault
+      if (d.assets[p.mint.toBase58()]?.tokenProgram === TOKEN_2022) keys.push(p.mint, pda.vault(p.mint));
       if (p.mint.toBase58() !== d.usdcMint) keys.push(priceAccount(d, p.mint.toBase58()));
       // A staking token's backing: the SOL price, then its stake pool when it has one
       const backing = d.assets[p.mint.toBase58()]?.backing;
