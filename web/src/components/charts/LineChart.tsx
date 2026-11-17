@@ -20,6 +20,8 @@ type Props = {
   yTicks: number[];
   fmtY: (v: number) => string;
   xLabels: string[];
+  /** Names what the x axis measures, centred under the tick labels. Leave room for it in `pad.bottom`. */
+  xTitle?: string;
   /** Tooltip heading for a data index. */
   titleAt: (i: number) => string;
   fmtValue: (v: number) => string;
@@ -47,6 +49,7 @@ export function LineChart({
   yTicks,
   fmtY,
   xLabels,
+  xTitle,
   titleAt,
   fmtValue,
   restIndex,
@@ -104,10 +107,15 @@ export function LineChart({
           </g>
         ))}
         {xLabels.map((lab, i) => (
-          <text key={`${lab}-${i}`} x={pad.left + (i / (xLabels.length - 1)) * iw} y={H - 6} textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>
+          <text key={`${lab}-${i}`} x={pad.left + (i / (xLabels.length - 1)) * iw} y={xTitle ? H - 24 : H - 6} textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>
             {lab}
           </text>
         ))}
+        {xTitle && (
+          <text x={pad.left + iw / 2} y={H - 4} textAnchor="middle" className="font-medium">
+            {xTitle}
+          </text>
+        )}
         {overlay?.({ x, y, innerWidth: iw, innerHeight: ih, pad })}
         {lines.map((l, k) => {
           const pts: Point[] = l.data.map((v, i) => [x(i), y(v)]);

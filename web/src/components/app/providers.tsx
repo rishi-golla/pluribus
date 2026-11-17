@@ -63,6 +63,8 @@ export type OnStage = (stage: Stage) => void;
 /** One reading of the account and pool, kept for the charts while the app is open */
 export type Sample = { at: number; collateral: number; limit: number; debt: number; utilization: number; apy: Record<Tranche, number>; supplied: Record<Tranche, number> };
 type Tranche = "senior" | "junior";
+/** What one test harvest collected, in USDC repaid, USDC kept as collateral and SOL kept as collateral */
+export type Harvest = { repaid: number; keptUsdc: number; sol: number; solPrice: number };
 
 export type Live = LiveData & {
   samples: Sample[];
@@ -70,6 +72,10 @@ export type Live = LiveData & {
   canSetPrice: boolean;
   /** Whether this server can hand out test tokens */
   canFund: boolean;
+  /** Whether this server can trade the pool and harvest on demand, which only a local chain allows */
+  canHarvest: boolean;
+  /** Trades the pool once each way, then collects the fees on every deposited LP position. Null when it failed */
+  harvest: () => Promise<Harvest | null>;
   /** Asks the server's faucet to fill the connected wallet, once per wallet */
   fund: () => Promise<boolean>;
   /** Deposits or withdraws a token, in whole tokens, opening the credit account on the first deposit */
@@ -130,6 +136,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [canSetPrice, setCanSetPrice] = useState(false);
   const [canFund, setCanFund] = useState(false);
+  const [canHarvest, setCanHarvest] = useState(false);
   const [failed, setFailed] = useState<string>();
   const owner = wallet?.publicKey?.toBase58();
   const current = loaded?.owner === owner ? loaded : null;
@@ -173,6 +180,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     if (!owner) return;
     fetch("/api/demo/price").then((r) => setCanSetPrice(r.ok));
     fetch("/api/faucet").then((r) => setCanFund(r.ok));
+    fetch("/api/demo/harvest").then((r) => setCanHarvest(r.ok));
   }, [owner]);
 
   const account = useMemo<Account>(() => {
@@ -275,6 +283,17 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         samples,
         canSetPrice,
         canFund,
+        canHarvest,
+        harvest: async () => {
+          const res = await fetch("/api/demo/harvest", { method: "POST", body: JSON.stringify({ address: owner }) });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast({ title: body.error ?? "Harvest failed", detail: "Fast harvest stopped", tone: "error" });
+            return null;
+          }
+          await refresh().catch(() => {});
+          return body as Harvest;
+        },
         fund: async () => {
           toast({ title: "Sending test tokens", detail: "This takes a few seconds", tone: "info" });
           const res = await fetch("/api/faucet", { method: "POST", body: JSON.stringify({ address: owner }) });
@@ -313,7 +332,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         },
       },
     };
-  }, [current, wallet, loading, session, positions, canSetPrice, canFund, owner, refresh, toast]);
+  }, [current, wallet, loading, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);
 
   return <AccountCtx.Provider value={account}>{children}</AccountCtx.Provider>;
 }
