@@ -61,6 +61,12 @@ if (!positions.some((p) => p.mint.equals(stock))) {
   await faucet(d, who, { stock: 5 });
   await send(await ix.depositToken(program, who, stock, 5_000_000), [borrower]);
 }
+// A staking token, when the deployment lists one
+const lst = Object.entries(d.assets).find(([, a]) => a.backing)?.[0];
+if (lst && !positions.some((p) => p.mint.toBase58() === lst)) {
+  await faucet(d, who, { tokens: { [lst]: 0.5 } });
+  await send(await ix.depositToken(program, who, new PublicKey(lst), 500_000_000), [borrower]);
+}
 if (!positions.some((p) => p.kind === KIND_LP)) {
   await faucet(d, who, { lp: 20, range: [120, 180] });
   const [position] = await listOrcaPositions(connection, d, who);
@@ -69,13 +75,14 @@ if (!positions.some((p) => p.kind === KIND_LP)) {
 }
 
 credit = (await fetchCredit(program, who))!;
-check("The account holds SOL, the stock token and an Orca position", credit.positions.filter((p) => p.kind !== 0).length === 3);
+const kinds = lst ? "SOL, the stock token, a staking token and an Orca position" : "SOL, the stock token and an Orca position";
+check(`The account holds ${kinds}`, credit.positions.filter((p) => p.kind !== 0).length === (lst ? 4 : 3));
 
 const [pool, prices, risks] = await Promise.all([fetchPool(program), fetchPrices(program, d), fetchPositions(program, d, credit)]);
 const want = math.limits(risks.map((p) => p.risk), pool.params, prices);
 const before = await view();
 const gap = Math.abs(before.limit / USDC - want.creditLimit) / want.creditLimit;
-check("One credit limit across all three, matching the SDK's own maths", gap < 1e-6, `$${(before.limit / USDC).toFixed(2)}`);
+check("One credit limit across every asset, matching the SDK's own maths", gap < 1e-6, `$${(before.limit / USDC).toFixed(2)}`);
 
 const amount = Math.floor((before.limit - before.debt) * 0.3);
 const wallet = await held(usdc);

@@ -44,7 +44,17 @@ export type Deployment = {
   tickSpacing: number;
   demoMode: boolean;
   // Indexed by mint, and USDC has no price account because it is fixed at $1
-  assets: Record<string, { symbol: string; name: string; decimals: number; priceAccount: string | null }>;
+  // A liquid staking token also names the SOL price account its backing is valued with, its stake pool or fixed rate
+  assets: Record<
+    string,
+    {
+      symbol: string;
+      name: string;
+      decimals: number;
+      priceAccount: string | null;
+      backing?: { solPriceAccount: string; stakePool?: string; fixedRate?: number };
+    }
+  >;
 };
 
 export type PluribusProgram = Program<Pluribus>;
@@ -121,6 +131,12 @@ export async function fetchPrices(program: PluribusProgram, d: Deployment): Prom
     const a = accounts[i];
     if (a) prices[m] = a.price.sub(a.conf).toNumber() / 1e6;
   });
+  // A staking token is worth no more than its SOL backing, as the program values it
+  // Shortcut: fixed rates only, a stake pool's rate would need its account read too
+  for (const m of mints) {
+    const fixed = d.assets[m].backing?.fixedRate;
+    if (fixed && prices[m] !== undefined && prices[d.solMint] !== undefined) prices[m] = Math.min(prices[m], fixed * prices[d.solMint]);
+  }
   return prices;
 }
 
@@ -144,6 +160,10 @@ export function healthAccounts(
     if (p.kind === KIND_TOKEN) {
       keys.push(pda.asset(p.mint));
       if (p.mint.toBase58() !== d.usdcMint) keys.push(priceAccount(d, p.mint.toBase58()));
+      // A staking token's backing: the SOL price, then its stake pool when it has one
+      const backing = d.assets[p.mint.toBase58()]?.backing;
+      if (backing) keys.push(new PublicKey(backing.solPriceAccount));
+      if (backing?.stakePool) keys.push(new PublicKey(backing.stakePool));
     } else if (p.kind === KIND_LP) {
       keys.push(
         pda.lpMarket(new PublicKey(d.whirlpool)),

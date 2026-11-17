@@ -34,15 +34,25 @@ const stockKey = key("stock-mint");
 const stock = stockKey.publicKey;
 if (!(await exists(stock))) await createMint(connection, wallet, me, null, 6, stockKey);
 
+// Stand-ins for the two biggest single-pool staking tokens, with a fixed SOL backing since devnet has no real pools
+const LSTS = [
+  { keyName: "jitosol-mint", symbol: "JitoSOL", name: "Jito staked SOL (mock)", rate: 1.31 },
+  { keyName: "jupsol-mint", symbol: "JupSOL", name: "Jupiter staked SOL (mock)", rate: 1.22 },
+].map((l) => ({ ...l, mint: key(l.keyName).publicKey }));
+for (const l of LSTS) {
+  if (!(await exists(l.mint))) await createMint(connection, wallet, me, null, 9, key(l.keyName));
+}
+
 // Scenarios are crypto crash, equity crash and broad selloff, with columns for the SOL, stock and USDC groups
 // The small USDC shock keeps a gap between the draw limit and the liquidation line for USDC collateral
 // Six columns per scenario: SOL, stock, USDC, LST and two spare, then a fourth unused scenario
-const shocks = (rows: number[][], usdc: number) =>
-  rows.flatMap(([sol, equity]) => [sol, equity, usdc, 0, 0, 0]).concat(Array(math.MAX_GROUPS).fill(0));
+// Staking tokens fall with SOL plus a depeg, `depeg` bps deeper than the SOL column
+const shocks = (rows: number[][], usdc: number, depeg: number) =>
+  rows.flatMap(([sol, equity]) => [sol, equity, usdc, sol + depeg, 0, 0]).concat(Array(math.MAX_GROUPS).fill(0));
 const params: PoolParams = {
   numScenarios: 3,
-  initShockBps: shocks([[3000, 1500], [1500, 3500], [2500, 2500]], 300),
-  maintShockBps: shocks([[2000, 1000], [1000, 2500], [1700, 1700]], 100),
+  initShockBps: shocks([[3000, 1500], [1500, 3500], [2500, 2500]], 300, 500),
+  maintShockBps: shocks([[2000, 1000], [1000, 2500], [1700, 1700]], 100, 300),
   liqBonusBps: 500,
   closeFactorBps: 5000,
   warnHealthBps: 11_000,
@@ -101,13 +111,31 @@ const asset = (group: number, oracle: number, feed: string, liqCostBps: number, 
   depositCap: new BN(0),
   paused: false,
   volHorizonSecs: horizon,
+  rateSource: 0,
+  rateAccount: PublicKey.default,
+  fixedRate: new BN(0),
+  rateBaseMint: PublicKey.default,
+  rateFeedId: Array(32).fill(0),
 });
+// A staking token's own price comes from its demo account, its backing from SOL's at a fixed rate
+function staked(rate: number): AssetParams {
+  return {
+    ...asset(3, 1, "", 600, DAY),
+    rateSource: 2,
+    rateAccount: PublicKey.default,
+    fixedRate: new BN(Math.round(rate * 1e9)),
+    rateBaseMint: NATIVE_MINT,
+    rateFeedId: [...Buffer.from(SOL_FEED, "hex")],
+  };
+}
 // The stock feed id is a placeholder, since demo mode never reads it
 // The last column is the annual volatility each dynamic shock starts from: 80% for SOL, 50% for the stock
 for (const [mint, assetParams, sigma] of [
   [usdc, asset(2, 0, "", 0), 0],
   [NATIVE_MINT, asset(0, 1, SOL_FEED, 500, DAY), 8_000],
   [stock, asset(1, 1, "", 1000, 3 * DAY), 5_000],
+  // Staking tokens in the LST group, priced at the lower of their own price and their SOL backing, a point more to sell than SOL
+  ...LSTS.map((l) => [l.mint, staked(l.rate), 8_000] as const),
 ] as const) {
   if (!(await exists(pda.asset(mint)))) await send(await ix.initAsset(program, me, mint, assetParams, sigma));
 }
@@ -121,9 +149,11 @@ const guardian = key("guardian").publicKey;
 if (!pool.guardian.equals(guardian)) await send(await ix.setGuardian(program, me, guardian));
 
 // Existing prices are left alone so a rerun does not undo a crash, use the price script to move them
+// A staking token trades a hair under its backing
 for (const [mint, price] of [
   [NATIVE_MINT, solPrice],
   [stock, 180],
+  ...LSTS.map((l) => [l.mint, Math.round(solPrice * l.rate * 0.999 * 100) / 100] as const),
 ] as const) {
   if (!(await exists(pda.demoPrice(mint)))) await send(await ix.setDemoPrice(program, me, mint, Math.round(price * 1e6)));
 }
@@ -158,6 +188,18 @@ const d: Deployment = {
       decimals: 6,
       priceAccount: pda.demoPrice(stock).toBase58(),
     },
+    ...Object.fromEntries(
+      LSTS.map((l) => [
+        l.mint.toBase58(),
+        {
+          symbol: l.symbol,
+          name: l.name,
+          decimals: 9,
+          priceAccount: pda.demoPrice(l.mint).toBase58(),
+          backing: { solPriceAccount: pda.demoPrice(NATIVE_MINT).toBase58(), fixedRate: l.rate },
+        },
+      ]),
+    ),
   },
 };
 

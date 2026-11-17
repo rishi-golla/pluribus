@@ -4241,6 +4241,43 @@
               "Liquidation horizon T for the dynamic shock, about a day for crypto and three for stocks so a weekend fits, 0 for none"
             ],
             "type": "u32"
+          },
+          {
+            "name": "rate_source",
+            "docs": [
+              "For a liquid staking token: where its SOL backing is read, and the price is the lower of its own and that SOL's worth"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "rate_account",
+            "docs": [
+              "The stake pool account for RATE_STAKE_POOL"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fixed_rate",
+            "docs": [
+              "SOL per whole token, scaled by 1e9, for RATE_FIXED"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "rate_base_mint",
+            "docs": [
+              "The SOL price to value the backing with: the SOL mint for demo prices, its Pyth feed otherwise"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "rate_feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }

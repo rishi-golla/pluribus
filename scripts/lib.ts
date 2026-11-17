@@ -104,6 +104,8 @@ export type FaucetOptions = {
   sol?: number;
   stock?: number;
   usdc?: number;
+  // Whole tokens of any other mock mint the admin can mint, by mint address
+  tokens?: Record<string, number>;
   // Dollar value of the Orca position to open, over `range` in dollars per SOL
   lp?: number;
   range?: [number, number];
@@ -121,6 +123,7 @@ export async function faucet(d: Deployment, to: PublicKey, o: FaucetOptions): Pr
   for (const [mint, whole] of [
     [d.stockMint, o.stock],
     [d.usdcMint, o.usdc],
+    ...Object.entries(o.tokens ?? {}),
   ] as const) {
     if (!whole) continue;
     const key = new PublicKey(mint);
