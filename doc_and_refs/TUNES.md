@@ -26,12 +26,18 @@ Every setting worth revisiting before mainnet, with the value deployed on devnet
 | `junior_max_pause_secs` | 90d | ≤ 90d | Longest single governance pause. |
 | `junior_pause_gap_secs` | 14d | ≥ max wait + 3d, ≥ activation delay | Unpaused time between two pauses. |
 | `activation_delay_secs` | 8d | ≥ max wait + claim window, ≤ 30d | How long new collateral and loosening changes wait. Must leave juniors time to queue, wait and claim first. |
-| `junior_premium_bps` | 500 | ≤ 5000 | Share of all borrower interest paid to juniors on top of their normal share. Main lever for junior APY. |
-| `junior_target_bps` | 1000 | 1 to 10000 | Junior share of the pool at which the premium and protection fee are paid in full; below it they scale down. |
-| `protection_fee_bps` | 2000 | ≤ 5000 | Share of senior interest paid to juniors. |
+| `junior_premium_bps` | 1500 | ≤ 10000 | Yuzu-style risk premium: junior rate = senior rate × (1 + premium × senior / junior). At 15% and juniors at 10% of the pool, juniors earn 2.35× the senior rate. Main lever for junior APY. |
+| `junior_target_bps` | 1000 | 1 to 10000 | Junior share of the pool at which the premium is paid in full; below it the premium scales down. |
 | `SEED_USDC` (setup.ts) | 1M senior, 100k junior | | Initial deposits from the admin on a fresh deployment. |
 
 The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up to `junior_max_pause_secs`.
+
+## Weekly yield
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `epoch_secs` | 7d (Friday 00:00 UTC) | 0, or 60s to 30d | Lenders' interest collects in a buffer and is paid out over the next epoch. 0 pays interest as it accrues (used on localnet). |
+| `yield_margin_bps` | 1000 | ≤ 5000 | Share of the buffer held back when an epoch opens. It carries into the next week, smoothing the yield and taking losses before the reserve. Higher = steadier yield and a bigger loss cushion, lower = lenders paid sooner. |
 
 ## Crash scenarios and liquidation
 
@@ -52,7 +58,7 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `slope1_bps` | 800 | | Rate added up to the kink. |
 | `slope2_bps` | 6000 | | Steep rate above the kink, which pulls repayments in when lenders can't exit. |
 | `kink_bps` | 9000 | 1 to 9999 | Utilization where the steep slope starts. |
-| `reserve_factor_bps` | 1000 | reserve + protocol ≤ 5000 | Feeds the insurance reserve, which takes losses before juniors. |
+| `reserve_factor_bps` | 1000 | reserve + protocol ≤ 5000 | Feeds the insurance reserve, which takes losses after unpaid interest and before juniors. |
 | `protocol_fee_bps` | 1000 | reserve + protocol ≤ 5000 | Protocol revenue; uncollected fees also take losses before juniors. |
 | `tier_discount_bps` | 0 / 40 / 80 | starts at 0, never decreases | Rate discount per loyalty tier. |
 | `tier_min_healthy_secs` | 0 / 7d / 30d | starts at 0, increasing | Healthy time needed for each tier. |
@@ -100,7 +106,7 @@ These need a program upgrade to change.
 
 Planned in the earlier research and plans, not implemented:
 
-- **Per-asset risk premium** for memecoins and thin stocks, routed to juniors. Today `junior_premium_bps` is one flat rate.
+- **Per-asset risk premium** for memecoins and thin stocks, routed to juniors. Today `junior_premium_bps` is one flat rate on senior yield.
 - **Coverage gate:** block risky draws when junior deposits fall below X% of risky debt.
 - **Depth-based limits:** cap liquidation size and deposits at the Orca depth within the bonus (`D(m)`), and size haircuts with it.
 - **Volatility-driven shocks** from oracle history or Panoptic's fee-implied σ.
