@@ -220,11 +220,12 @@ fn after_skipped_weeks_the_current_epoch_opens_with_everything_in_the_buffer() {
     // Two of seven days of the budget are already paid
     let paid = pool.epoch_paid as u128;
     close(paid, budget * 2 / 7, 2);
-    // The budget is 90% of the interest earned before this Friday: about 27.7 of the 29.7 days since the pool opened,
-    // while the last two days' interest arrived after the epoch opened and waits for the next one
+    // The buffer filled for about 27.7 days before this Friday, so the budget is a week's worth of it:
+    // 90% x 7 / 27.7 of that interest, while the last two days' interest arrived after the epoch opened
     let earned = (pool.yield_buffer as u128 + paid) as f64;
     let share = budget as f64 / (0.9 * earned);
-    assert!((share - 27.67 / 29.67).abs() < 0.01, "budget is {share} of 90% of everything earned");
+    let expected = (27.67 / 29.67) * (7.0 / 27.67);
+    assert!((share / expected - 1.0).abs() < 0.02, "budget is {share} of 90% of everything earned, expected {expected}");
 }
 
 #[test]
@@ -318,6 +319,36 @@ fn a_shorter_epoch_waits_until_the_buffer_is_paid_out() {
     }
     assert_eq!(pool.yield_buffer, 0);
     expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), daily)], &[&admin]));
+}
+
+#[test]
+fn a_new_length_chosen_while_the_buffer_is_empty_starts_at_once_and_pays_no_burst() {
+    // A fresh pool: lenders and a borrower, nothing in the buffer yet
+    let run = |change: bool| {
+        let mut env = pool_with_both_tranches(0);
+        let admin = env.admin.insecure_clone();
+        assert_eq!(env.pool_state().yield_buffer, 0);
+        if change {
+            let params = PoolParams { epoch_secs: 60, ..env.pool_state().params };
+            expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin]));
+        }
+        let friday = next_friday(&env);
+        // A week passes with one transaction a day, then a big deposit lands right as an epoch opens and leaves a minute later
+        for d in 1..7 {
+            until(&mut env, friday - 7 * DAY + d * DAY);
+        }
+        until(&mut env, friday);
+        let start = env.pool_state().epoch_start;
+        let big = lend(&mut env, 1_000_000 * USDC, false);
+        until(&mut env, start.max(friday) + 60);
+        let shares = env.balance(&env.share_mint.clone(), &big.pubkey());
+        expect_ok(env.send(&[env.lend_withdraw_ix(&big.pubkey(), shares)], &[&big]));
+        let usdc = env.usdc;
+        env.balance(&usdc, &big.pubkey()) as i128 - 1_000_000 * USDC as i128
+    };
+    let (weekly_gain, minute_gain) = (run(false), run(true));
+    // A day's interest buffered under one-minute epochs pays a minute's worth per minute, not all at once
+    assert!(minute_gain < 100_000, "one-minute epochs gave a minute of deposit {minute_gain}, weekly gave {weekly_gain}");
 }
 
 #[test]

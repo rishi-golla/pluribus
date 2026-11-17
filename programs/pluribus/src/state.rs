@@ -396,7 +396,11 @@ impl Pool {
         self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], to_lenders - later);
         let end = self.epoch_end;
         self.pay_epoch(end, weights)?;
-        let budget = to_u64(mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?)?;
+        // The buffer can hold more than one epoch's interest after weeks with no transactions,
+        // so an epoch pays at most one epoch's worth of what came in and the rest carries on
+        let filled_over = (start - self.epoch_start).max(len) as u128;
+        let full = mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?;
+        let budget = to_u64(mul_div_floor(full, len as u128, filled_over)?)?;
         self.open_epoch(start, aligned + len, budget);
         self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], later);
         self.pay_epoch(now, weights)

@@ -132,8 +132,16 @@ fn apply_params(pool: &mut Account<Pool>, params: PoolParams, now: i64) -> Resul
     // A buffer filled over long epochs would otherwise be paid out over a short one, in a burst anyone can time
     // Turning epochs off is always fine, since the buffer then keeps paying out on its own schedule
     let (old, new) = (pool.params.epoch_secs, params.epoch_secs);
-    let same_schedule = new == old || new as i64 == pool.epoch_end - pool.epoch_start;
+    let span = pool.epoch_end - pool.epoch_start;
+    // Turning epochs back on at the length the buffer is already draining on, from a boundary of that grid
+    let same_schedule = new == old || (new as i64 == span && (pool.epoch_end - EPOCH_ANCHOR).rem_euclid(span.max(1)) == 0);
     require!(same_schedule || new == 0 || pool.yield_buffer == 0, PluribusError::EpochChangeNotAllowed);
+    // A new length starts now: the old epoch, with nothing left to pay, ends here so it cannot keep filling the buffer
+    // for a short epoch to pay out later
+    if new != 0 && !same_schedule {
+        pool.epoch_budget = pool.epoch_paid;
+        pool.epoch_end = pool.epoch_end.min(now);
+    }
     // A shorter gap never brings the next pause closer than the gap that was in force until now
     if pool.junior_pause_end != 0 {
         let old_gap = pool.params.junior_pause_gap_secs as i64;

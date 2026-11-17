@@ -87,6 +87,7 @@ type PoolLike = {
   epochEnd: Numeric;
   epochBudget: Numeric;
   epochPaid: Numeric;
+  lastAccrual: Numeric;
   params: {
     baseRateBps: number;
     slope1Bps: number;
@@ -136,8 +137,11 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const now = Date.now() / 1000;
   const [epochStart, epochEnd] = [num(pool.epochStart), num(pool.epochEnd)];
   const weekly = p.epochSecs > 0;
+  // The epoch's even pace, or slower when the buffer cannot cover the rest of it, as of the last accrual
   const left = Math.max(Math.min(num(pool.epochBudget) - num(pool.epochPaid), num(pool.yieldBuffer)), 0) / 1e6;
-  const streaming = now < epochEnd ? (left / Math.max(epochEnd - Math.max(now, epochStart), 1)) * SECONDS_PER_YEAR : 0;
+  const pace = num(pool.epochBudget) / 1e6 / Math.max(epochEnd - epochStart, 1);
+  const leftPace = left / Math.max(epochEnd - Math.max(num(pool.lastAccrual), epochStart), 1);
+  const streaming = now < epochEnd ? Math.min(pace, leftPace) * SECONDS_PER_YEAR : 0;
   const next = (yieldBuffer * (1 - p.yieldMarginBps / BPS) * SECONDS_PER_YEAR) / Math.max(p.epochSecs, 1);
   const lenderYear = weekly ? (now < epochEnd ? streaming : next) : toLenders + streaming;
   const seniorYear = weights > 0 ? (lenderYear * seniorAssets) / weights : lenderYear;
