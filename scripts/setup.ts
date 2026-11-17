@@ -11,6 +11,12 @@ import { cluster, connection, key, me, root, url, wallet } from "./orca-common.t
 const DAY = 86_400;
 const SOL_FEED = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
 const SEED_USDC = { senior: 1_000_000, junior: 100_000 };
+// A local validator cannot skip days, so localnet runs the same rules on seconds, with the shortest claim window allowed
+// The program requires activation >= exit wait + claim window, and a gap >= exit wait + 3 days (the longest window) and >= activation
+const WAITS =
+  cluster === "localnet"
+    ? { exit: 5, window: 60, gap: 3 * DAY + 5, activation: 70 }
+    : { exit: 6 * DAY, window: 2 * DAY, gap: 14 * DAY, activation: 8 * DAY };
 
 const fixtureFile = path.join(root, "scripts/out", `${cluster}.json`);
 if (!fs.existsSync(fixtureFile)) throw new Error(`${fixtureFile} is missing, run orca:fixture first`);
@@ -46,8 +52,24 @@ const params: PoolParams = {
   protectionFeeBps: 2000,
   tierDiscountBps: [0, 40, 80],
   tierMinHealthySecs: [0, 7 * DAY, 30 * DAY].map((s) => new BN(s)),
+  // Junior tranche: full premium and protection fee once juniors hold a tenth of the pool, 5% of borrower interest as premium
+  juniorTargetBps: 1000,
+  juniorPremiumBps: 500,
+  // Exits wait the same whatever the queue, must be claimed within the window, and leave 5 bps with the juniors who stay
+  juniorMinDelaySecs: WAITS.exit,
+  juniorMaxDelaySecs: WAITS.exit,
+  juniorDelayThresholdBps: 10_000,
+  juniorExitWindowSecs: WAITS.window,
+  juniorExitFeeBps: 5,
+  // Governance pauses of at most 90 days, spaced by the gap
+  juniorMaxPauseSecs: 90 * DAY,
+  juniorPauseGapSecs: WAITS.gap,
+  // New collateral and anything that is not a pure tightening wait out the activation delay
+  activationDelaySecs: WAITS.activation,
 };
-if (!(await exists(pda.pool()))) await send(await ix.initialize(program, me, usdc, params, true));
+// The pool opens with no waits so the first listings are live at once, and switches to the real ones after them
+const bootstrap: PoolParams = { ...params, juniorMinDelaySecs: 0, juniorMaxDelaySecs: 0, activationDelaySecs: 0 };
+if (!(await exists(pda.pool()))) await send(await ix.initialize(program, me, usdc, bootstrap, true));
 if (!(await exists(pda.juniorMint()))) await send(await ix.initJunior(program, me));
 
 const asset = (group: number, oracle: number, feed: string, liqCostBps: number): AssetParams => ({
@@ -69,6 +91,13 @@ for (const [mint, assetParams] of [
   if (!(await exists(pda.asset(mint)))) await send(await ix.initAsset(program, me, mint, assetParams));
 }
 if (!(await exists(pda.lpMarket(whirlpool)))) await send(await ix.initLpMarket(program, me, whirlpool, NATIVE_MINT, 500));
+
+// With no activation delay in force yet the real parameters apply at once, and from here on loosening waits
+const pool = await program.account.pool.fetch(pda.pool());
+if (pool.params.activationDelaySecs === 0) await send(await ix.setParams(program, me, params));
+// The guardian can only tighten: pause collateral and drop waiting changes
+const guardian = key("guardian").publicKey;
+if (!pool.guardian.equals(guardian)) await send(await ix.setGuardian(program, me, guardian));
 
 // Existing prices are left alone so a rerun does not undo a crash, use the price script to move them
 for (const [mint, price] of [

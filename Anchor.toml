@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-pluribus = "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT"
+pluribus = "6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny"
 
 [programs.devnet]
-pluribus = "6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT"
+pluribus = "6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny"
 
 [provider]
 cluster = "localnet"

@@ -7,6 +7,7 @@ import {
   MAX_U64,
   fetchCredit,
   fetchHealth,
+  fetchJuniorExit,
   fetchPool,
   fetchPositions,
   fetchPrices,
@@ -81,17 +82,32 @@ const wallet = await held(usdc);
 await send(await ix.draw(program, d, who, amount), [borrower]);
 check("USDC arrives from one draw against every asset", (await held(usdc)) - wallet === amount, `$${(amount / USDC).toFixed(2)}`);
 
-// A dollar into each tranche and straight back out
-for (const junior of [false, true]) {
-  const mint = junior ? pda.juniorMint() : pda.shareMint();
-  await send(await ix.lendDeposit(program, d, who, USDC, { junior }), [borrower]);
-  const shares = await held(mint);
-  await send(await ix.lendWithdraw(program, d, who, shares, { junior }), [borrower]);
-  check(`Lending into the ${junior ? "junior" : "senior"} tranche and redeeming works`, shares > 0 && (await held(mint)) === 0);
-}
+// A dollar into the senior tranche and straight back out
+await send(await ix.lendDeposit(program, d, who, USDC), [borrower]);
+const shares = await held(pda.shareMint());
+await send(await ix.lendWithdraw(program, d, who, shares), [borrower]);
+check("Lending into the senior tranche and redeeming works", shares > 0 && (await held(pda.shareMint())) === 0);
 
-// The mock mint covers interest and rounding so the loan can be closed in full
-await faucet(d, who, { usdc: 1 });
+// Two dollars of senior money become junior money, which then queues for exit and is taken back out of the queue
+// Junior exits wait days on a live cluster, so the smoke run cancels instead of claiming
+await send(await ix.lendDeposit(program, d, who, 2 * USDC), [borrower]);
+await send(await ix.convertToJunior(program, who, await held(pda.shareMint())), [borrower]);
+const junior = await held(pda.juniorMint());
+check("Senior shares convert into junior shares", junior > 0 && (await held(pda.shareMint())) === 0, `${junior / USDC} junior shares`);
+const refused = await send(await ix.lendWithdraw(program, d, who, junior, { junior: true }), [borrower]).then(
+  () => false,
+  () => true,
+);
+check("Junior shares cannot be redeemed directly", refused);
+await send(await ix.requestJuniorExit(program, who, junior), [borrower]);
+const queued = await fetchJuniorExit(program, who);
+check("The exit is queued with its wait", queued !== null && (await held(pda.juniorMint())) === 0, `claimable from ${new Date(queued!.unlockAt.toNumber() * 1000).toISOString()}`);
+await send(await ix.cancelJuniorExit(program, who, who), [borrower]);
+check("Cancelling hands the shares back", (await held(pda.juniorMint())) === junior && (await fetchJuniorExit(program, who)) === null);
+
+// The mock mint covers whatever the wallet is short, such as the dollars left in the junior tranche, plus a dollar for interest
+const short = (await view()).debt - (await held(usdc));
+await faucet(d, who, { usdc: Math.max(0, Math.ceil(short / USDC)) + 1 });
 await send(await ix.repay(program, d, who, who, MAX_U64), [borrower]);
 check("The loan is repaid in full", (await view()).debt === 0);
 

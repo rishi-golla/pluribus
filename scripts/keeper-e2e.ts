@@ -15,7 +15,7 @@ import BN from "bn.js";
 import type { Row, StoredEvent } from "../indexer/events.ts";
 import { sign } from "../indexer/sign.ts";
 import { fetchCredit, fetchHealth, fetchPool, fetchPositions, fetchPrices, ix, math, pda } from "../sdk/index.ts";
-import { faucet, loadDeployment, program, send } from "./lib.ts";
+import { faucet, loadDeployment, program, send, setAssetNow, setParamsNow } from "./lib.ts";
 import { PROGRAM, client, cluster, connection, ctx, me, root, url, whirlpool } from "./orca-common.ts";
 
 if (cluster !== "localnet") {
@@ -75,9 +75,9 @@ const pool0 = await fetchPool(program);
 const solPrice0 = await program.account.demoPrice.fetch(pda.demoPrice(NATIVE_MINT));
 const stockPrice0 = await program.account.demoPrice.fetch(pda.demoPrice(stock));
 const stockAsset0 = await program.account.asset.fetch(pda.asset(stock));
-const setTiers = async (secs: BN[]) => send(await ix.setParams(program, me, { ...pool0.params, tierMinHealthySecs: secs }));
-const setStockAge = async (maxPriceAgeSecs: number) =>
-  send(await ix.setAsset(program, me, stock, { ...stockAsset0.params, maxPriceAgeSecs }));
+// Loosening waits out the activation delay, which setup keeps to seconds on localnet
+const setTiers = async (secs: BN[]) => setParamsNow({ ...pool0.params, tierMinHealthySecs: secs });
+const setStockAge = async (maxPriceAgeSecs: number) => setAssetNow(stock, { ...stockAsset0.params, maxPriceAgeSecs });
 const setSol = async (price: BN, conf = new BN(0)) => send(await ix.setDemoPrice(program, me, NATIVE_MINT, price, conf));
 
 try {

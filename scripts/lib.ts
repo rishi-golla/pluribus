@@ -20,7 +20,7 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import BN from "bn.js";
-import { type Deployment, getProgram, math } from "../sdk/index.ts";
+import { type AssetParams, type Deployment, type PoolParams, getProgram, ix, math, pda } from "../sdk/index.ts";
 import {
   DEC_A,
   DEC_B,
@@ -52,6 +52,42 @@ export const exists = async (address: PublicKey) => (await connection.getAccount
 // The first signer pays, and the admin wallet signs alone by default
 export const send = (ixs: TransactionInstruction[], signers: Keypair[] = [wallet]) =>
   sendAndConfirmTransaction(connection, new Transaction().add(...ixs), signers, { commitment: "confirmed" });
+
+// Anything but a pure tightening waits out the activation delay, so these wait and apply it when that is short
+// A local validator runs on a clock of seconds, a live cluster on days, which is too long to wait for here
+async function applyWhenDue(pendingAt: () => Promise<number>, apply: () => Promise<TransactionInstruction[]>) {
+  const at = await pendingAt();
+  if (!at) return;
+  if (at * 1000 - Date.now() > 120_000) throw new Error(`The change waits until ${new Date(at * 1000).toISOString()}, apply it then`);
+  // The chain clock can trail the wall clock, so the wait is measured on the chain
+  // The due time is read again before each try, since a pause of junior exits can push it back meanwhile
+  for (let tries = 0, due = at; ; tries++) {
+    while (((await connection.getBlockTime(await connection.getSlot("confirmed"))) ?? 0) < due) await new Promise((r) => setTimeout(r, 1000));
+    try {
+      await send(await apply());
+      return;
+    } catch (e) {
+      due = await pendingAt();
+      if (tries > 10 || due * 1000 - Date.now() > 120_000) throw e;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+}
+
+// When a waiting change can apply: its own time, or later if a pause of junior exits pushed it back
+async function dueAt(pendingAt: { toString(): string }) {
+  return Number(pendingAt.toString()) && math.effectiveAt(await program.account.pool.fetch(pda.pool()), pendingAt);
+}
+
+export async function setParamsNow(params: PoolParams) {
+  await send(await ix.setParams(program, me, params));
+  await applyWhenDue(async () => dueAt((await program.account.pool.fetch(pda.pool())).pendingAt), () => ix.applyParams(program));
+}
+
+export async function setAssetNow(mint: PublicKey, params: AssetParams) {
+  await send(await ix.setAsset(program, me, mint, params));
+  await applyWhenDue(async () => dueAt((await program.account.asset.fetch(pda.asset(mint))).pendingAt), () => ix.applyAsset(program, mint));
+}
 
 // A CLI flag that must be a number of zero or more
 export function amount(name: string, value: string): number {

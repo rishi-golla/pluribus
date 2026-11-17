@@ -31,7 +31,7 @@ import {
   math,
   pda,
 } from "../sdk/index.ts";
-import { exists, faucet, loadDeployment, program, send } from "./lib.ts";
+import { exists, faucet, loadDeployment, program, send, setParamsNow } from "./lib.ts";
 import {
   DEC_A,
   DEC_B,
@@ -63,6 +63,10 @@ const SHOCKS = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// A local validator's clock can trail the wall clock, so waits for on-chain deadlines are measured on the chain's own clock
+async function untilChainTime(at: number) {
+  while (((await connection.getBlockTime(await connection.getSlot("confirmed"))) ?? 0) < at) await sleep(1000);
+}
 const n = (x: { toString(): string }) => Number(x.toString());
 const usd = (micro: number) => `$${(micro / USDC).toFixed(2)}`;
 const gap = (got: number, want: number) => Math.abs(got - want) / Math.max(Math.abs(want), 1e-9);
@@ -371,8 +375,12 @@ try {
   );
 
   // Loyalty tiers need days on a real clock, so the admin shortens them for a moment
+  // A change that is not a pure tightening waits out the activation delay, seconds on localnet
   try {
-    await run("Admin shortens the tier periods", ix.setParams(program, me, { ...params, tierMinHealthySecs: [0, 1, 2].map((s) => new BN(s)) }), wallet, []);
+    const [queued] = await run("Admin shortens the tier periods", ix.setParams(program, me, { ...params, tierMinHealthySecs: [0, 1, 2].map((s) => new BN(s)) }), wallet, ["changeQueued"]);
+    await fails("The change cannot apply before its delay", ix.applyParams(program), keeper, "ChangeNotDue");
+    await untilChainTime(n(queued.effectiveAt) + 1);
+    await run("Anyone applies it once the delay has passed", ix.applyParams(program), keeper, ["changeApplied"]);
     await sleep(3000);
     const [tier] = await run("Keeper refreshes the borrower's tier", ix.refreshTier(program, d, A), keeper, ["tierChanged"]);
     const promoted = await view(A);
@@ -383,7 +391,8 @@ try {
       `${promoted.borrowRateBps} bps against a base rate of ${base.toFixed(1)} bps`,
     );
   } finally {
-    await run("Admin restores the tier periods", ix.setParams(program, me, params), wallet, []);
+    await setParamsNow(params);
+    check("Admin restored the tier periods", JSON.stringify((await fetchPool(program)).params) === JSON.stringify(params));
   }
 
   // 5: lender
@@ -425,6 +434,17 @@ try {
   const [out] = await run("Lender redeems half the shares", ix.lendWithdraw(program, d, lender.publicKey, half), lender, ["lenderMoved"]);
   const received = (await balance(usdc, lender.publicKey)) - usdcBefore;
   check("Half the shares pay back at least half the deposit", received === n(out.usdc) && received >= 25_000 * USDC - 1, usd(received));
+  const [converted] = await run(
+    "Lender turns a fifth of the remaining senior shares into junior shares",
+    ix.convertToJunior(program, lender.publicKey, Math.floor(held / 10)),
+    lender,
+    ["trancheConverted"],
+  );
+  check(
+    "Converting moved value into the junior tranche with no USDC changing hands",
+    (await balance(pda.juniorMint(), lender.publicKey)) === n(converted.minted) && n(converted.value) >= 5000 * USDC - 1,
+    `${usd(n(converted.value))} became ${n(converted.minted) / USDC} junior shares`,
+  );
   const [fees] = await run("Admin collects the protocol's share of interest", ix.collectProtocolFees(program, d, me, MAX_U64), wallet, ["protocolFeesCollected"]);
   check("Protocol fees were paid out", n(fees.amount) > 0, `${n(fees.amount)} micro-USDC`);
 
@@ -517,12 +537,17 @@ try {
       worthMore(before.junior, after.junior) && !worthMore(before.senior, after.senior),
     `junior assets down ${juniorDrop} micro-USDC against ${fromJunior} covered, senior assets up ${seniorGain} micro-USDC of interest`,
   );
-  const [outJunior] = await run("Junior lender redeems every share", ix.lendWithdraw(program, d, J, heldJunior, { junior: true }), juniorLender, ["lenderMoved"]);
+  // Junior money leaves through the exit queue, and queued shares go on carrying losses until claimed
+  await fails("A junior lender cannot redeem directly", ix.lendWithdraw(program, d, J, heldJunior, { junior: true }), juniorLender, "JuniorExitQueue");
+  const [queuedExit] = await run("Junior lender queues every share for exit", ix.requestJuniorExit(program, J, heldJunior), juniorLender, ["juniorExitRequested"]);
+  await fails("The exit cannot be claimed during its wait", ix.claimJuniorExit(program, d, J), juniorLender, "ExitNotReady");
+  await untilChainTime(n(queuedExit.unlockAt) + 1);
+  const [outJunior] = await run("Junior lender claims the exit in USDC", ix.claimJuniorExit(program, d, J), juniorLender, ["juniorExitClaimed"]);
   const back = await balance(usdc, J);
   check(
-    "The junior lender carries a share of the loss",
-    outJunior.junior === true && back === n(outJunior.usdc) && back < 5000 * USDC && back > 4500 * USDC,
-    `${usd(back)} back for $5000.00`,
+    "The junior lender carries a share of the loss and leaves the exit fee behind",
+    outJunior.inUsdc === true && back === n(outJunior.paid) && n(outJunior.fee) > 0 && back < 5000 * USDC && back > 4500 * USDC,
+    `${usd(back)} back for $5000.00, ${usd(n(outJunior.fee))} fee`,
   );
 
   // Custody round trip: the liquidator can use both seized NFTs with Orca directly
