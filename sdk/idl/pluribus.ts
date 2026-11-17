@@ -4216,6 +4216,20 @@ export type Pluribus = {
             "type": "bool"
           },
           {
+            "name": "multPrevSince",
+            "docs": [
+              "When `mult_prev` took effect, so a price older than that is known to be on neither basis"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "jumpSince",
+            "docs": [
+              "Publish time of the first sample that jumped far from the last one with no multiplier change, 0 when none"
+            ],
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4223,7 +4237,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                39
+                23
               ]
             }
           }

@@ -4210,6 +4210,20 @@
             "type": "bool"
           },
           {
+            "name": "mult_prev_since",
+            "docs": [
+              "When `mult_prev` took effect, so a price older than that is known to be on neither basis"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "jump_since",
+            "docs": [
+              "Publish time of the first sample that jumped far from the last one with no multiplier change, 0 when none"
+            ],
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4217,7 +4231,7 @@
             "type": {
               "array": [
                 "u8",
-                39
+                23
               ]
             }
           }

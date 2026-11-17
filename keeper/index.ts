@@ -16,9 +16,7 @@ import {
   Keypair,
   PublicKey,
   SYSVAR_CLOCK_PUBKEY,
-  Transaction,
   type TransactionInstruction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import BN from "bn.js";
 import {
@@ -29,6 +27,7 @@ import {
   KIND_LP,
   KIND_TOKEN,
   MAX_U64,
+  buildTransaction,
   decodeError,
   fetchAllCredits,
   fetchCredit,
@@ -91,9 +90,13 @@ async function send(what: string, ixs: TransactionInstruction[]): Promise<boolea
     log(`Dry run, not sent: ${what}`);
     return false;
   }
-  const signature = await sendAndConfirmTransaction(connection, new Transaction().add(...ixs), [keeper], {
-    commitment: "confirmed",
-  });
+  // A v0 transaction through the deployment's lookup table, so liquidating a crowded account still fits in one
+  const latest = await connection.getLatestBlockhash();
+  const tx = await buildTransaction(connection, d, keeper.publicKey, ixs, latest.blockhash);
+  tx.sign([keeper]);
+  const signature = await connection.sendTransaction(tx);
+  const { value } = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
+  if (value.err) throw new Error(`Transaction ${signature} failed: ${JSON.stringify(value.err)}`);
   log(`${what}, tx ${signature}`);
   return true;
 }

@@ -8,12 +8,15 @@ import {
   type IdlAccounts,
   type IdlTypes,
 } from "@anchor-lang/core";
-import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   type AccountMeta,
+  type AddressLookupTableAccount,
   ComputeBudgetProgram,
   type Connection,
   PublicKey,
+  SystemProgram,
+  type TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
@@ -47,6 +50,8 @@ export type Deployment = {
   demoMode: boolean;
   // LP markets besides `whirlpool`, such as Raydium CLMM pools, each with the program that owns it and its base token
   lpMarkets?: { pool: string; dexProgram: string; baseMint: string }[];
+  // An address lookup table of the accounts transactions keep reusing, see `buildTransaction`
+  lookupTable?: string;
   // Indexed by mint, and USDC has no price account because it is fixed at $1
   // A liquid staking token also names the SOL price account its backing is valued with, its stake pool or fixed rate
   assets: Record<
@@ -219,6 +224,64 @@ export async function locateLps(connection: Connection, d: Deployment, credit: C
     found.set(c.mint.toBase58(), { market: pda.lpMarket(pool), position: c.position, pool, dexProgram: c.dexProgram, baseMint: new PublicKey(market.baseMint) });
   });
   return found;
+}
+
+// The deployment's address lookup table, or null when it has none
+// Kept once found: it only ever gains addresses, and a transaction built without the newest ones is just longer
+const tables = new Map<string, AddressLookupTableAccount>();
+export async function fetchLookupTable(connection: Connection, d: Deployment): Promise<AddressLookupTableAccount | null> {
+  if (!d.lookupTable) return null;
+  const cached = tables.get(d.lookupTable);
+  if (cached) return cached;
+  const { value } = await connection.getAddressLookupTable(new PublicKey(d.lookupTable));
+  if (value) tables.set(d.lookupTable, value);
+  return value;
+}
+
+// A v0 transaction for `instructions`, its accounts shortened through the deployment's lookup table
+// A legacy transaction lists every account in full, which a health check over several Token-2022, staking or LP
+// positions can push past the 1232-byte limit, and then nobody could liquidate that account
+export async function buildTransaction(
+  connection: Connection,
+  d: Deployment,
+  payer: PublicKey,
+  instructions: TransactionInstruction[],
+  recentBlockhash: string,
+): Promise<VersionedTransaction> {
+  const table = await fetchLookupTable(connection, d);
+  const message = new TransactionMessage({ payerKey: payer, recentBlockhash, instructions }).compileToV0Message(table ? [table] : []);
+  return new VersionedTransaction(message);
+}
+
+// Every address the protocol's transactions keep reusing, for the lookup table
+export function lookupAddresses(d: Deployment): PublicKey[] {
+  const k = (s: string) => new PublicKey(s);
+  const keys = [
+    PROGRAM_ID,
+    TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    SystemProgram.programId,
+    ComputeBudgetProgram.programId,
+    WHIRLPOOL_PROGRAM_ID,
+    pda.pool(),
+    pda.usdcVault(),
+    pda.shareMint(),
+    pda.juniorMint(),
+    pda.juniorEscrow(),
+    k(d.whirlpool),
+    pda.lpMarket(k(d.whirlpool)),
+    k(d.whirlpoolVaultA),
+    k(d.whirlpoolVaultB),
+  ];
+  for (const [mint, a] of Object.entries(d.assets)) {
+    keys.push(k(mint), pda.asset(k(mint)), pda.vault(k(mint)));
+    if (a.priceAccount) keys.push(k(a.priceAccount));
+    if (a.backing) keys.push(k(a.backing.solPriceAccount));
+    if (a.backing?.stakePool) keys.push(k(a.backing.stakePool));
+  }
+  for (const m of d.lpMarkets ?? []) keys.push(k(m.pool), pda.lpMarket(k(m.pool)), k(m.dexProgram));
+  return [...new Map(keys.map((key) => [key.toBase58(), key])).values()];
 }
 
 // The program's own numbers for an account, or null when the owner has not opened one

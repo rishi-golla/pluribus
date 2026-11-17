@@ -15,9 +15,9 @@ import {
   getMint,
   getMintLen,
 } from "@solana/spl-token";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { AddressLookupTableProgram, PublicKey, SystemProgram } from "@solana/web3.js";
 import BN from "bn.js";
-import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, math, pda } from "../sdk/index.ts";
+import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, lookupAddresses, math, pda } from "../sdk/index.ts";
 import { deploymentFile, exists, faucet, program, send } from "./lib.ts";
 import { cluster, connection, key, me, root, url, wallet } from "./orca-common.ts";
 
@@ -262,6 +262,22 @@ for (const junior of [false, true]) {
   await faucet(d, me, { usdc: dollars });
   await send(await ix.lendDeposit(program, d, me, dollars * 1e6, { junior }));
 }
+
+// A lookup table of the addresses every transaction reuses, so liquidating an account with many positions fits in one
+// A rerun extends the table it made before with whatever is new
+const previous = fs.existsSync(deploymentFile) ? (JSON.parse(fs.readFileSync(deploymentFile, "utf8")) as Deployment).lookupTable : undefined;
+let table = previous && (await connection.getAddressLookupTable(new PublicKey(previous))).value?.state.authority?.equals(me) ? new PublicKey(previous) : null;
+if (!table) {
+  const [create, address] = AddressLookupTableProgram.createLookupTable({ authority: me, payer: me, recentSlot: await connection.getSlot() });
+  await send([create]);
+  table = address;
+}
+const listed = new Set(((await connection.getAddressLookupTable(table)).value?.state.addresses ?? []).map((k) => k.toBase58()));
+const missing = lookupAddresses(d).filter((k) => !listed.has(k.toBase58()));
+for (let i = 0; i < missing.length; i += 20) {
+  await send([AddressLookupTableProgram.extendLookupTable({ lookupTable: table, authority: me, payer: me, addresses: missing.slice(i, i + 20) })]);
+}
+d.lookupTable = table.toBase58();
 
 fs.mkdirSync(path.dirname(deploymentFile), { recursive: true });
 fs.writeFileSync(deploymentFile, JSON.stringify(d, null, 2) + "\n");
