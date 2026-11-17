@@ -1,14 +1,14 @@
 {
   "cluster": "devnet",
   "rpcUrl": "https://api.devnet.solana.com",
-  "programId": "6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny",
+  "programId": "HDnoxq4LZJydvUQdihgjv3H29Sea5oeYGGRKShHmzbRK",
   "whirlpoolProgramId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
   "admin": "6sXC8nQJ4wx6yyn1LLQpfXMKkpU5FxF6eWdBxXPASrCk",
   "usdcMint": "75bxZeFLwNKqezhQ2KHhUASsuxVBJN31g9D8EuSuRW5U",
   "solMint": "So11111111111111111111111111111111111111112",
   "stockMint": "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij",
-  "shareMint": "8RpCAdNtKMHTRo3HuRjZfBGJZRj5ZgGxcBgs4vabi74r",
-  "juniorMint": "ENxfCDN3Jo5PgT1oovvwYQr9BB7hUL1DeRStMH12d6oT",
+  "shareMint": "8WFzM2z1qxX4NSzFMcBk8rbdTAK6NYinygRVXwHkamN7",
+  "juniorMint": "AHUVppdDidDiiRyhVzmzH97xxhfmwYYJFUKWVCA84PbY",
   "whirlpool": "EHXKciegvkuBAm2P2TUChpkTvRNm4ewwaBa6JmfN8357",
   "whirlpoolVaultA": "AjgMAv3UGjLr94XWpoymSYcjpi19kVJ4Zzntdk1TZqZf",
   "whirlpoolVaultB": "AcKWCm9DvQBQBxQC955aJn2j6LrnxukAvxFexANHKKko",
@@ -25,13 +25,13 @@
       "symbol": "SOL",
       "name": "Solana",
       "decimals": 9,
-      "priceAccount": "CdDEvpJZaxCqF8QcYB2Xw5GRutt7xRryag8VhsCw668k"
+      "priceAccount": "GSxiZD8uUok9dqYa668gmfXCHZCy1jwktPA5ywymASZE"
     },
     "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij": {
       "symbol": "NVDAx",
       "name": "NVIDIA tokenized stock (mock)",
       "decimals": 6,
-      "priceAccount": "F9n7AjLGJ8qUvEw7JFa52zbFEHw8wztbja3SrSCB2MUi"
+      "priceAccount": "HLfqjKu3PPYLgfvEgGFNW1cvfyeYmtvrRi9fD93Y9dew"
     }
   }
 }

@@ -15,7 +15,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny");
+declare_id!("HDnoxq4LZJydvUQdihgjv3H29Sea5oeYGGRKShHmzbRK");
 
 #[program]
 pub mod pluribus {

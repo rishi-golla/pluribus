@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/pluribus.json`.
  */
 export type Pluribus = {
-  "address": "6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny",
+  "address": "HDnoxq4LZJydvUQdihgjv3H29Sea5oeYGGRKShHmzbRK",
   "metadata": {
     "name": "pluribus",
     "version": "0.1.0",
