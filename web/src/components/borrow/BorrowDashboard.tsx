@@ -629,6 +629,12 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
 const SHOCKS = Array.from({ length: 36 }, (_, i) => i * 2);
 const healthAtShock = (s: number, debt: number, limit: number) => Math.max(0.55, (limit / debt) * (1 - (s / 53.7) * (1 - debt / limit) * 1.0) - Math.pow(s / 70, 3) * 0.12);
 const CRASHES = [10, 30, 50];
+// Shown before a wallet connects, with the same figures scripts/setup.ts gives the pool
+const PREVIEW_SCENARIOS = [
+  { name: "Crypto crash", sol: 0.3, stock: 0.15 },
+  { name: "Equity crash", sol: 0.15, stock: 0.35 },
+  { name: "Broad selloff", sol: 0.25, stock: 0.25 },
+];
 
 /** Moves the demo price feed, so a crash can be shown on stage */
 function PriceControl({ live }: { live: Live }) {
@@ -677,50 +683,60 @@ function PriceControl({ live }: { live: Live }) {
 
 function StressPanel({ highlight }: { highlight: boolean }) {
   const { debt, creditLimit, live } = useAccount();
-  const solMint = deployment?.solMint ?? "";
-  const solPrice = live ? live.prices[solMint] : 150.12;
+  const mints = { sol: deployment?.solMint ?? "", stock: deployment?.stockMint ?? "" };
+  const solPrice = live ? live.prices[mints.sol] : 150.12;
+  const scenarios = live?.scenarios ?? PREVIEW_SCENARIOS;
+  const [picked, setPicked] = useState<number | null>(null);
+  const sel = Math.min(picked ?? live?.binding ?? 0, scenarios.length - 1);
+  const sc = scenarios[sel];
+  // The x axis is the fall of the asset the scenario hits hardest, and the other asset falls in the scenario's proportion
+  const lead = Math.max(sc.sol, sc.stock);
+  const leadName = sc.sol === sc.stock ? "SOL and stocks" : sc.sol > sc.stock ? "SOL" : "stocks";
+  const dropAt = (s: number) => ({ sol: lead ? Math.min(0.99, (s / 100) * (sc.sol / lead)) : 0, stock: lead ? Math.min(0.99, (s / 100) * (sc.stock / lead)) : 0 });
+  const pct = (v: number) => `-${Math.round(v * 100)}%`;
+  const describe = (s: number) => {
+    const d = dropAt(s);
+    return `SOL ${pct(d.sol)} ($${(solPrice * (1 - d.sol)).toFixed(2)}), stocks ${pct(d.stock)}`;
+  };
   // Health above the top of the chart is drawn at the top
-  const hf = live ? SHOCKS.map((s) => (debt > 0 ? Math.min(2.5, Math.max(0.5, healthAfterDrop(live, solMint, s / 100))) : 2.5)) : SHOCKS.map((s) => healthAtShock(s, debt, creditLimit));
+  const hf = live
+    ? SHOCKS.map((s) => (debt > 0 ? Math.min(2.5, Math.max(0.5, healthAfterDrop(live, mints, dropAt(s)))) : 2.5))
+    : SHOCKS.map((s) => healthAtShock(s, debt, creditLimit));
   const crossing = hf.findIndex((h) => h <= 1);
   const liqIdx = Math.max(0, crossing);
-  const crashIdx = live ? Math.round(live.crash.sol * 50) : 15;
-  const drop = (v: number) => `-${Math.round(v * 100)}%`;
-  const tiles = live
-    ? [
-        { label: "SOL", icons: ["sol.webp"], pct: drop(live.crash.sol) },
-        { label: "SOL LPs", icons: ["orca.png"], pct: drop(live.crash.sol) },
-        { label: "Stocks", icons: ["nvdax.webp"], pct: drop(live.crash.stock) },
-        { label: "Memes", icons: ["bonk.webp"], pct: "Planned" },
-      ]
-    : [
-        { label: "SOL and LSTs", icons: ["sol.webp", "jitosol.webp"], pct: "-30%" },
-        { label: "SOL LPs", icons: ["orca.png"], pct: "-30%" },
-        { label: "Stocks", icons: ["nvdax.webp"], pct: "-18%" },
-        { label: "Memes", icons: ["bonk.webp"], pct: "-65%" },
-      ];
+  const crashIdx = Math.min(SHOCKS.length - 1, Math.round(lead * 50));
   return (
     <motion.div className="panel" animate={{ boxShadow: highlight ? "0 0 0 1px rgba(158,140,255,0.5), 0 0 40px -8px rgba(158,140,255,0.45)" : "inset 0 1px 0 rgba(255,255,255,0.03)" }} transition={{ duration: 0.6 }}>
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex items-center justify-between gap-4 px-[22px] pt-[18px]">
         <h3 className="text-[15px] font-medium tracking-[-0.01em]">Stress test</h3>
-        <span className="text-[12.5px] text-t3">Joint scenario, every position shocked together</span>
+        <span className="text-right text-[12.5px] text-t3">SOL, LP positions and stocks fall together in the chosen scenario</span>
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
         {live?.canSetPrice && <PriceControl live={live} />}
-        <div className="grid grid-cols-4 gap-px overflow-hidden rounded-xl border border-line bg-line">
-          {tiles.map((t) => (
-            <div key={t.label} className="bg-s1 px-3.5 py-3">
-              <Label>
-                <span className="flex">
-                  {t.icons.map((i, k) => (
-                    <Token key={i} src={`/tokens/${i}`} size={16} className={`shadow-[0_0_0_2px_var(--color-s1)] ${k ? "-ml-1.5" : ""}`} />
-                  ))}
-                </span>
-                {t.label}
+        <div role="group" aria-label="Crash scenario" className="grid gap-px overflow-hidden rounded-xl border border-line bg-line" style={{ gridTemplateColumns: `repeat(${scenarios.length}, minmax(0, 1fr))` }}>
+          {scenarios.map((s, i) => (
+            <button
+              key={s.name}
+              type="button"
+              aria-pressed={i === sel}
+              onClick={() => setPicked(i)}
+              className={`cursor-pointer px-3.5 py-3 text-left transition-colors ${i === sel ? "bg-s3" : "bg-s1 hover:bg-s2"}`}
+            >
+              <Label className={i === sel ? "text-t1" : undefined}>
+                {s.name}
+                {live && i === live.binding && <Tag tone="brand">Sets your limit</Tag>}
               </Label>
-              <div className={`mt-1 text-lg font-medium tracking-[-0.02em] ${t.pct === "Planned" ? "text-t3" : "text-red"}`}>{t.pct}</div>
-            </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-3 text-[13.5px] font-medium tabular-nums text-red">
+                <span>SOL {pct(s.sol)}</span>
+                <span>Stocks {pct(s.stock)}</span>
+              </div>
+            </button>
           ))}
         </div>
+        <p className="mt-3 text-[12.5px] text-t3">
+          Plays the {sc.name.toLowerCase()} at growing strength. The axis is the fall in {leadName}
+          {sc.sol !== sc.stock && `, and ${sc.sol > sc.stock ? "stocks fall" : "SOL and LP positions fall"} ${Math.round((Math.min(sc.sol, sc.stock) / lead) * 100)}% as far`}. The marker is the scenario as the pool defines it.
+        </p>
         <div className="mt-4">
           <LineChart
             width={634}
@@ -732,7 +748,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
             yTicks={[1, 1.5, 2, 2.5]}
             fmtY={(v) => v.toFixed(1)}
             xLabels={["0%", "-10%", "-20%", "-30%", "-40%", "-50%", "-60%", "-70%"]}
-            titleAt={(i) => `SOL ${SHOCKS[i] ? `-${SHOCKS[i]}%` : "today"}, $${(solPrice * (1 - SHOCKS[i] / 100)).toFixed(2)}`}
+            titleAt={(i) => (SHOCKS[i] ? describe(SHOCKS[i]) : `Today, SOL $${solPrice.toFixed(2)}`)}
             fmtValue={(v) => (live && v >= 2.5 ? (debt > 0 ? "2.50+" : "No debt") : v.toFixed(2))}
             restIndex={crashIdx}
             ariaLabel="Health factor under a joint crash scenario"
@@ -744,7 +760,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
                   <>
                     <circle cx={x(liqIdx)} cy={y(1)} r={4} fill="#ff6166" stroke="#0d0f12" strokeWidth={2} />
                     <text x={x(liqIdx) + (live && liqIdx < 12 ? 10 : -10)} y={y(1) + 18} textAnchor={live && liqIdx < 12 ? "start" : "end"} style={{ fill: "#ff6166", fontSize: 11.5 }}>
-                      Liquidation at SOL ${(solPrice * (1 - SHOCKS[liqIdx] / 100)).toFixed(2)}
+                      Liquidation at {sc.sol === sc.stock ? `${pct(dropAt(SHOCKS[liqIdx]).sol)} on both` : `SOL ${pct(dropAt(SHOCKS[liqIdx]).sol)}, stocks ${pct(dropAt(SHOCKS[liqIdx]).stock)}`}
                     </text>
                   </>
                 )}

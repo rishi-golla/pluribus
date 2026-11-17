@@ -21,6 +21,8 @@ export type Risk = math.RiskPosition;
 // Columns per scenario in the on-chain shock tables
 const GROUPS = 4;
 const DAY = 86_400;
+// The pool stores scenarios by number only, so these follow the order scripts/setup.ts creates them in
+const SCENARIO_NAMES = ["Crypto crash", "Equity crash", "Broad selloff"];
 
 const num = (x: { toString(): string }, decimals = 6) => Number(x.toString()) / 10 ** decimals;
 const scenario = (p: math.ShockParams, s: number): math.ShockParams => ({
@@ -171,8 +173,13 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     collateral,
     prices,
     shock,
-    /** Crash applied to each asset in the scenario that sets the credit limit */
-    crash: { sol: shockOf(solAsset.params.group), stock: shockOf(stockAsset.params.group) },
+    /** Every crash scenario in the pool, as the fall it applies to SOL and to stocks when setting the credit limit */
+    scenarios: Array.from({ length: shock.numScenarios }, (_, s) => {
+      const fall = (group: number) => (scenario(shock, s).initShockBps[group] ?? 0) / 1e4;
+      return { name: SCENARIO_NAMES[s] ?? `Scenario ${s + 1}`, sol: fall(solAsset.params.group), stock: fall(stockAsset.params.group) };
+    }),
+    /** Index of the scenario that sets the credit limit */
+    binding,
     lpRisk,
     /** The same for `amount` whole SOL or NVDAx */
     tokenRisk: (mint: string, amount: number): Risk => {
@@ -211,12 +218,12 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
 
 export type LiveData = Awaited<ReturnType<typeof loadLive>>;
 
-/** Health with SOL `drop` (0 to 1) lower than now and every other price unchanged */
-export const healthAfterDrop = (live: LiveData, solMint: string, drop: number) =>
+/** Health once SOL and stocks have fallen by `drop` (0 to 1 each), with USDC unchanged */
+export const healthAfterDrop = (live: LiveData, mints: { sol: string; stock: string }, drop: { sol: number; stock: number }) =>
   math.limits(
     live.collateral.map((c) => c.risk),
     live.shock,
-    { ...live.prices, [solMint]: live.prices[solMint] * (1 - drop) },
+    { ...live.prices, [mints.sol]: live.prices[mints.sol] * (1 - drop.sol), [mints.stock]: live.prices[mints.stock] * (1 - drop.stock) },
   ).liquidationLimit / live.debt;
 
 export type DayStats = { date: string; draws: number; repays: number; autopay: number };
