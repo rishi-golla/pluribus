@@ -6,6 +6,7 @@ import {
   fetchAsset,
   fetchCredit,
   fetchHealth,
+  fetchJuniorExit,
   fetchLpMarket,
   fetchPool,
   fetchPositions,
@@ -54,7 +55,7 @@ export type TrancheStats = { assets: number; apy: number | null; sharePrice: num
 export async function loadLive(connection: Connection, d: Deployment, owner: PublicKey) {
   const program = getProgram(connection);
   const [sol, stock, whirlpool] = [d.solMint, d.stockMint, d.whirlpool].map((k) => new PublicKey(k));
-  const [pool, credit, viewed, prices, solAsset, stockAsset, lpMarket, lamports, tokens, supply, juniorSupply, walletLps, poolLps] = await Promise.all([
+  const [pool, credit, viewed, prices, solAsset, stockAsset, lpMarket, lamports, tokens, supply, juniorSupply, walletLps, poolLps, queuedExit] = await Promise.all([
     fetchPool(program),
     fetchCredit(program, owner),
     // A stale price fails the view, and the page still has to load so the price can be set again
@@ -70,6 +71,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     connection.getTokenSupply(pda.juniorMint()).catch(() => null),
     listOrcaPositions(connection, d, owner),
     listOrcaPositions(connection, d, pda.pool()),
+    fetchJuniorExit(program, owner),
   ]);
   const positions = credit ? await fetchPositions(program, d, credit) : [];
   const now = Date.now() / 1000;
@@ -122,8 +124,9 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const tierDebt = pool.debtShares.map((s, t) => (Number(s.toString()) * Number(pool.borrowIndex[t].toString())) / 1e24);
   const avgRateBps = stats.debt > 0 ? tierDebt.reduce((sum, debt, t) => sum + debt * (stats.borrowRateBps - params.tierDiscountBps[t]), 0) / stats.debt : stats.borrowRateBps;
   const lenderShare = 1 - (params.reserveFactorBps + params.protocolFeeBps) / 1e4;
-  // Senior lenders hand the protection fee to junior lenders out of their own part of the interest
-  const seniorCut = stats.lenderAssets > 0 ? lenderShare * (stats.seniorAssets / stats.lenderAssets) * (1 - stats.protectionFee) : lenderShare;
+  // Junior lenders take the premium off the top, then senior lenders hand them the protection fee out of their own part of the rest
+  const seniorCut =
+    stats.lenderAssets > 0 ? (lenderShare - stats.juniorPremium) * (stats.seniorAssets / stats.lenderAssets) * (1 - stats.protectionFee) : lenderShare;
   const senior: TrancheStats = { assets: stats.seniorAssets, apy: stats.seniorApyBps / 1e4, sharePrice: stats.seniorShareValue ?? 1 };
   const junior: TrancheStats | null = juniorSupply && { assets: stats.juniorAssets, apy: stats.juniorApyBps / 1e4, sharePrice: stats.juniorShareValue ?? 1 };
 
@@ -133,6 +136,22 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const shares = (mint: PublicKey) => {
     const raw: string = tokens.value.find((t) => t.account.data.parsed.info.mint === mint.toBase58())?.account.data.parsed.info.tokenAmount.amount ?? "0";
     return { amount: num(raw), raw };
+  };
+
+  // A listing still in its activation delay backs no new debt, the same as a paused one
+  const waiting = (activeAt: { toString(): string }) => now < math.effectiveAt(pool, activeAt);
+  const juniorWallet = shares(pda.juniorMint());
+  const juniorPrice = junior?.sharePrice ?? 1;
+  const deadline = queuedExit ? math.juniorExitDeadline(pool, queuedExit) : 0;
+  const exit = queuedExit && {
+    shares: num(queuedExit.shares),
+    // A queued exit can lose value while it waits but never gains any
+    value: Math.min(num(queuedExit.value), num(queuedExit.shares) * juniorPrice),
+    unlockAt: queuedExit.unlockAt.toNumber(),
+    deadline,
+    feeBps: Math.min(queuedExit.feeBps, params.juniorExitFeeBps),
+    /** As of this reading, which the app takes every few seconds */
+    state: (now < queuedExit.unlockAt.toNumber() ? "waiting" : now < deadline ? "ready" : "lapsed") as "waiting" | "ready" | "lapsed",
   };
 
   const tokenMarket = (mint: string, asset: typeof solAsset): LiveMarket => ({
@@ -145,7 +164,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     mint: d.solMint,
     group: solAsset.params.group,
     liqCostBps: lpMarket.liqCostBps,
-    paused: lpMarket.paused || solAsset.params.paused,
+    paused: lpMarket.paused || solAsset.params.paused || waiting(lpMarket.activeAt) || waiting(solAsset.activeAt),
     liquidity: lp.liquidity,
     tickLower: lp.tickLower,
     tickUpper: lp.tickUpper,
@@ -183,8 +202,9 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     lpRisk,
     /** The same for `amount` whole SOL or NVDAx */
     tokenRisk: (mint: string, amount: number): Risk => {
-      const { group, liqCostBps, paused } = (mint === d.solMint ? solAsset : stockAsset).params;
-      return { mint, group, liqCostBps, paused, amount };
+      const asset = mint === d.solMint ? solAsset : stockAsset;
+      const { group, liqCostBps, paused } = asset.params;
+      return { mint, group, liqCostBps, paused: paused || waiting(asset.activeAt), amount };
     },
     pool: {
       supplied: stats.cash + stats.debt,
@@ -202,6 +222,11 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       /** Where each dollar of borrower interest goes, which adds up to 1 */
       split: { senior: seniorCut, junior: lenderShare - seniorCut, protocol: params.protocolFeeBps / 1e4, insurance: params.reserveFactorBps / 1e4 },
       protectionFee: params.protectionFeeBps / 1e4,
+      /** Share of all borrower interest paid to junior lenders right now, for taking losses first */
+      juniorPremium: stats.juniorPremium,
+      /** The most the premium can be, and the junior share of the pool at which it and the protection fee are paid in full */
+      juniorPremiumMax: params.juniorPremiumBps / 1e4,
+      juniorTarget: params.juniorTargetBps / 1e4,
       kink: params.kinkBps / 1e4,
       badDebt: num(pool.badDebt),
       // Borrower interest to date, implied by the insurance reserve's fixed cut of it
@@ -212,7 +237,19 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       nvdax: tokenMarket(d.stockMint, stockAsset),
       "orca-lp": { collateral: lpTotals.collateralValue, crashLtv: lpTotals.collateralValue > 0 ? lpTotals.creditLimit / lpTotals.collateralValue : null, liqCostBps: lpMarket.liqCostBps },
     } as Record<string, LiveMarket>,
-    wallet: { sol: lamports / 1e9, stock: balance(d.stockMint), usdc: balance(d.usdcMint), shares: { senior: shares(pda.shareMint()), junior: shares(pda.juniorMint()) }, lps: walletLps },
+    wallet: { sol: lamports / 1e9, stock: balance(d.stockMint), usdc: balance(d.usdcMint), shares: { senior: shares(pda.shareMint()), junior: juniorWallet }, lps: walletLps },
+      /** The wallet's queued junior exit, with its value at today's junior share price */
+    juniorExit: exit,
+    /** How junior money leaves: the wait a new exit of the wallet's shares would get, the claim window and the fee */
+    juniorRules: {
+      waitSecs: math.juniorExitDelay(params, pool.juniorQueued, juniorWallet.raw, juniorSupply?.value.amount ?? 0),
+      /** The wait for an exit of `shares` whole junior shares */
+      waitFor: (shares: number) => math.juniorExitDelay(params, pool.juniorQueued, Math.round(shares * 1e6), juniorSupply?.value.amount ?? 0),
+      windowSecs: params.juniorExitWindowSecs,
+      feeBps: params.juniorExitFeeBps,
+      /** Unix seconds until which governance has frozen junior exits, or null */
+      pausedUntil: now < pool.juniorPauseEnd.toNumber() ? pool.juniorPauseEnd.toNumber() : null,
+    },
   };
 }
 

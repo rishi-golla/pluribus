@@ -22,11 +22,11 @@ const TRANCHES = {
     tone: "green" as const,
     badge: Shield,
     tag: { icon: ShieldCheck, text: "Protected" },
-    blurb: "Base yield minus a 20% protection fee. Losses reach seniors only after the insurance fund and the entire junior tranche.",
+    blurb: "Base yield minus 20% protection fee",
     deposits: "$9.00M",
     exit: "Instant",
     lossOrder: "3rd",
-    option: "Protected, instant exit",
+    option: "Instant exit",
   },
   junior: {
     name: "Junior",
@@ -36,13 +36,19 @@ const TRANCHES = {
     tone: "orange" as const,
     badge: Zap,
     tag: { icon: Flame, text: "First loss" },
-    blurb: "Base yield, the senior protection fee and every risk premium. Absorbs bad debt right after the insurance fund.",
+    blurb: "Base yield plus protection fee and risk premiums",
     deposits: "$1.00M",
-    exit: "7-14 days",
+    exit: "6-day queue",
     lossOrder: "2nd",
-    option: "First loss, 7 to 14 day cooldown",
+    option: "6-day queue",
   },
 };
+
+const DAY_SECS = 86_400;
+/** A wait in the largest unit that keeps it readable */
+const span = (secs: number) =>
+  secs >= DAY_SECS ? `${+(secs / DAY_SECS).toFixed(1)} day${secs === DAY_SECS ? "" : "s"}` : secs >= 3600 ? `${+(secs / 3600).toFixed(1)} h` : `${Math.max(0, Math.round(secs))} s`;
+const when = (unix: number) => new Date(unix * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /* 365 days; the last 90 match the approved mockup. */
 const extend = (last90: number[], start: number, vol: number, seed: number) => [...series(276, start, last90[0], vol, seed).slice(0, -1), ...last90];
@@ -98,17 +104,20 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
   const apy = pool ? (stat?.apy ?? null) : t.apy;
   const apyHistory = live ? inRange(live.samples, 90).map((s) => s.apy[id]) : (id === "senior" ? SENIOR_APY : JUNIOR_APY).slice(-90);
   const fee = pool ? whole(pool.protectionFee) : 0;
+  const premium = pool ? whole(pool.juniorPremiumMax) : 0;
+  const target = pool ? whole(pool.juniorTarget) : 10;
+  const queue = live ? `${span(live.juniorRules.waitSecs)} queue` : t.exit;
   const blurb = !stat
     ? t.blurb
     : id === "junior"
-      ? `Lender yield plus a protection fee of up to ${fee}% of senior interest, paid in full once junior lenders hold a tenth of the pool. Takes losses before senior lenders, after the insurance reserve and the protocol's uncollected fees.`
+      ? `Yield plus up to ${premium}% premium and ${fee}% fee, full at ${target}% of pool`
       : pool?.junior
-        ? `Lender yield minus a protection fee of up to ${fee}%, which scales with how much junior money stands in front. Takes losses only after the insurance reserve, the protocol's uncollected fees and every junior lender.`
-        : "Lender yield from borrower interest. Takes losses only after the insurance reserve and the protocol's uncollected fees.";
+        ? `Yield minus up to ${fee}% protection fee`
+        : "Yield from borrower interest";
   const stats = soon
     ? ["-", "-", "-", "-"]
     : stat
-      ? [compactUsd(stat.assets), stat.sharePrice.toFixed(4), "Instant", id === "senior" && pool?.junior ? "3rd" : "2nd"]
+      ? [compactUsd(stat.assets), stat.sharePrice.toFixed(4), id === "junior" ? queue : "Instant", id === "senior" && pool?.junior ? "3rd" : "2nd"]
       : [t.deposits, id === "senior" ? "1.0412" : "1.1876", t.exit, t.lossOrder];
   return (
     <motion.button
@@ -313,17 +322,25 @@ function YieldHistory() {
 function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: Tranche) => void }) {
   const { positions, sharePrice, adjustPosition, walletUsdc, poolCash, live } = useAccount();
   const toast = useToast();
-  const [mode, setMode] = useState<"Supply" | "Withdraw">("Supply");
+  const [mode, setMode] = useState<"Supply" | "Withdraw" | "Convert">("Supply");
   const [raw, setRaw] = useState(live ? "" : "10000.00");
   const [status, setStatus] = useState<"idle" | "signing" | "confirming">("idle");
 
-  const t = TRANCHES[tranche];
+  // Converting always moves senior money into the junior tranche
+  const target: Tranche = mode === "Convert" ? "junior" : tranche;
+  const t = TRANCHES[target];
   // Unknown for a tranche that is not open or holds nothing yet
   const apyOf = (id: Tranche) => (live ? (live.pool[id]?.apy ?? null) : TRANCHES[id].apy);
-  const apy = apyOf(tranche);
+  const apy = apyOf(target);
   const amount = Number(raw) || 0;
-  const max = mode === "Supply" ? walletUsdc : positions[tranche];
-  const shares = amount / sharePrice[tranche];
+  const source: Tranche = mode === "Convert" ? "senior" : tranche;
+  const max = mode === "Supply" ? walletUsdc : positions[source];
+  const shares = amount / sharePrice[source];
+  // Junior money out only joins the exit queue, which needs no idle cash but allows one exit at a time
+  const queueing = mode === "Withdraw" && tranche === "junior";
+  const rules = live?.juniorRules;
+  // The wait for what is typed, since a bigger exit can wait longer when the queue is busy
+  const wait = rules ? span(queueing && amount > 0 ? rules.waitFor(shares) : rules.waitSecs) : "6 days";
   const error =
     amount <= 0
       ? "Enter an amount"
@@ -331,21 +348,35 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
         amount > (mode === "Supply" ? max : Math.round(max * 100) / 100) + 1e-9
         ? mode === "Supply"
           ? "Exceeds wallet balance"
-          : `Exceeds your ${t.token} position`
-        : live && mode === "Withdraw" && amount > poolCash
-          ? "Exceeds pool liquidity"
-          : null;
-  const label = status === "signing" ? "Confirm in wallet..." : status === "confirming" ? "Confirming on Solana..." : (error ?? `${mode} ${money(amount).replace(/\.00$/, "")} USDC`);
+          : `Exceeds your ${TRANCHES[source].token} position`
+        : mode === "Convert" && live && !live.pool.junior
+          ? "Junior tranche not open"
+          : queueing && live?.juniorExit
+            ? "Exit already queued"
+            : queueing && rules?.pausedUntil
+              ? "Junior exits paused"
+              : live && mode === "Withdraw" && !queueing && amount > poolCash
+                ? "Exceeds pool liquidity"
+                : null;
+  const verb = mode === "Convert" ? "Move" : queueing ? "Queue" : mode;
+  const label =
+    status === "signing"
+      ? "Confirm in wallet..."
+      : status === "confirming"
+        ? "Confirming on Solana..."
+        : (error ?? `${verb} ${money(amount).replace(/\.00$/, "")} USDC${mode === "Convert" ? " to junior" : queueing ? " for exit" : ""}`);
 
   const submit = async () => {
     if (error || status !== "idle") return;
-    const ok = await adjustPosition(tranche, mode === "Supply" ? amount : -amount, setStatus);
+    const ok = mode === "Convert" ? await (live ? live.convertToJunior(amount, setStatus) : mockConvert(setStatus)) : await adjustPosition(tranche, mode === "Supply" ? amount : -amount, setStatus);
     setStatus("idle");
     if (!ok) return;
     if (mode === "Supply") {
       toast({ title: `Supplied ${money(amount)} USDC`, detail: `Received ${money(shares)} ${t.token}${apy === null ? "" : ` at ${(apy * 100).toFixed(2)}% APY`}` });
-    } else if (tranche === "junior" && !live) {
-      toast({ title: `Withdrawal of ${money(amount)} USDC queued`, detail: "Junior exits settle after a 7 to 14 day cooldown", tone: "info" });
+    } else if (mode === "Convert") {
+      toast({ title: `Moved ${money(amount)} USDC to junior`, detail: `Swapped ${money(shares)} sUSDC for ${money(amount / sharePrice.junior)} jUSDC` });
+    } else if (queueing) {
+      toast({ title: `${money(amount)} USDC queued for exit`, detail: `Claimable in ${wait}`, tone: "info" });
     } else {
       toast({ title: `Withdrew ${money(amount)} USDC`, detail: `Burned ${money(shares)} ${t.token}` });
     }
@@ -355,9 +386,14 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
   return (
     <div className="panel">
       <div className="px-[22px] pb-[22px] pt-[18px]">
+        {rules?.pausedUntil && (
+          <div className="mb-4 rounded-xl border border-orange/30 bg-orange/5 px-3.5 py-2.5 text-[12.5px] text-t2">
+            Junior exits paused until {when(rules.pausedUntil)}
+          </div>
+        )}
         <Segmented
           label="Action"
-          items={["Supply", "Withdraw"] as const}
+          items={["Supply", "Withdraw", "Convert"] as const}
           value={mode}
           onChange={(m) => {
             setMode(m);
@@ -365,42 +401,44 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           }}
         />
         <div className="mb-2 mt-[18px]">
-          <Label>Tranche</Label>
+          <Label>{mode === "Convert" ? "From senior into" : "Tranche"}</Label>
         </div>
-        {(["senior", "junior"] as const).map((id) => {
-          const o = TRANCHES[id];
-          const on = id === tranche;
-          const soon = !!live && !live.pool[id];
-          const rate = apyOf(id);
-          return (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              disabled={soon}
-              onClick={() => onTranche(id)}
-              className={`mt-2 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors first-of-type:mt-0 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
-                on ? "border-brand/45 bg-brand/5" : soon ? "border-line bg-bg" : "border-line bg-bg hover:border-line-2"
-              }`}
-            >
-              <Token src="/tokens/usdc.webp" size={20} />
-              <div>
-                <div className="font-medium">{o.name}</div>
-                <div className="text-xs text-t3">{live && id === "junior" ? "First loss, instant exit" : o.option}</div>
-              </div>
-              <span className="ml-auto font-medium" style={{ color: rate === null ? "var(--color-t3)" : o.color }}>
-                {soon ? "Soon" : rate === null ? "-" : `${(rate * 100).toFixed(2)}%`}
-              </span>
-              <span className={`ml-3 size-4 rounded-full transition-[border-width] duration-200 ${on ? "border-[5px] border-brand" : "border-[1.5px] border-line-2"}`} />
-            </button>
-          );
-        })}
+        {(["senior", "junior"] as const)
+          .filter((id) => mode !== "Convert" || id === "junior")
+          .map((id) => {
+            const o = TRANCHES[id];
+            const on = id === target;
+            const soon = !!live && !live.pool[id];
+            const rate = apyOf(id);
+            return (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={soon}
+                onClick={() => onTranche(id)}
+                className={`mt-2 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors first-of-type:mt-0 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
+                  on ? "border-brand/45 bg-brand/5" : soon ? "border-line bg-bg" : "border-line bg-bg hover:border-line-2"
+                }`}
+              >
+                <Token src="/tokens/usdc.webp" size={20} />
+                <div>
+                  <div className="font-medium">{o.name}</div>
+                  <div className="text-xs text-t3">{live && id === "junior" ? `${wait} queue` : o.option}</div>
+                </div>
+                <span className="ml-auto font-medium" style={{ color: rate === null ? "var(--color-t3)" : o.color }}>
+                  {soon ? "Soon" : rate === null ? "-" : `${(rate * 100).toFixed(2)}%`}
+                </span>
+                <span className={`ml-3 size-4 rounded-full transition-[border-width] duration-200 ${on ? "border-[5px] border-brand" : "border-[1.5px] border-line-2"}`} />
+              </button>
+            );
+          })}
         <label className="mt-3.5 block rounded-[14px] border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
           <div className="flex items-center justify-between">
             <Label>Amount</Label>
             <Label>
-              {mode === "Supply" ? "Balance" : "Position"} {money(max)}
+              {mode === "Supply" ? "Balance" : mode === "Convert" ? "Senior position" : "Position"} {money(max)}
             </Label>
           </div>
           <div className="mt-2.5 flex items-center justify-between gap-3">
@@ -424,19 +462,29 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           </div>
         </label>
         <div className="mt-3.5">
-          <KV k={mode === "Supply" ? "You receive" : "You burn"}>
-            <Num value={shares} decimals={2} /> {t.token}
+          <KV k={mode === "Supply" ? "You receive" : queueing ? "You queue" : "You burn"}>
+            <Num value={shares} decimals={2} /> {TRANCHES[source].token}
           </KV>
-          <KV k={mode === "Supply" ? "Projected 1Y earnings" : "Remaining position"}>
-            {mode === "Supply" ? (
-              <span className="text-green">
-                +<Num value={amount * (apy ?? 0)} decimals={2} prefix="$" />
-              </span>
-            ) : (
-              <Num value={Math.max(0, positions[tranche] - amount)} decimals={2} prefix="$" />
-            )}
+          {mode === "Convert" ? (
+            <KV k="You receive">
+              <Num value={amount / sharePrice.junior} decimals={2} /> jUSDC
+            </KV>
+          ) : (
+            <KV k={mode === "Supply" ? "Projected 1Y earnings" : "Remaining position"}>
+              {mode === "Supply" ? (
+                <span className="text-green">
+                  +<Num value={amount * (apy ?? 0)} decimals={2} prefix="$" />
+                </span>
+              ) : (
+                <Num value={Math.max(0, positions[tranche] - amount)} decimals={2} prefix="$" />
+              )}
+            </KV>
+          )}
+          <KV k="Exit">
+            {target === "senior"
+              ? "Instant"
+              : `${wait} queue, ${rules ? span(rules.windowSecs) : "2 days"} to claim, ${rules?.feeBps ?? 5} bps fee`}
           </KV>
-          <KV k="Exit">{tranche === "senior" || live ? "Instant, if liquidity allows" : "7 to 14 day cooldown"}</KV>
         </div>
         <motion.button
           type="button"
@@ -450,6 +498,89 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
           {label}
         </motion.button>
+        {live?.juniorExit && <ExitQueue live={live} />}
+      </div>
+    </div>
+  );
+}
+
+const mockConvert = async (onStage: (s: "signing" | "confirming") => void) => {
+  onStage("signing");
+  await new Promise((r) => setTimeout(r, 900));
+  onStage("confirming");
+  await new Promise((r) => setTimeout(r, 700));
+  return true;
+};
+
+/** The wallet's queued junior exit: waiting, ready to claim, or lapsed */
+function ExitQueue({ live }: { live: Live }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  const exit = live.juniorExit!;
+  const paused = !!live.juniorRules.pausedUntil;
+  const state = exit.state;
+  const payout = exit.value * (1 - exit.feeBps / 1e4);
+  // A cash claim needs that much idle USDC in the pool, a claim in senior shares never does
+  const cashShort = payout > live.pool.cash;
+  const act = async (name: string, go: () => Promise<boolean>, done: { title: string; detail: string }) => {
+    setBusy(name);
+    const ok = await go();
+    setBusy(null);
+    if (ok) toast(done);
+  };
+  const chip = "h-9 flex-1 cursor-pointer rounded-lg border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-bg px-3.5 py-3">
+      <div className="flex items-center justify-between">
+        <Label>Exit queue</Label>
+        <Tag tone={state === "ready" ? "green" : state === "lapsed" ? "neutral" : "orange"}>{state === "ready" ? "Ready to claim" : state === "lapsed" ? "Lapsed" : "Waiting"}</Tag>
+      </div>
+      <div className="mt-2">
+        <KV k="Queued" dense>
+          {money(exit.shares)} jUSDC, ~{money(exit.value)} USDC
+        </KV>
+        <KV k={state === "waiting" ? "Claimable from" : state === "ready" ? "Claim before" : "Lapsed at"} dense>
+          {when(state === "waiting" ? exit.unlockAt : exit.deadline)}
+        </KV>
+        <KV k="Exit fee" dense>
+          {exit.feeBps} bps
+        </KV>
+      </div>
+      <div className="mt-3 flex gap-2">
+        {state === "ready" && (
+          <>
+            <button
+              type="button"
+              className={chip}
+              disabled={!!busy || paused || cashShort}
+              title={cashShort ? "Low pool cash, claim as sUSDC" : undefined}
+              onClick={() => act("usdc", () => live.claimExit(true, () => {}), { title: "Exit claimed", detail: `~${money(payout)} USDC sent to wallet` })}
+            >
+              {busy === "usdc" ? "Claiming..." : "Claim USDC"}
+            </button>
+            <button
+              type="button"
+              className={chip}
+              disabled={!!busy || paused}
+              onClick={() => act("susdc", () => live.claimExit(false, () => {}), { title: "Exit claimed in sUSDC", detail: "sUSDC sent to wallet" })}
+            >
+              {busy === "susdc" ? "Claiming..." : "Claim as sUSDC"}
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className={chip}
+          disabled={!!busy}
+          onClick={() =>
+            act("cancel", () => live.cancelExit(() => {}), {
+              title: "Exit cancelled",
+              detail: "jUSDC returned",
+            })
+          }
+        >
+          {busy === "cancel" ? "Cancelling..." : state === "lapsed" ? "Return shares" : "Cancel"}
+        </button>
       </div>
     </div>
   );
@@ -525,7 +656,7 @@ export function EarnDashboard() {
       <div className="mb-7 flex items-end justify-between">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Earn</h1>
-          <p className="mt-2 text-[14.5px] text-t2">Supply USDC to the credit pool. Yield comes only from borrower interest, paid through a rising share price.</p>
+          <p className="mt-2 text-[14.5px] text-t2">Earn borrower interest on USDC</p>
         </div>
         <div className="flex gap-2">
           <Chip>
@@ -554,7 +685,7 @@ export function EarnDashboard() {
         <div className="panel">
           <div className="flex items-center justify-between px-[22px] pt-[18px]">
             <h3 className="text-[15px] font-medium tracking-[-0.01em]">Loss waterfall</h3>
-            <span className="text-[12.5px] text-t3">Written down at liquidation</span>
+            
           </div>
           <div className="px-[22px] pb-[22px] pt-2">
             {waterfall.map((w, i) => (
@@ -613,7 +744,7 @@ export function EarnDashboard() {
               <span className="ml-[18%]">Min 10%</span>
               <span>30%</span>
             </div>
-            <div className="mt-4 text-[13px] text-t2">If juniors leave and coverage drops below the minimum, new draws against memecoins and thin stocks pause automatically.</div>
+            
           </div>
         </div>
         <div className="panel">

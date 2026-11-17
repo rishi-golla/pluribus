@@ -54,7 +54,7 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
         },
         { label: "Total borrowed", value: live.pool.debt, sub: `${pct(live.pool.utilization)} utilization` },
         { label: "Collateral locked", value: sum(markets, "collateral"), sub: `${markets.length} markets, ${new Set(markets.map((m) => m.cls)).size} asset classes` },
-        { label: "Interest, all time", value: live.pool.interest, sub: `${pct(live.pool.avgApr)} average borrow APR` },
+        { label: "Interest, all time", value: live.pool.interest, sub: `${pct(live.pool.avgApr)} avg borrow APR` },
         { label: "Volume, 24H", value: latest ? dayTotal(latest) : 0, sub: "Draws, repays and autopay" },
         { label: "Bad debt", value: live.pool.badDebt, sub: `${compactUsd(live.pool.reserves)} insurance fund` },
       ]
@@ -62,7 +62,7 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
         { label: "Total supplied", value: POOL.supplied, sub: "$9.0M senior, $1.0M junior" },
         { label: "Total borrowed", value: TOTALS.borrowed, sub: `${pct(TOTALS.borrowed / POOL.supplied)} utilization` },
         { label: "Collateral locked", value: TOTALS.collateral, sub: `${MARKETS.length} markets, 5 asset classes` },
-        { label: "Fees, 30D", value: TOTALS.fees, sub: `${pct(TOTALS.avgApr)} average borrow APR` },
+        { label: "Fees, 30D", value: TOTALS.fees, sub: `${pct(TOTALS.avgApr)} avg borrow APR` },
         { label: "Volume, 24H", value: TOTALS.volume, sub: "Draws, repays and autopay" },
         { label: "Bad debt", value: 0, sub: `${compactUsd(POOL.insurance)} insurance fund` },
       ];
@@ -135,7 +135,7 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
         </div>
         {!n && (
           <div className="mt-3 grid place-items-center text-t3" style={{ height: VOL_H }}>
-            No indexed volume yet.
+            No volume yet
           </div>
         )}
         {!!n && (
@@ -244,7 +244,7 @@ function FeesPanel() {
         <div className="mt-3">
           {live ? (
             <div className="grid place-items-center text-t3" style={{ height: VOL_H }}>
-              No daily interest history yet. The totals above come from the pool account.
+              No daily history yet
             </div>
           ) : (
           <LineChart
@@ -303,7 +303,7 @@ function MixPanel({ markets }: { markets: Market[] }) {
   return (
     <section className="panel mt-4 grid grid-cols-[1fr_1fr_1.1fr] items-center gap-10 px-[22px] py-5">
       <MixBar title="Collateral by asset class" markets={markets} field="collateral" />
-      <MixBar title="Borrowed against each class" markets={markets} field="borrowed" />
+      <MixBar title="Borrowed by asset class" markets={markets} field="borrowed" />
       <div className="grid grid-cols-5 gap-3">
         {CLASSES.map((c) => {
           const share = collateral > 0 ? sum(markets.filter((m) => m.cls === c), "collateral") / collateral : 0;
@@ -392,7 +392,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Collateral markets <span className="font-normal text-t3">{rows.length} of {MARKETS.length}</span>
         </h3>
-        <span className="text-[12.5px] text-t3">All markets borrow from one USDC pool, priced by {live && deployment?.demoMode ? "the demo feed" : "Pyth"}</span>
+        <span className="text-[12.5px] text-t3">Priced by {live && deployment?.demoMode ? "demo feed" : "Pyth"}</span>
       </div>
       <div className="flex gap-2 border-b border-line px-[22px] pb-3.5 pt-4">
         {(["All", ...CLASSES] as const).map((f) => (
@@ -525,7 +525,7 @@ export function OverviewDashboard() {
       <div className="mb-7 flex items-end justify-between">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Overview</h1>
-          <p className="mt-2 text-[14.5px] text-t2">How the Pluribus credit markets look right now, by asset, fees and volume.</p>
+          <p className="mt-2 text-[14.5px] text-t2">Pluribus credit markets at a glance</p>
         </div>
         <div className="flex gap-2">
           <Chip>

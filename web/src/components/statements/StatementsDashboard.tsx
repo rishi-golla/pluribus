@@ -235,7 +235,7 @@ export function StatementsDashboard() {
       <div className="mb-7 flex items-end justify-between">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Statements</h1>
-          <p className="mt-2 text-[14.5px] text-t2">Monthly account statements, built from indexed on-chain events.</p>
+          <p className="mt-2 text-[14.5px] text-t2">Monthly account statements</p>
         </div>
         <div className="flex gap-2">
           <MonthPicker months={months} value={monthKey} onChange={setMonthKey} />
@@ -359,7 +359,7 @@ export function StatementsDashboard() {
                 })}
             </tbody>
           </table>
-          {!rows.length && <div className="px-[22px] py-10 text-center text-t3">{filter === "All" ? "No activity indexed for this month yet." : `No ${filter.toLowerCase()} this month.`}</div>}
+          {!rows.length && <div className="px-[22px] py-10 text-center text-t3">{filter === "All" ? "No activity this month" : `No ${filter.toLowerCase()} this month`}</div>}
         </div>
 
         <div className="grid content-start gap-4">
@@ -395,7 +395,7 @@ export function StatementsDashboard() {
                 ))}
               </div>
               <div className="mt-4 text-[13px] text-t2">
-                {next ? `${Math.max(0, Math.ceil(next.minDays - healthyDays))} more healthy days to ${next.name}.` : "You are on the top tier."} Your {live ? "discount" : "risk premium"} resets if the account is liquidated.
+                {next ? `${Math.max(0, Math.ceil(next.minDays - healthyDays))} days to ${next.name}` : "Top tier"}, resets on liquidation
               </div>
             </div>
           </div>
@@ -426,7 +426,7 @@ export function StatementsDashboard() {
               </motion.div>
               <div className="mb-3 mt-[18px] h-px bg-line" />
               <div className="flex items-center justify-between">
-                <span className="text-t2">Autopay covered your interest</span>
+                <span className="text-t2">Interest covered</span>
                 <span className="text-xl font-medium tracking-[-0.03em] text-green">{covered.toFixed(1)}x</span>
               </div>
             </div>

@@ -82,6 +82,12 @@ export type Live = LiveData & {
   moveToken: (mint: string, amount: number, deposit: boolean, onStage: OnStage) => Promise<boolean>;
   moveLp: (positionMint: string, deposit: boolean, onStage: OnStage) => Promise<boolean>;
   setPrice: (mint: string, price: number) => Promise<boolean>;
+  /** Turns senior money into junior money, in USDC terms, with no USDC moving */
+  convertToJunior: (usdcAmount: number, onStage: OnStage) => Promise<boolean>;
+  /** Pays out the queued junior exit, in USDC or, when the pool's cash is lent out, in senior shares */
+  claimExit: (inUsdc: boolean, onStage: OnStage) => Promise<boolean>;
+  /** Puts the queued junior shares back to work */
+  cancelExit: (onStage: OnStage) => Promise<boolean>;
 };
 
 type Account = {
@@ -106,7 +112,7 @@ type Account = {
   transact: (kind: "draw" | "repay", amount: number, onStage: OnStage) => Promise<boolean>;
   positions: Record<Tranche, number>;
   sharePrice: Record<Tranche, number>;
-  /** Moves USDC into (positive) or out of (negative) a tranche, in USDC terms. */
+  /** Moves USDC into (positive) or out of (negative) a tranche, in USDC terms. Junior money out is only queued for exit */
   adjustPosition: (tranche: Tranche, usdcDelta: number, onStage: OnStage) => Promise<boolean>;
   /** On-chain detail that only exists in live mode */
   live: Live | null;
@@ -274,9 +280,12 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         run(() => {
           const which = { junior: tranche === "junior" };
           if (delta > 0) return ix.lendDeposit(program, d, me, usdc(delta), which);
-          // Taking the whole position burns every share, so none is left behind by rounding
+          // Taking the whole position moves every share, so none is left behind by rounding
           const all = -delta >= lent[tranche] - 0.005;
-          return ix.lendWithdraw(program, d, me, all ? BigInt(data.wallet.shares[tranche].raw) : usdc(-delta / sharePrice[tranche]), which);
+          const shares = all ? BigInt(data.wallet.shares[tranche].raw) : usdc(-delta / sharePrice[tranche]);
+            // Junior money leaves through the exit queue: this queues it, and the claim comes after the wait
+          if (which.junior) return ix.requestJuniorExit(program, me, shares);
+          return ix.lendWithdraw(program, d, me, shares, which);
         }, onStage),
       live: {
         ...data,
@@ -330,6 +339,13 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
           await refresh().catch(() => {});
           return true;
         },
+          convertToJunior: (amount, onStage) =>
+            run(() => {
+              const all = amount >= lent.senior - 0.005;
+            return ix.convertToJunior(program, me, all ? BigInt(data.wallet.shares.senior.raw) : usdc(amount / sharePrice.senior));
+          }, onStage),
+        claimExit: (inUsdc, onStage) => run(() => ix.claimJuniorExit(program, d, me, { inUsdc }), onStage),
+        cancelExit: (onStage) => run(() => ix.cancelJuniorExit(program, me, me), onStage),
       },
     };
   }, [current, wallet, loading, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);

@@ -68,7 +68,7 @@ function CreditHero({ p }: { p: Projection }) {
           {live && health < 1 && (
             <Tag tone="red" className="ml-1.5">
               <TriangleAlert />
-              Over the liquidation limit by {usd(debt - liquidationLimit)}
+              Over liquidation limit by {usd(debt - liquidationLimit)}
             </Tag>
           )}
           {live?.viewError && health >= 1 && (
@@ -386,7 +386,7 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
         </motion.button>
         <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-t3">
           <ShieldCheck size={13} strokeWidth={1.75} />
-          {mode === "Draw" ? "No maturity. Repay any time, no fees." : "Repay any time, no fees. Autopay keeps running."}
+          {mode === "Draw" ? "No maturity, no fees" : "No repay fees"}
         </div>
       </div>
     </div>
@@ -498,7 +498,7 @@ const POSITIONS: Position[] = [
   { kind: "LSTs", icon: <TokenIcon src="jitosol.webp" />, name: "JitoSOL", sub: "Liquid staking", bal: "41.44 JitoSOL", val: "$6,950.00", vsub: "1 JitoSOL = 1.118 SOL", ltv: 65, power: "$4,518.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
   { kind: "LP positions", icon: <Pair badge="orca.png" />, name: "SOL-USDC", sub: "Orca Whirlpool, 120 to 180", bal: "Position #8812", val: "$10,000.00", vsub: "$38.20 fees unclaimed", ltv: 70.8, naive: "82.1%", power: "$7,080.00", liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
   { kind: "LP positions", icon: <Pair badge="ray.webp" />, name: "SOL-USDC", sub: "Raydium CLMM, full range", bal: "Position #2207", val: "$5,200.00", vsub: "$11.70 fees unclaimed", ltv: 79.4, naive: "80.7%", power: "$4,129.00", liq: <div className="flex items-center gap-2.5"><RangeBar from={0} to={100} at={50} /><Tag tone="green">In range</Tag></div> },
-  { kind: "Tokenized stocks", icon: <TokenIcon src="nvdax.webp" />, name: "NVDAx", sub: "NVIDIA xStock", bal: "18.00 NVDAx", val: "$3,240.00", vsub: "Market closed, wider haircut", ltv: 58, power: "$1,879.00", liq: <Meter n={3} label={<span className="text-[12.5px] text-t2">Moderate</span>} /> },
+  { kind: "Tokenized stocks", icon: <TokenIcon src="nvdax.webp" />, name: "NVDAx", sub: "NVIDIA xStock", bal: "18.00 NVDAx", val: "$3,240.00", vsub: "Market closed", ltv: 58, power: "$1,879.00", liq: <Meter n={3} label={<span className="text-[12.5px] text-t2">Moderate</span>} /> },
   { kind: "Memes", icon: <TokenIcon src="bonk.webp" />, name: "BONK", sub: "Bonk", bal: "212.4M BONK", val: "$4,765.00", vsub: "$0.00002243", ltv: 35, power: "$1,668.00", liq: <Meter n={2} label={<Tag tone="orange">Risky</Tag>} /> },
 ];
 
@@ -523,7 +523,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
           </button>
           <button
             type="button"
-            onClick={() => (live ? setDialog({}) : toast({ title: "Connect a wallet to deposit", detail: "Supports SOL, LSTs, CLMM LP NFTs and xStocks", tone: "info" }))}
+            onClick={() => (live ? setDialog({}) : toast({ title: "Connect a wallet to deposit", detail: "SOL, LSTs, LP NFTs, xStocks", tone: "info" }))}
             className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] bg-[#f4f4f5] px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white"
           >
             <Plus {...ic} />
@@ -612,7 +612,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
       </table>
       {!rows.length && (
         <div className="px-[22px] py-10 text-center text-t3">
-          {all.length ? `No ${filter} deposited.` : "No collateral yet. Deposit SOL, NVDAx or an Orca LP position to borrow against it."}
+          {all.length ? `No ${filter} deposited` : "No collateral yet"}
           {!all.length && live?.canFund && (
             <button type="button" onClick={() => live.fund()} className="ml-2 cursor-pointer text-brand hover:underline">
               Get test tokens
@@ -667,7 +667,7 @@ function PriceControl({ live }: { live: Live }) {
         <span className="text-t3">$</span>
         <input
           inputMode="decimal"
-          aria-label={`New ${asset} price in dollars`}
+          aria-label={`New ${asset} price`}
           placeholder={price.toFixed(2)}
           value={raw}
           onChange={(e) => /^\d*\.?\d{0,2}$/.test(e.target.value) && setRaw(e.target.value)}
@@ -694,10 +694,10 @@ function StressPanel({ highlight }: { highlight: boolean }) {
   const follower = Math.round((Math.min(sc.sol, sc.stock) / (lead || 1)) * 100);
   const xTitle =
     sc.sol === sc.stock
-      ? "Fall in SOL, LP positions and stocks"
+      ? "SOL, LP and stock drop"
       : sc.sol > sc.stock
-        ? `Fall in SOL and LP positions → stocks fall ${follower}% as far`
-        : `Fall in stocks → SOL and LP positions fall ${follower}% as far`;
+        ? `SOL and LP drop, stocks ${follower}% as much`
+        : `Stock drop, SOL and LP ${follower}% as much`;
   const dropAt = (s: number) => ({ sol: lead ? Math.min(0.99, (s / 100) * (sc.sol / lead)) : 0, stock: lead ? Math.min(0.99, (s / 100) * (sc.stock / lead)) : 0 });
   const pct = (v: number) => `-${Math.round(v * 100)}%`;
   const describe = (s: number) => {
@@ -715,7 +715,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
     <motion.div className="panel" animate={{ boxShadow: highlight ? "0 0 0 1px rgba(158,140,255,0.5), 0 0 40px -8px rgba(158,140,255,0.45)" : "inset 0 1px 0 rgba(255,255,255,0.03)" }} transition={{ duration: 0.6 }}>
       <div className="flex items-center justify-between gap-4 px-[22px] pt-[18px]">
         <h3 className="text-[15px] font-medium tracking-[-0.01em]">Stress test</h3>
-        <span className="text-right text-[12.5px] text-t3">SOL, LP positions and stocks fall together in the chosen scenario</span>
+        
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
         {live?.canSetPrice && <PriceControl live={live} />}
@@ -739,9 +739,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
             </button>
           ))}
         </div>
-        <p className="mt-3 text-[12.5px] text-t3">
-          Plays the {sc.name.toLowerCase()} at growing strength. The marker is the scenario as the pool defines it.
-        </p>
+        
         <div className="mt-4">
           <LineChart
             width={634}
@@ -757,7 +755,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
             titleAt={(i) => (SHOCKS[i] ? describe(SHOCKS[i]) : `Today, SOL $${solPrice.toFixed(2)}`)}
             fmtValue={(v) => (live && v >= 2.5 ? (debt > 0 ? "2.50+" : "No debt") : v.toFixed(2))}
             restIndex={crashIdx}
-            ariaLabel="Health factor under a joint crash scenario"
+            ariaLabel="Health factor by crash size"
             overlay={({ x, y, innerWidth, pad }) => (
               <g>
                 <rect x={pad.left} y={y(1)} width={innerWidth} height={y(0.5) - y(1)} fill="rgba(255,97,102,0.07)" />
@@ -821,7 +819,7 @@ function AutopayPanel() {
   const bw = (AW - 29 * 4) / 30;
   const toggle = () => {
     setOn(!on);
-    toast(on ? { title: "Autopay paused", detail: "LP fees will stay in your positions", tone: "info" } : { title: "Autopay resumed", detail: "Next harvest in 3h 12m" });
+    toast(on ? { title: "Autopay paused", detail: "LP fees stay in positions", tone: "info" } : { title: "Autopay resumed", detail: "Next harvest in 3h 12m" });
   };
   const paid = months.flatMap((m) => m.events).filter((e) => e.kind === "autopay");
   const dayOf = (iso: string) => Math.round(Date.parse(iso) / DAY_MS);
@@ -842,7 +840,7 @@ function AutopayPanel() {
             type="button"
             onClick={fast.toggle}
             aria-pressed={fast.running}
-            title="Test only: trades the pool and collects LP fees every second"
+            title="Test only, harvests every second"
             className={`ml-auto mr-3 cursor-pointer rounded-md border px-2 py-0.5 text-[11.5px] font-medium transition-colors ${fast.running ? "border-green/50 text-green" : "border-line text-t3 hover:border-line-2 hover:text-t1"}`}
           >
             {fast.running ? "Stop 1s harvest" : "Test: harvest every 1s"}
@@ -863,8 +861,8 @@ function AutopayPanel() {
       <div className="px-[22px] pb-[22px] pt-[18px]">
         <div className="text-[13px] text-t2">
           {fast.running || fast.total.runs > 0
-            ? `Test harvest: ${fast.total.runs} runs, ${usd(fast.total.usd)} collected. The USDC part repays debt and the SOL part becomes collateral.`
-            : "Keepers harvest your LP fees every 6 hours and repay debt with the USDC part."}
+            ? `Test harvest: ${fast.total.runs} runs, ${usd(fast.total.usd)} collected`
+            : "LP fees repay debt every 6 hours"}
         </div>
         <div className="mt-[18px] flex items-center justify-between">
           <Label>Daily fees repaid, 30D</Label>
@@ -880,7 +878,7 @@ function AutopayPanel() {
           initial="hidden"
           whileInView="shown"
           viewport={{ once: true, amount: 0.5 }}
-          aria-label="Fees repaid per day over the last 30 days"
+          aria-label="Fees repaid per day, 30D"
         >
           {[0, 1, 2].map((j) => (
             <line key={j} x1={0} x2={AW} y1={10 + j * 40} y2={10 + j * 40} stroke="rgba(255,255,255,0.05)" />
@@ -952,7 +950,7 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
       <div className="mb-7 flex items-end justify-between">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Credit Line</h1>
-          <p className="mt-2 text-[14.5px] text-t2">Borrow USDC against your whole Solana portfolio. No maturity, repaid by your LP fees.</p>
+          <p className="mt-2 text-[14.5px] text-t2">Borrow USDC against your Solana portfolio</p>
         </div>
         <div className="flex gap-2">
           <Chip>
