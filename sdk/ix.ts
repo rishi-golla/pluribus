@@ -584,10 +584,11 @@ export async function initialize(
   ];
 }
 
-export async function initAsset(program: PluribusProgram, admin: PublicKey, mint: PublicKey, params: AssetParams): Ixs {
+// `sigmaSeedBps` is the annual volatility the asset's dynamic shock starts from until the crank has prices of its own
+export async function initAsset(program: PluribusProgram, admin: PublicKey, mint: PublicKey, params: AssetParams, sigmaSeedBps = 0): Ixs {
   return [
     await program.methods
-      .initAsset(params)
+      .initAsset(params, sigmaSeedBps)
       .accountsStrict({
         admin,
         pool: pda.pool(),
@@ -598,6 +599,13 @@ export async function initAsset(program: PluribusProgram, admin: PublicKey, mint
         systemProgram,
       })
       .instruction(),
+  ];
+}
+
+// Permissionless: folds the asset's latest price into its volatility, at most once per minimum interval of publish time
+export async function updateVol(program: PluribusProgram, mint: PublicKey, priceAccount: PublicKey): Ixs {
+  return [
+    await program.methods.updateVol().accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price: priceAccount }).instruction(),
   ];
 }
 

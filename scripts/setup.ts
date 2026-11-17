@@ -4,7 +4,7 @@ import path from "node:path";
 import { NATIVE_MINT, createMint, getMint } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
-import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, pda } from "../sdk/index.ts";
+import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, math, pda } from "../sdk/index.ts";
 import { deploymentFile, exists, faucet, program, send } from "./lib.ts";
 import { cluster, connection, key, me, root, url, wallet } from "./orca-common.ts";
 
@@ -36,8 +36,9 @@ if (!(await exists(stock))) await createMint(connection, wallet, me, null, 6, st
 
 // Scenarios are crypto crash, equity crash and broad selloff, with columns for the SOL, stock and USDC groups
 // The small USDC shock keeps a gap between the draw limit and the liquidation line for USDC collateral
+// Six columns per scenario: SOL, stock, USDC, LST and two spare, then a fourth unused scenario
 const shocks = (rows: number[][], usdc: number) =>
-  rows.flatMap(([sol, equity]) => [sol, equity, usdc, 0]).concat([0, 0, 0, 0]);
+  rows.flatMap(([sol, equity]) => [sol, equity, usdc, 0, 0, 0]).concat(Array(math.MAX_GROUPS).fill(0));
 const params: PoolParams = {
   numScenarios: 3,
   initShockBps: shocks([[3000, 1500], [1500, 3500], [2500, 2500]], 300),
@@ -70,13 +71,27 @@ const params: PoolParams = {
   juniorPauseGapSecs: WAITS.gap,
   // New collateral and anything that is not a pure tightening wait out the activation delay
   activationDelaySecs: WAITS.activation,
+  // Dynamic shocks: d = z x sigma x sqrt(T), with z at about 99.9% for draws and 99% for liquidations
+  zInitX100: 300,
+  zMaintX100: 233,
+  // Volatility rises in over about an hour and fades over about a week
+  volTauFastSecs: 3_600,
+  volTauSlowSecs: 7 * DAY,
+  // A sample needs a price at least a minute newer, under a minute old and within 2%, and counts at most an hour of gap
+  volMinIntervalSecs: 60,
+  volMaxDtSecs: 3_600,
+  volMaxAgeSecs: 60,
+  volConfCapBps: 200,
+  // No scenario takes more than 95% off a price
+  maxShockBps: 9_500,
 };
 // The pool opens with no waits so the first listings are live at once, and switches to the real ones after them
 const bootstrap: PoolParams = { ...params, juniorMinDelaySecs: 0, juniorMaxDelaySecs: 0, activationDelaySecs: 0 };
 if (!(await exists(pda.pool()))) await send(await ix.initialize(program, me, usdc, bootstrap, true));
 if (!(await exists(pda.juniorMint()))) await send(await ix.initJunior(program, me));
 
-const asset = (group: number, oracle: number, feed: string, liqCostBps: number): AssetParams => ({
+// `horizon` is the dynamic shock's T: about a day to liquidate crypto, three days for a stock so a weekend fits
+const asset = (group: number, oracle: number, feed: string, liqCostBps: number, horizon = 0): AssetParams => ({
   group,
   oracle,
   pythFeedId: [...Buffer.from(feed.padEnd(64, "0"), "hex")],
@@ -85,14 +100,16 @@ const asset = (group: number, oracle: number, feed: string, liqCostBps: number):
   maxConfBps: 200,
   depositCap: new BN(0),
   paused: false,
+  volHorizonSecs: horizon,
 });
 // The stock feed id is a placeholder, since demo mode never reads it
-for (const [mint, assetParams] of [
-  [usdc, asset(2, 0, "", 0)],
-  [NATIVE_MINT, asset(0, 1, SOL_FEED, 500)],
-  [stock, asset(1, 1, "", 1000)],
+// The last column is the annual volatility each dynamic shock starts from: 80% for SOL, 50% for the stock
+for (const [mint, assetParams, sigma] of [
+  [usdc, asset(2, 0, "", 0), 0],
+  [NATIVE_MINT, asset(0, 1, SOL_FEED, 500, DAY), 8_000],
+  [stock, asset(1, 1, "", 1000, 3 * DAY), 5_000],
 ] as const) {
-  if (!(await exists(pda.asset(mint)))) await send(await ix.initAsset(program, me, mint, assetParams));
+  if (!(await exists(pda.asset(mint)))) await send(await ix.initAsset(program, me, mint, assetParams, sigma));
 }
 if (!(await exists(pda.lpMarket(whirlpool)))) await send(await ix.initLpMarket(program, me, whirlpool, NATIVE_MINT, 500));
 

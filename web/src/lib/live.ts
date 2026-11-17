@@ -20,17 +20,14 @@ import type { AccountEvent, Month } from "./account";
 
 export type Risk = math.RiskPosition;
 // Columns per scenario in the on-chain shock tables
-const GROUPS = 4;
+const GROUPS = math.MAX_GROUPS;
 const DAY = 86_400;
 // The pool stores scenarios by number only, so these follow the order scripts/setup.ts creates them in
 const SCENARIO_NAMES = ["Crypto crash", "Equity crash", "Broad selloff"];
 
 const num = (x: { toString(): string }, decimals = 6) => Number(x.toString()) / 10 ** decimals;
-const scenario = (p: math.ShockParams, s: number): math.ShockParams => ({
-  numScenarios: 1,
-  initShockBps: p.initShockBps.slice(s * GROUPS, (s + 1) * GROUPS),
-  maintShockBps: p.maintShockBps.slice(s * GROUPS, (s + 1) * GROUPS),
-});
+// The full tables valued in one scenario only, since a dynamic shock is scaled against every scenario of its group
+const scenario = (p: math.ShockParams, s: number): math.ShockParams => ({ ...p, only: s });
 
 export type Collateral = {
   /** Token mint, or the position NFT mint for an LP */
@@ -76,13 +73,18 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const positions = credit ? await fetchPositions(program, d, credit) : [];
   const now = Date.now() / 1000;
 
-  const shock: math.ShockParams = { numScenarios: pool.params.numScenarios, initShockBps: pool.params.initShockBps, maintShockBps: pool.params.maintShockBps };
+  const shock: math.ShockParams = {
+    numScenarios: pool.params.numScenarios,
+    initShockBps: pool.params.initShockBps,
+    maintShockBps: pool.params.maintShockBps,
+    maxShockBps: pool.params.maxShockBps,
+  };
   const risks = positions.map((p) => p.risk);
   const sums = Array.from({ length: shock.numScenarios }, (_, s) => math.limits(risks, scenario(shock, s), prices).creditLimit);
   // The scenario that sets the credit limit, since each position's share of the limit is its value there
   const binding = Math.max(0, sums.indexOf(Math.min(...sums)));
   const worst = scenario(shock, binding);
-  const shockOf = (group: number) => (worst.initShockBps[group] ?? 0) / 1e4;
+  const shockOf = (group: number) => (shock.initShockBps[binding * GROUPS + group] ?? 0) / 1e4;
 
   const stats = math.poolStats(pool, { senior: supply.value.amount, junior: juniorSupply?.value.amount });
   const params = pool.params;
@@ -193,7 +195,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     shock,
     /** Every crash scenario in the pool, as the fall it applies to SOL and to stocks when setting the credit limit */
     scenarios: Array.from({ length: shock.numScenarios }, (_, s) => {
-      const fall = (group: number) => (scenario(shock, s).initShockBps[group] ?? 0) / 1e4;
+      const fall = (group: number) => (shock.initShockBps[s * GROUPS + group] ?? 0) / 1e4;
       return { name: SCENARIO_NAMES[s] ?? `Scenario ${s + 1}`, sol: fall(solAsset.params.group), stock: fall(stockAsset.params.group) };
     }),
     /** Index of the scenario that sets the credit limit */

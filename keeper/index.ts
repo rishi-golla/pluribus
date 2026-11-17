@@ -210,6 +210,26 @@ async function heartbeat(pool: Pool, now: number) {
   }
 }
 
+// Feeds each asset's latest price into its volatility once it is a sample the program will take
+async function volatility(pool: Pool, now: number) {
+  const mints = Object.keys(d.assets).filter((m) => d.assets[m].priceAccount);
+  const assets = await program.account.asset.fetchMultiple(mints.map((m) => pda.asset(new PublicKey(m))));
+  const p = pool.params;
+  for (const [i, m] of mints.entries()) {
+    const asset = assets[i];
+    if (!asset || asset.params.volHorizonSecs === 0) continue;
+    const priceAccount = new PublicKey(d.assets[m].priceAccount!);
+    const quote = pool.demoMode ? await program.account.demoPrice.fetchNullable(priceAccount) : null;
+    // Pyth accounts are read by the program itself, so outside demo mode the keeper just tries
+    const published = quote ? quote.publishTime.toNumber() : now;
+    if (published < asset.volTime.toNumber() + p.volMinIntervalSecs || now - published > p.volMaxAgeSecs) continue;
+    const mint = new PublicKey(m);
+    await attempt(`Volatility of ${symbol(mint)}`, async () =>
+      send(`Volatility of ${symbol(mint)} sampled`, await ix.updateVol(program, mint, priceAccount)),
+    );
+  }
+}
+
 let stopping = false;
 let wake = () => {};
 
@@ -224,6 +244,8 @@ async function pass() {
   const now = Number(clock.data.readBigInt64LE(32));
   // First, because a stale price blocks every health check below
   await attempt("Demo feed heartbeat", () => heartbeat(pool, now));
+  // Right after, while a fresh price is still young enough to count
+  await attempt("Volatility", () => volatility(pool, now));
   for (const { account } of credits) {
     if (stopping) return;
     const owner = account.owner;

@@ -1567,6 +1567,10 @@ export type Pluribus = {
               "name": "assetParams"
             }
           }
+        },
+        {
+          "name": "sigmaSeedBps",
+          "type": "u32"
         }
       ]
     },
@@ -3266,6 +3270,64 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "updateVol",
+      "discriminator": [
+        103,
+        220,
+        70,
+        19,
+        129,
+        244,
+        122,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "withdrawLp",
       "discriminator": [
         225,
@@ -3825,6 +3887,19 @@ export type Pluribus = {
         244,
         199
       ]
+    },
+    {
+      "name": "volUpdated",
+      "discriminator": [
+        205,
+        48,
+        146,
+        91,
+        121,
+        211,
+        151,
+        41
+      ]
     }
   ],
   "errors": [
@@ -4002,6 +4077,11 @@ export type Pluribus = {
       "code": 6034,
       "name": "epochChangeNotAllowed",
       "msg": "The epoch length can only change once the yield buffer is paid out, or to 0"
+    },
+    {
+      "code": 6035,
+      "name": "volTooSoon",
+      "msg": "A volatility sample needs a newer price"
     }
   ],
   "types": [
@@ -4078,6 +4158,40 @@ export type Pluribus = {
           {
             "name": "pendingAt",
             "type": "i64"
+          },
+          {
+            "name": "varFast",
+            "docs": [
+              "Fast and slow averages of the price's variance per second, scaled by VOL_SCALE"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "varSlow",
+            "type": "u128"
+          },
+          {
+            "name": "volPrice",
+            "docs": [
+              "The price and publish time of the last volatility sample"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "volTime",
+            "type": "i64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Room for fields added later without moving the ones above"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           }
         ]
       }
@@ -4126,6 +4240,13 @@ export type Pluribus = {
           {
             "name": "paused",
             "type": "bool"
+          },
+          {
+            "name": "volHorizonSecs",
+            "docs": [
+              "Liquidation horizon T for the dynamic shock, about a day for crypto and three for stocks so a weekend fits, 0 for none"
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -4927,7 +5048,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u16",
-                16
+                24
               ]
             }
           },
@@ -4939,7 +5060,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u16",
-                16
+                24
               ]
             }
           },
@@ -5091,6 +5212,55 @@ export type Pluribus = {
               "At least the longest junior wait plus the claim window, so juniors who disagree can leave first"
             ],
             "type": "u32"
+          },
+          {
+            "name": "zInitX100",
+            "docs": [
+              "Dynamic shock d = z x sigma x sqrt(T) per asset, with z in hundredths for the draw and liquidation tables"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "zMaintX100",
+            "type": "u16"
+          },
+          {
+            "name": "volTauFastSecs",
+            "docs": [
+              "Two averages of each asset's variance: the fast one lets a rise in volatility in quickly, the slow one makes it fade slowly"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "volTauSlowSecs",
+            "type": "u32"
+          },
+          {
+            "name": "volMinIntervalSecs",
+            "docs": [
+              "A volatility sample needs a price this much newer than the last one, at most this old and this certain,",
+              "and counts at most `vol_max_dt_secs` of elapsed time"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "volMaxDtSecs",
+            "type": "u32"
+          },
+          {
+            "name": "volMaxAgeSecs",
+            "type": "u32"
+          },
+          {
+            "name": "volConfCapBps",
+            "type": "u16"
+          },
+          {
+            "name": "maxShockBps",
+            "docs": [
+              "Largest shock any scenario can apply, dynamic or not"
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -5213,6 +5383,33 @@ export type Pluribus = {
           },
           {
             "name": "minted",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "volUpdated",
+      "docs": [
+        "A price sample folded into `mint`'s volatility, with the dynamic shocks it now gives in bps"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "shockInitBps",
+            "type": "u64"
+          },
+          {
+            "name": "shockMaintBps",
             "type": "u64"
           }
         ]

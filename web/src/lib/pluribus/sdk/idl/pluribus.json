@@ -1561,6 +1561,10 @@
               "name": "AssetParams"
             }
           }
+        },
+        {
+          "name": "sigma_seed_bps",
+          "type": "u32"
         }
       ]
     },
@@ -3260,6 +3264,64 @@
       "args": []
     },
     {
+      "name": "update_vol",
+      "discriminator": [
+        103,
+        220,
+        70,
+        19,
+        129,
+        244,
+        122,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "withdraw_lp",
       "discriminator": [
         225,
@@ -3819,6 +3881,19 @@
         244,
         199
       ]
+    },
+    {
+      "name": "VolUpdated",
+      "discriminator": [
+        205,
+        48,
+        146,
+        91,
+        121,
+        211,
+        151,
+        41
+      ]
     }
   ],
   "errors": [
@@ -3996,6 +4071,11 @@
       "code": 6034,
       "name": "EpochChangeNotAllowed",
       "msg": "The epoch length can only change once the yield buffer is paid out, or to 0"
+    },
+    {
+      "code": 6035,
+      "name": "VolTooSoon",
+      "msg": "A volatility sample needs a newer price"
     }
   ],
   "types": [
@@ -4072,6 +4152,40 @@
           {
             "name": "pending_at",
             "type": "i64"
+          },
+          {
+            "name": "var_fast",
+            "docs": [
+              "Fast and slow averages of the price's variance per second, scaled by VOL_SCALE"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "var_slow",
+            "type": "u128"
+          },
+          {
+            "name": "vol_price",
+            "docs": [
+              "The price and publish time of the last volatility sample"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "vol_time",
+            "type": "i64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Room for fields added later without moving the ones above"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
           }
         ]
       }
@@ -4120,6 +4234,13 @@
           {
             "name": "paused",
             "type": "bool"
+          },
+          {
+            "name": "vol_horizon_secs",
+            "docs": [
+              "Liquidation horizon T for the dynamic shock, about a day for crypto and three for stocks so a weekend fits, 0 for none"
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -4921,7 +5042,7 @@
             "type": {
               "array": [
                 "u16",
-                16
+                24
               ]
             }
           },
@@ -4933,7 +5054,7 @@
             "type": {
               "array": [
                 "u16",
-                16
+                24
               ]
             }
           },
@@ -5085,6 +5206,55 @@
               "At least the longest junior wait plus the claim window, so juniors who disagree can leave first"
             ],
             "type": "u32"
+          },
+          {
+            "name": "z_init_x100",
+            "docs": [
+              "Dynamic shock d = z x sigma x sqrt(T) per asset, with z in hundredths for the draw and liquidation tables"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "z_maint_x100",
+            "type": "u16"
+          },
+          {
+            "name": "vol_tau_fast_secs",
+            "docs": [
+              "Two averages of each asset's variance: the fast one lets a rise in volatility in quickly, the slow one makes it fade slowly"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "vol_tau_slow_secs",
+            "type": "u32"
+          },
+          {
+            "name": "vol_min_interval_secs",
+            "docs": [
+              "A volatility sample needs a price this much newer than the last one, at most this old and this certain,",
+              "and counts at most `vol_max_dt_secs` of elapsed time"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "vol_max_dt_secs",
+            "type": "u32"
+          },
+          {
+            "name": "vol_max_age_secs",
+            "type": "u32"
+          },
+          {
+            "name": "vol_conf_cap_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_shock_bps",
+            "docs": [
+              "Largest shock any scenario can apply, dynamic or not"
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -5207,6 +5377,33 @@
           },
           {
             "name": "minted",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VolUpdated",
+      "docs": [
+        "A price sample folded into `mint`'s volatility, with the dynamic shocks it now gives in bps"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "shock_init_bps",
+            "type": "u64"
+          },
+          {
+            "name": "shock_maint_bps",
             "type": "u64"
           }
         ]

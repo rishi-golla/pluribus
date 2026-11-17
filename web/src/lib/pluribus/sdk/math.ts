@@ -9,16 +9,36 @@ export type RiskPosition = {
   group: number;
   liqCostBps: number;
   paused?: boolean;
+  // The asset's dynamic shock in bps for the draw and liquidation tables, laid over the table like the program does
+  shockBps?: { init: number; maint: number };
 } & (
   | { amount: number }
   // `usdcGroup` is the pool's `usdcGroup`: the USDC side of an LP position takes that group's shock
   | { liquidity: Numeric; tickLower: number; tickUpper: number; usdcGroup: number }
 );
 
-export type ShockParams = { numScenarios: number; initShockBps: number[]; maintShockBps: number[] };
+// `only` values a single scenario of the full tables
+export type ShockParams = { numScenarios: number; initShockBps: number[]; maintShockBps: number[]; maxShockBps?: number; only?: number };
 
 const BPS = 10_000;
-const MAX_GROUPS = 4;
+export const MAX_GROUPS = 6;
+
+// Mirrors `PoolParams::shocks_for`: the scenario where the group falls hardest takes all of the dynamic shock `d`,
+// the others the same fraction of it as in the table, never below the table and never above the cap
+export function shockFor(params: ShockParams, init: boolean, scenario: number, group: number, d = 0) {
+  const table = init ? params.initShockBps : params.maintShockBps;
+  const at = (s: number) => (group < MAX_GROUPS ? (table[s * MAX_GROUPS + group] ?? 0) : 0);
+  const worst = Math.max(0, ...Array.from({ length: params.numScenarios }, (_, s) => at(s)));
+  const t = at(scenario);
+  const scaled = worst > 0 ? (d * t) / worst : 0;
+  return Math.min(Math.max(t, scaled), params.maxShockBps ?? BPS - 1);
+}
+
+// Mirrors `Asset::dynamic_shock`: z x sigma x sqrt(T) in bps from the higher of the two variance averages
+export function dynamicShock(asset: { varFast: Numeric; varSlow: Numeric; params: { volHorizonSecs: number } }, zX100: number) {
+  const variance = Math.max(Number(asset.varFast.toString()), Number(asset.varSlow.toString()));
+  return (zX100 * Math.sqrt(variance * asset.params.volHorizonSecs)) / 1e7;
+}
 // The pool quotes micro-USDC per lamport, so a dollar price per SOL is the raw price times 10^(9 - 6)
 const RAW = 1000;
 
@@ -53,15 +73,21 @@ export function limits(positions: RiskPosition[], params: ShockParams, prices: R
     const { sol, usdc } = lpAmounts(p.liquidity, p.tickLower, p.tickUpper, at);
     return sol * at + usdc * usdcKept;
   };
-  const worst = (table: number[], init: boolean) => {
+  const worst = (init: boolean) => {
+    // A position's shock: the table's, with its dynamic shock laid over it, and a liquidation shock never above the draw shock
+    const shock = (s: number, p: RiskPosition) => {
+      const draw = shockFor(params, true, s, p.group, p.shockBps?.init ?? 0);
+      return init ? draw : Math.min(shockFor(params, false, s, p.group, p.shockBps?.maint ?? 0), draw);
+    };
     // Groups past the table are never shocked
-    const kept = (s: number, group: number) => 1 - (group < MAX_GROUPS ? table[s * MAX_GROUPS + group] : 0) / BPS;
-    const sums = Array.from({ length: params.numScenarios }, (_, s) =>
+    const usdcShock = (s: number, group: number) => shockFor(params, init, s, group);
+    const scenarios = params.only === undefined ? Array.from({ length: params.numScenarios }, (_, s) => s) : [params.only];
+    const sums = scenarios.map((s) =>
       positions.reduce((sum, p) => {
         // Paused collateral stops backing new debt but still counts against liquidation
         if (init && p.paused) return sum;
-        const usdcKept = "amount" in p ? 1 : kept(s, p.usdcGroup);
-        return sum + value(p, price(p) * kept(s, p.group), usdcKept) * (1 - p.liqCostBps / BPS);
+        const usdcKept = "amount" in p ? 1 : 1 - usdcShock(s, p.usdcGroup) / BPS;
+        return sum + value(p, price(p) * (1 - shock(s, p) / BPS), usdcKept) * (1 - p.liqCostBps / BPS);
       }, 0),
     );
     return sums.length ? Math.min(...sums) : 0;
@@ -70,8 +96,8 @@ export function limits(positions: RiskPosition[], params: ShockParams, prices: R
   return {
     values,
     collateralValue: values.reduce((a, b) => a + b, 0),
-    creditLimit: worst(params.initShockBps, true),
-    liquidationLimit: worst(params.maintShockBps, false),
+    creditLimit: worst(true),
+    liquidationLimit: worst(false),
   };
 }
 

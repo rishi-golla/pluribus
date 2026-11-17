@@ -21,7 +21,7 @@ import BN from "bn.js";
 import { Buffer } from "buffer";
 import idl from "./idl/pluribus.json";
 import type { Pluribus } from "./idl/pluribus";
-import { type RiskPosition, effectiveAt, lpAmounts, lpValue, tickToPrice } from "./math";
+import { type RiskPosition, dynamicShock, effectiveAt, lpAmounts, lpValue, tickToPrice } from "./math";
 
 export type { Pluribus };
 
@@ -215,7 +215,8 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
     const mint = lp ? d.solMint : p.mint.toBase58();
     const asset = assets[priced.indexOf(mint)];
     if (!asset) throw new Error(`Asset ${mint} is not whitelisted`);
-    const base = { mint, group: asset.params.group, paused: asset.params.paused || waiting(asset.activeAt) };
+    const shockBps = { init: dynamicShock(asset, pool.params.zInitX100), maint: dynamicShock(asset, pool.params.zMaintX100) };
+    const base = { mint, group: asset.params.group, paused: asset.params.paused || waiting(asset.activeAt), shockBps };
     let risk: RiskPosition;
     if (lp) {
       const data = orca[lps.indexOf(p)]?.data;
