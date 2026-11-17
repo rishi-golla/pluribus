@@ -85,6 +85,7 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `ui_multiplier` | on for the xStock | | Multiply a per-share price by the mint's corporate-action multiplier. Turn off if the feed already quotes per token. |
 | `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | Around a multiplier change the token backs no new debt, and of the two bases the one that keeps the token's price nearest the last volatility sample is used. A change the issuer applies at once is dated when `sync_mint` (or the volatility crank) first sees it, so the guard runs from then. Widen it if real feeds lag the multiplier by more than an hour. |
 | Multiplier bounds | 0.0001 to 10000 | constant in `token2022.rs` | A multiplier in effect outside this halts only that token (no new debt, valued at the last synced multiplier). One scheduled outside it changes nothing until it applies. |
+| Jump band | 1.5x either way | `token2022::far` | A multiplier token's price this far from the last volatility sample is held at that sample (no new debt) until the crank has seen it last `MULTIPLIER_GUARD_SECS` with no multiplier change, so a feed that reprices for a split before the issuer applies it can't liquidate anyone. A real crash counts after the guard. Narrow it for calmer stocks, widen it for volatile ones. |
 | Vault shortfall | pro rata | `risk.rs`, `borrow.rs`, `liquidate.rs` | If the issuer's delegate takes tokens out of the vault, each booked token is worth vault / books, withdrawals and seizes pay that share, and deposits stop. A frozen vault backs no new debt. |
 | Extension allow-list | delegate, pause, multiplier, metadata, groups, confidential transfer, an unset hook, default state Initialized | constant in `token2022.rs` | Fees, interest, a live hook and frozen default accounts are refused at listing. A pause or a hook switched on later halts the token: no new debt, still counts toward the liquidation line. |
 | Issuer trust | | | The permanent delegate can move or burn tokens out of the vault, and the loss is shared by everyone holding that token here. Size `deposit_cap` for that issuer risk. |
@@ -140,6 +141,7 @@ These need a program upgrade to change.
 | Faucet stock | `scripts/faucet-stock.ts` flags | 0.4 SOL, 5 positions of $20 on devnet | What the faucet wallet holds to hand out. |
 | `MAX_MOVE` | `web/src/app/api/demo/price/route.ts` | 20x | Largest demo price move per request. |
 | `SWAP_USD` | `web/src/app/api/demo/harvest/route.ts` | $1000 | Trade size used to generate LP fees in the demo. |
+| Lookup table | `deployments/<cluster>.json` `lookupTable` | made by setup | v0 transactions through it keep liquidations of accounts with many Token-2022, staking or LP positions under the 1232-byte limit. Setup extends it when assets or markets are added; rerun setup after listing anything. |
 | `demo_mode` | pool flag | on | The admin sets prices, which gets around every delay. Turn it off (one way) before real money. |
 
 ## Not yet settings
