@@ -103,35 +103,60 @@ impl Scaled {
     }
 }
 
-/// The multiplier for a price published at `t`, and whether that basis is certain
+/// The multiplier for a price published at `t`, whether that basis is certain, or None when no basis is known
+/// The asset remembers two multipliers, so a price from before the one before is too old to place
 /// Uncertain near a change, or when the mint's multiplier moved without the asset seeing it: the token then backs no
 /// new debt, and of the two bases the one that leaves the token's worth nearest the last sampled price is used
-pub fn multiplier(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> (u128, bool) {
+pub fn multiplier(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> Option<(u128, bool)> {
     let (prev, cur) = (asset.mult_prev as u128, asset.mult as u128);
-    let near = |at: i64| t.abs_diff(at) < MULTIPLIER_GUARD_SECS as u64;
+    let guard = MULTIPLIER_GUARD_SECS;
+    if asset.mult_prev_since != 0 && t < asset.mult_prev_since + guard {
+        return None;
+    }
+    // A price from before the current multiplier took effect
+    if asset.mult_since != 0 && t < asset.mult_since + guard {
+        if asset.mult_exact && t + guard <= asset.mult_since {
+            return Some((prev, true));
+        }
+        return Some((closest(asset, price, prev, cur), false));
+    }
     let in_effect = s.in_effect(now);
     if in_effect != Some(cur) {
         // A change scheduled from the asset's multiplier still says exactly when it applied
         if let Some(m) = in_effect.filter(|m| s.old == Some(cur) && s.new == Some(*m) && s.at <= now) {
-            return if near(s.at) {
-                (closest(asset, price, cur, m), false)
-            } else {
-                (if t >= s.at { m } else { cur }, true)
-            };
+            if t.abs_diff(s.at) < guard as u64 {
+                return Some((closest(asset, price, cur, m), false));
+            }
+            return Some((if t >= s.at { m } else { cur }, true));
         }
-        return (closest(asset, price, cur, in_effect.unwrap_or(cur)), false);
+        // Applied at once some time since the asset last looked, so either basis is possible
+        return Some((closest(asset, price, cur, in_effect.unwrap_or(cur)), false));
     }
     // A change still ahead might already be in a price quoted shortly before it
-    if let Some(next) = s.new.filter(|n| s.at > now && s.old != Some(*n) && t + MULTIPLIER_GUARD_SECS > s.at) {
-        return (closest(asset, price, cur, next), false);
+    if let Some(next) = s.new.filter(|n| s.at > now && s.old != Some(*n) && t + guard > s.at) {
+        return Some((closest(asset, price, cur, next), false));
     }
-    if asset.mult_since == 0 || t >= asset.mult_since + MULTIPLIER_GUARD_SECS {
-        return (cur, true);
+    Some((cur, true))
+}
+
+/// Whether a token price is far from the last sample, more than half again either way
+pub fn far(asset: &Asset, token_price: u128) -> bool {
+    let r = asset.vol_price as u128;
+    r > 0 && (token_price * 2 > r * 3 || token_price * 3 < r * 2)
+}
+
+/// The token price for a per-share `price` published at `t`, whether it can back new debt, or None when it is too old to place
+/// A jump far from the last sample with no multiplier change behind it may be the feed repricing for a split the mint
+/// has not applied yet: until the volatility crank has seen it hold for the guard, the token is valued at the last
+/// sample and backs no new debt
+pub fn token_price(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> Result<Option<(u128, bool)>> {
+    let Some((m, sure)) = multiplier(asset, s, now, t, price) else { return Ok(None) };
+    let token = crate::math::mul_div_floor(price, m, MULTIPLIER_ONE)?;
+    let held = asset.jump_since != 0 && t >= asset.jump_since + MULTIPLIER_GUARD_SECS;
+    if far(asset, token) && !held {
+        return Ok(Some((asset.vol_price as u128, false)));
     }
-    if asset.mult_exact && t + MULTIPLIER_GUARD_SECS <= asset.mult_since {
-        return (prev, true);
-    }
-    (closest(asset, price, prev, cur), false)
+    Ok(Some((token, sure)))
 }
 
 /// Of two multipliers, the one that puts the token's price nearer the last sampled token price
@@ -165,12 +190,14 @@ pub fn sync(asset: &mut Asset, s: &Scaled, now: i64) -> bool {
         return false;
     }
     let exact = s.old == Some(cur) && s.new == Some(m) && s.at <= now;
+    asset.mult_prev_since = asset.mult_since;
     asset.mult_prev = asset.mult;
     asset.mult = m as u64;
     asset.mult_since = if exact { s.at } else { now };
     asset.mult_exact = exact;
     // Sampling starts over on the new basis, and the last price stays as the reference that tells the bases apart
     asset.vol_time = 0;
+    asset.jump_since = 0;
     true
 }
 

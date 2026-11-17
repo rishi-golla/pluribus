@@ -60,6 +60,12 @@ pub fn sqrt_price_x64(price: u128, base_decimals: u8) -> Result<u128> {
     Ok(if k / 2 <= 32 { r << (32 - k / 2) } else { r >> (k / 2 - 32) })
 }
 
+/// An LP value with a part per billion and a base unit taken off, since Orca's tick table can price a Raydium range a
+/// hair above what Raydium would pay out
+pub fn under_payout(v: u128) -> u128 {
+    v.saturating_sub(v / 1_000_000_000 + 1)
+}
+
 /// The two sqrt prices bounding a position's range
 pub fn range_sqrt_prices(tick_lower: i32, tick_upper: i32) -> Result<(u128, u128)> {
     require!(tick_lower < tick_upper, PluribusError::InvalidLpPosition);

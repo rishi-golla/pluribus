@@ -678,7 +678,6 @@ impl AssetParams {
                 && (self.rate_source != RATE_FIXED || self.fixed_rate > 0)
                 // A backing is valued with a SOL price, by its demo account or its Pyth feed
                 && (self.rate_source == RATE_NONE || (self.rate_base_mint != Pubkey::default() && self.rate_feed_id != [0; 32]))
-                && (self.rate_source == RATE_NONE || self.rate_base_mint != Pubkey::default())
                 && (self.rate_source != RATE_STAKE_POOL || self.rate_account != Pubkey::default())
                 && self.liq_price_age_secs >= self.max_price_age_secs,
             PluribusError::InvalidParams
@@ -717,8 +716,12 @@ pub struct Asset {
     /// When `mult` took effect: exactly for a change scheduled ahead, otherwise when it was first seen; 0 before any change
     pub mult_since: i64,
     pub mult_exact: bool,
+    /// When `mult_prev` took effect, so a price older than that is known to be on neither basis
+    pub mult_prev_since: i64,
+    /// Publish time of the first sample that jumped far from the last one with no multiplier change, 0 when none
+    pub jump_since: i64,
     /// Room for fields added later without moving the ones above
-    pub reserved: [u8; 39],
+    pub reserved: [u8; 23],
 }
 
 impl Asset {

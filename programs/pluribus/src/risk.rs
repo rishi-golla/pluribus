@@ -86,10 +86,8 @@ impl Valuer {
             Valuer::Token { amount, decimals } => token_value(amount, price, decimals),
             Valuer::Lp { liquidity, lower, upper, decimals } => {
                 let (base, usdc) = lp_parts(liquidity, lower, upper, price, roots.of(price, decimals)?, decimals)?;
-                // Orca's tick table can price a Raydium range a hair above what Raydium would pay out, so a part per
-                // billion and a base unit come off, keeping the value at or under the payout on either dex
-                let v = base + cut(usdc, usdc_shock)?;
-                Ok(v.saturating_sub(v / 1_000_000_000 + 1))
+                // Kept at or under the payout on either dex
+                Ok(under_payout(base + cut(usdc, usdc_shock)?))
             }
         }
     }
@@ -144,11 +142,14 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                         };
                         // A per-share price for a token whose balances carry a corporate-action multiplier
                         let price = match mint.as_ref().and_then(|m| m.scaled).filter(|_| asset.params.ui_multiplier) {
-                            Some(s) => {
-                                let (m, sure) = token2022::multiplier(&asset, &s, now, own.publish_time, price);
-                                moving = !sure;
-                                mul_div_floor(price, m, token2022::MULTIPLIER_ONE)?
-                            }
+                            Some(s) => match token2022::token_price(&asset, &s, now, own.publish_time, price)? {
+                                Some((token, sure)) => {
+                                    moving = !sure;
+                                    token
+                                }
+                                // From before the last two multiplier changes: only a newer price can be placed
+                                None => return err!(PluribusError::StalePrice),
+                            },
                             None => price,
                         };
                         // A vault holding less than its books say pays each holder pro rata, so each booked token is worth that share

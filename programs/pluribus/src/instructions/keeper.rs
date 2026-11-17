@@ -35,6 +35,7 @@ pub fn handle_update_vol(ctx: Context<UpdateVol>) -> Result<()> {
     // a Token-2022 asset's mint, then for a staking token the SOL price and, for a stake pool backing, the pool
     let mut rem = ctx.remaining_accounts.iter();
     let mut next = || rem.next().ok_or_else(|| error!(PluribusError::MissingAccount));
+    let mut scaled = false;
     if asset.token_program == anchor_spl::token_2022::ID {
         let acc = next()?;
         require_keys_eq!(acc.key(), asset.mint, PluribusError::AccountMismatch);
@@ -43,12 +44,10 @@ pub fn handle_update_vol(ctx: Context<UpdateVol>) -> Result<()> {
             // A split moves the share price and the multiplier together: a new multiplier restarts sampling,
             // and while a price's basis is unclear only the multiplier is recorded
             token2022::sync(asset, &s, now);
-            let (m, sure) = token2022::multiplier(asset, &s, now, q.publish_time, q.price);
-            if !sure {
-                return Ok(());
-            }
+            let Some((m, true)) = token2022::multiplier(asset, &s, now, q.publish_time, q.price) else { return Ok(()) };
             q.price = mul_div_floor(q.price, m, token2022::MULTIPLIER_ONE)?;
             q.conf = mul_div_ceil(q.conf, m, token2022::MULTIPLIER_ONE)?;
+            scaled = true;
         }
     }
     // A staking token is priced at the lower of its own price and its SOL backing
@@ -62,6 +61,17 @@ pub fn handle_update_vol(ctx: Context<UpdateVol>) -> Result<()> {
     require!(q.conf * BPS <= q.price * p.vol_conf_cap_bps as u128, PluribusError::PriceTooUncertain);
     // A publish time from the future would block every honest sample until then
     require!(q.publish_time <= now + 60, PluribusError::InvalidPriceAccount);
+    // A multiplier token's jump far from the last sample might be the feed repricing for a split the mint has yet to
+    // apply: it is noted and only folded in once it has held for the guard with no multiplier change
+    if scaled && token2022::far(asset, q.price) {
+        if asset.jump_since == 0 || q.publish_time < asset.jump_since {
+            asset.jump_since = q.publish_time;
+        }
+        if q.publish_time < asset.jump_since + token2022::MULTIPLIER_GUARD_SECS {
+            return Ok(());
+        }
+    }
+    asset.jump_since = 0;
     asset.record_vol(q.price as u64, q.conf as u64, q.publish_time, p)?;
     let (shock_init_bps, shock_maint_bps) = asset.dynamic_shocks(p);
     emit!(VolUpdated { mint: asset.mint, price: q.price as u64, shock_init_bps: shock_init_bps as u64, shock_maint_bps: shock_maint_bps as u64 });
@@ -79,7 +89,7 @@ pub struct SyncMint<'info> {
 
 /// Permissionless: records a Token-2022 asset's new multiplier, so a change applied at once is dated as soon as anyone sees it
 pub fn handle_sync_mint(ctx: Context<SyncMint>) -> Result<()> {
-    if let Some(s) = token2022::read_state(&ctx.accounts.mint)?.scaled {
+    if let Some(s) = token2022::read_state(&ctx.accounts.mint)?.scaled.filter(|_| ctx.accounts.asset.params.ui_multiplier) {
         token2022::sync(&mut ctx.accounts.asset, &s, Clock::get()?.unix_timestamp);
     }
     Ok(())

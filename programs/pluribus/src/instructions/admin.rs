@@ -260,6 +260,8 @@ fn check_asset(pool: &Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
     // A dynamic shock is laid over its group's columns, so it needs a group whose columns shock something
     let worst = |init: bool| (0..pool.params.num_scenarios as usize).map(|s| pool.params.shock(init, s, params.group)).max().unwrap_or(0);
     require!(params.vol_horizon_secs == 0 || (worst(true) > 0 && worst(false) > 0), PluribusError::InvalidParams);
+    // The volatility crank's samples are what tell a split from a crash, so a multiplier token needs them
+    require!(!params.ui_multiplier || params.vol_horizon_secs > 0, PluribusError::InvalidParams);
     Ok(())
 }
 
@@ -308,7 +310,9 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         mult_prev: mult as u64,
         mult_since: 0,
         mult_exact: false,
-        reserved: [0; 39],
+        mult_prev_since: 0,
+        jump_since: 0,
+        reserved: [0; 23],
     });
     Ok(())
 }

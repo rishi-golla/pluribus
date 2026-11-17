@@ -959,7 +959,7 @@ fn limits(params: &PoolParams, usdc_group: u8, positions: &[Lp]) -> (u128, u128,
         let value = |price: u128, usdc_shock: u128| {
             let root = math::sqrt_price_x64(price, p.decimals).unwrap();
             let (base, usdc) = math::lp_parts(p.liquidity, lower, upper, price, root, p.decimals).unwrap();
-            base + math::cut(usdc, usdc_shock).unwrap()
+            math::under_payout(base + math::cut(usdc, usdc_shock).unwrap())
         };
         market += value(p.price, 0);
         for s in 0..n {
@@ -1048,12 +1048,12 @@ fn the_usdc_shock_marks_down_only_the_usdc_side_of_an_lp() {
     let (base, quote) = math::lp_parts(liquidity, lower, upper, crash, math::sqrt_price_x64(crash, 9).unwrap(), 9).unwrap();
     assert!(base > 1_000 * PRICE_ONE && quote > 1_000 * PRICE_ONE);
     let market = env.health(&me).collateral_value;
-    assert_eq!(env.health(&me).liquidation_limit as u128, math::cut(base + quote, 500).unwrap());
+    assert_eq!(env.health(&me).liquidation_limit as u128, math::cut(math::under_payout(base + quote), 500).unwrap());
 
     // USDC marked down 10% for liquidation: the SOL side keeps its value and the market value is untouched
     shock_usdc(&mut env, params, 1_000, 1_000);
     let h = env.health(&me);
-    assert_eq!(h.liquidation_limit as u128, math::cut(base + math::cut(quote, 1_000).unwrap(), 500).unwrap());
+    assert_eq!(h.liquidation_limit as u128, math::cut(math::under_payout(base + math::cut(quote, 1_000).unwrap()), 500).unwrap());
     assert_eq!(h.collateral_value, market);
     // Plain USDC collateral takes the same markdown
     let usdc = env.usdc;
@@ -1075,8 +1075,10 @@ fn an_all_usdc_lp_can_be_drawn_to_its_limit_without_becoming_liquidatable_once_u
 
     shock_usdc(&mut env, default_params(), 300, 100);
     let h = env.health(&me);
-    assert_eq!(h.credit_limit as u128, math::cut(math::cut(h.collateral_value as u128, 300).unwrap(), 500).unwrap());
-    assert_eq!(h.liquidation_limit as u128, math::cut(math::cut(h.collateral_value as u128, 100).unwrap(), 500).unwrap());
+    // Within the part per billion and base unit an LP value is kept under its payout by
+    let near = |got: u64, want: u128| (got as u128).abs_diff(want) <= want / 1_000_000_000 + 2;
+    assert!(near(h.credit_limit, math::cut(math::cut(h.collateral_value as u128, 300).unwrap(), 500).unwrap()));
+    assert!(near(h.liquidation_limit, math::cut(math::cut(h.collateral_value as u128, 100).unwrap(), 500).unwrap()));
     expect_err(env.draw(&user, h.credit_limit + 1), PluribusError::ExceedsCreditLimit);
     expect_ok(env.draw(&user, h.credit_limit));
     expect_err(env.send(&[env.liquidate_lp_ix(&liq.pubkey(), &me, &nft)], &[&liq]), PluribusError::NotLiquidatable);
