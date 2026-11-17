@@ -105,7 +105,10 @@ async function send(what: string, ixs: TransactionInstruction[]): Promise<boolea
 
 // Takes one liquidation step, cheapest first, and returns whether a transaction went out
 async function liquidateStep(pool: Pool, owner: PublicKey, credit: CreditAccount, health: HealthView): Promise<boolean> {
-  const held = credit.positions.map((p, slot) => ({ ...p, value: health.positionValue[slot] })).filter((p) => p.kind !== 0);
+  // A position whose price is unclear around a corporate action can't be seized yet, so the others go first
+  const held = credit.positions
+    .map((p, slot) => ({ ...p, value: health.positionValue[slot], unclear: health.positionUnclear[slot] }))
+    .filter((p) => p.kind !== 0 && !p.unclear);
   const maxRepay = health.debt.mul(new BN(pool.params.closeFactorBps)).div(BPS);
 
   // The account's own USDC needs no money from the keeper and pays no bonus
@@ -193,8 +196,11 @@ async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicK
   if (fees.feeOwedA.isZero() && fees.feeOwedB.isZero()) return;
   // The SOL fee, and USDC beyond what is owed, become collateral, which needs a free slot unless the account holds that token
   const holds = (mint: PublicKey) => account.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(mint));
-  const debt = account.debtShares.mul(pool.borrowIndex[account.tier]).div(INDEX_ONE);
-  const slots = Number(!fees.feeOwedA.isZero() && !holds(new PublicKey(d.solMint))) + Number(fees.feeOwedB.gt(debt) && !holds(usdcMint));
+  const index = pool.borrowIndex[account.tier];
+  const debt = account.debtShares.mul(index).div(INDEX_ONE);
+  // USDC stays as collateral when it is more than the debt, or too little to retire a single debt share
+  const kept = !fees.feeOwedB.isZero() && (fees.feeOwedB.gt(debt) || fees.feeOwedB.mul(INDEX_ONE).div(index).isZero());
+  const slots = Number(!fees.feeOwedA.isZero() && !holds(new PublicKey(d.solMint))) + Number(kept && !holds(usdcMint));
   if (slots > account.positions.filter((p) => p.kind === 0).length) return;
   const owed = `${Number(fees.feeOwedA.toString()) / 1e9} SOL and ${usd(fees.feeOwedB)} USDC`;
   await send(

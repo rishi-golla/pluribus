@@ -4235,6 +4235,13 @@ export type Pluribus = {
             "type": "i64"
           },
           {
+            "name": "jumpPrice",
+            "docs": [
+              "The token price of that jump, which it must stay near to count as held"
+            ],
+            "type": "u64"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4242,7 +4249,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                23
+                15
               ]
             }
           }
@@ -4648,6 +4655,18 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u64",
+                5
+              ]
+            }
+          },
+          {
+            "name": "positionUnclear",
+            "docs": [
+              "Positions whose price is unclear around a corporate action, which can't be seized yet"
+            ],
+            "type": {
+              "array": [
+                "bool",
                 5
               ]
             }
