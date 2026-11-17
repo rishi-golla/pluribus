@@ -93,7 +93,8 @@ impl Valuer {
 }
 
 /// Values every position, reading its accounts from `rem` in slot order
-/// Token: asset, then its price account unless the asset is fixed at $1
+/// Token: asset, then its price account unless the asset is fixed at $1,
+/// then for a staking token the SOL price account and, for an SPL stake pool, the pool account
 /// LP: LP market, Orca position, base asset, base price account
 pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64, scope: Scope) -> Result<Health> {
     let params = &pool.params;
@@ -111,7 +112,18 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 require_keys_eq!(asset.mint, pos.mint, PluribusError::AccountMismatch);
                 h.price[i] = match asset.params.oracle {
                     ORACLE_FIXED => PRICE_ONE,
-                    _ => read_price(pool, &asset, next()?, now)?,
+                    _ => {
+                        let own = read_price(pool, &asset, next()?, now)?;
+                        // A staking token is worth no more than the SOL behind it, so a thin market cannot lift it above that
+                        match asset.params.rate_source {
+                            RATE_NONE => own,
+                            source => {
+                                let sol = next()?;
+                                let stake_pool = if source == RATE_STAKE_POOL { Some(next()?) } else { None };
+                                own.min(backing_price(pool, &asset, sol, stake_pool, now)?)
+                            }
+                        }
+                    }
                 };
                 let valuer = Valuer::Token { amount: pos.amount, decimals: asset.decimals };
                 let paused = asset.params.paused || now < pool.effective_at(asset.active_at);

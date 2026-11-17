@@ -63,5 +63,16 @@ pub const KIND_LP: u8 = 2;
 pub const ORACLE_FIXED: u8 = 0;
 pub const ORACLE_PYTH: u8 = 1;
 
+/// How a liquid staking token's SOL backing is read, which caps its price at what that SOL is worth
+pub const RATE_NONE: u8 = 0;
+/// From an SPL stake pool account: total lamports over pool token supply
+pub const RATE_STAKE_POOL: u8 = 1;
+/// A fixed SOL per token set by the admin, for devnet stand-ins with no real pool behind them
+pub const RATE_FIXED: u8 = 2;
+/// Programs whose stake pool accounts share the SPL layout: the SPL program and Sanctum's multi-validator deploy (JupSOL)
+pub const STAKE_POOL_PROGRAMS: [Pubkey; 2] =
+    [pubkey!("SPoo1Ku8WFXoNDMHPsrGSTSG1Y47rzgn41SLUNakuHy"), pubkey!("SPMBzsVUuoHA4Jm6KunbsotaahvVikZs1JyTW6iJvbn")];
+pub const LAMPORTS_PER_SOL: u128 = 1_000_000_000;
+
 pub const WHIRLPOOL_PROGRAM_ID: Pubkey = pubkey!("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc");
 pub const PYTH_RECEIVER_ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");

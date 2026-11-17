@@ -138,6 +138,11 @@ pub fn asset_params(group: u8, oracle: u8, feed: [u8; 32], liq_cost_bps: u16) ->
         deposit_cap: 0,
         paused: false,
         vol_horizon_secs: 0,
+        rate_source: RATE_NONE,
+        rate_account: Pubkey::default(),
+        fixed_rate: 0,
+        rate_base_mint: Pubkey::default(),
+        rate_feed_id: [0; 32],
     }
 }
 
@@ -274,11 +279,17 @@ impl Env {
 
     pub fn new_mint(&mut self, decimals: u8, program: &Pubkey) -> Pubkey {
         let mint = Pubkey::new_unique();
+        self.mint_at(&mint, decimals, program);
+        mint
+    }
+
+    /// A mint at a chosen address, for fixtures copied from mainnet that name it
+    pub fn mint_at(&mut self, mint: &Pubkey, decimals: u8, program: &Pubkey) {
+        let mint = *mint;
         let state = MintState { mint_authority: COption::None, supply: u64::MAX / 2, decimals, is_initialized: true, freeze_authority: COption::None };
         let mut data = vec![0; MintState::LEN];
         MintState::pack(state, &mut data).unwrap();
         self.set_raw(mint, *program, data);
-        mint
     }
 
     /// Sets `owner`'s associated token account for `mint` to hold exactly `amount`
@@ -415,16 +426,28 @@ impl Env {
     }
 
     /// The accounts a health check reads, in the order the program expects
+    /// A token position's accounts in a health check: asset, price, and for a staking token the SOL price and the stake pool
+    pub fn token_health_keys(&self, mint: &Pubkey) -> Vec<Pubkey> {
+        let mut keys = vec![self.asset_pda(mint)];
+        if *mint == self.usdc {
+            return keys;
+        }
+        keys.push(self.price_account(mint));
+        let asset: Asset = self.load(&self.asset_pda(mint));
+        if asset.params.rate_source != RATE_NONE {
+            keys.push(self.price_account(&asset.params.rate_base_mint));
+        }
+        if asset.params.rate_source == RATE_STAKE_POOL {
+            keys.push(asset.params.rate_account);
+        }
+        keys
+    }
+
     pub fn health_metas(&self, owner: &Pubkey) -> Vec<AccountMeta> {
         let mut keys = vec![];
         for p in self.credit(owner).positions.iter() {
             match p.kind {
-                KIND_TOKEN => {
-                    keys.push(self.asset_pda(&p.mint));
-                    if p.mint != self.usdc {
-                        keys.push(self.price_account(&p.mint));
-                    }
-                }
+                KIND_TOKEN => keys.extend(self.token_health_keys(&p.mint)),
                 KIND_LP => {
                     let position = orca_position(&p.mint);
                     let data = self.svm.get_account(&position).unwrap().data;
@@ -786,7 +809,7 @@ impl Env {
         if emptied {
             // The slot will be empty by the time health is checked, so its accounts must not be listed
             let at = health.iter().position(|m| m.pubkey == skip).unwrap();
-            health.drain(at..at + if *mint == self.usdc { 1 } else { 2 });
+            health.drain(at..at + self.token_health_keys(mint).len());
         }
         metas.extend(health);
         Instruction::new_with_bytes(pluribus::ID, &pluribus::instruction::WithdrawToken { amount }.data(), metas)

@@ -614,6 +614,15 @@ pub struct AssetParams {
     pub paused: bool,
     /// Liquidation horizon T for the dynamic shock, about a day for crypto and three for stocks so a weekend fits, 0 for none
     pub vol_horizon_secs: u32,
+    /// For a liquid staking token: where its SOL backing is read, and the price is the lower of its own and that SOL's worth
+    pub rate_source: u8,
+    /// The stake pool account for RATE_STAKE_POOL
+    pub rate_account: Pubkey,
+    /// SOL per whole token, scaled by 1e9, for RATE_FIXED
+    pub fixed_rate: u64,
+    /// The SOL price to value the backing with: the SOL mint for demo prices, its Pyth feed otherwise
+    pub rate_base_mint: Pubkey,
+    pub rate_feed_id: [u8; 32],
 }
 
 impl AssetParams {
@@ -647,7 +656,11 @@ impl AssetParams {
                 && (1..=2_000).contains(&self.max_conf_bps)
                 // A fixed price has no volatility to measure
                 && (self.oracle != ORACLE_FIXED || self.vol_horizon_secs == 0)
-                && self.vol_horizon_secs <= 30 * 86_400,
+                && self.vol_horizon_secs <= 30 * 86_400
+                // A staking token has a market price of its own to compare with its backing
+                && self.rate_source <= RATE_FIXED
+                && (self.rate_source == RATE_NONE || self.oracle == ORACLE_PYTH)
+                && (self.rate_source != RATE_FIXED || self.fixed_rate > 0),
             PluribusError::InvalidParams
         );
         Ok(())
