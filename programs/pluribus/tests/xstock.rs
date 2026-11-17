@@ -642,6 +642,26 @@ fn a_deeper_fall_keeps_its_hold_but_a_stale_jump_lends_none() {
     env.set_price(&other, 50 * USDC);
     let h = env.health(&holder.pubkey());
     assert_eq!(h.credit_limit, 0);
+
+    // A split-sized step after a noted move the same way is a new jump: here a crash to $60, then the feed halves the price
+    // for a 2-for-1 split the issuer hasn't applied, and the half price is never taken as clear
+    let third = list(&mut env, &Xstock::default(), 100);
+    let crank3 = |env: &mut Env| env.send(&[env.update_vol_ix(&third)], &[&keeper]);
+    expect_ok(crank3(&mut env));
+    let owner = env.user();
+    env.deposit(&owner, &third, 10 * SHARE);
+    env.warp(120);
+    env.set_price(&third, 60 * USDC);
+    expect_ok(crank3(&mut env));
+    env.warp(1_800);
+    env.set_price(&third, 30 * USDC);
+    expect_ok(crank3(&mut env));
+    env.warp(1_800);
+    env.set_price(&third, 30 * USDC);
+    let asset: Asset = env.load(&env.asset_pda(&third));
+    assert_eq!(asset.jump_price, 30 * USDC);
+    assert!(env.now() < asset.jump_since + 3_600, "the split step restarted the hold");
+    assert_eq!(env.health(&owner.pubkey()).credit_limit, 0);
 }
 
 #[test]
