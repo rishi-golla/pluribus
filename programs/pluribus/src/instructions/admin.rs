@@ -129,6 +129,11 @@ pub fn handle_set_params(ctx: Context<AdminPool>, params: PoolParams) -> Result<
 fn apply_params(pool: &mut Account<Pool>, params: PoolParams, now: i64) -> Result<()> {
     // Settle interest at the old rates first
     pool.accrue(now)?;
+    // A buffer filled over long epochs would otherwise be paid out over a short one, in a burst anyone can time
+    // Turning epochs off is always fine, since the buffer then keeps paying out on its own schedule
+    let (old, new) = (pool.params.epoch_secs, params.epoch_secs);
+    let same_schedule = new == old || new as i64 == pool.epoch_end - pool.epoch_start;
+    require!(same_schedule || new == 0 || pool.yield_buffer == 0, PluribusError::EpochChangeNotAllowed);
     // A shorter gap never brings the next pause closer than the gap that was in force until now
     if pool.junior_pause_end != 0 {
         let old_gap = pool.params.junior_pause_gap_secs as i64;

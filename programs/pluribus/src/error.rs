@@ -70,4 +70,6 @@ pub enum PluribusError {
     ShareMintNotCollateral,
     #[msg("This collateral is still in its activation delay")]
     NotYetActive,
+    #[msg("The epoch length can only change once the yield buffer is paid out, or to 0")]
+    EpochChangeNotAllowed,
 }

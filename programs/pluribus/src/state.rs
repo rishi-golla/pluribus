@@ -413,8 +413,10 @@ impl Pool {
             let end = self.epoch_end;
             self.pay_epoch(end, weights)?;
             let len = (end - self.epoch_start).max(1);
+            // Time with nobody lending pays nothing, so the next stretch never starts further back than the last accrual
+            let start = end.max(self.last_accrual);
             let rest = self.yield_buffer;
-            self.open_epoch(end, end + len, rest);
+            self.open_epoch(start, start + len, rest);
         }
         self.pay_epoch(now, weights)
     }

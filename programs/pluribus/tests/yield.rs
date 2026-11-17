@@ -295,23 +295,89 @@ fn turning_epochs_off_and_on_within_a_week_continues_the_same_week() {
 }
 
 #[test]
-fn a_longer_epoch_starts_where_the_last_one_ended_and_never_pays_backdated_time() {
-    let day = |env: &mut Env, epoch: i64| {
+fn a_shorter_epoch_waits_until_the_buffer_is_paid_out() {
+    let mut env = pool_with_both_tranches(0);
+    let friday = next_friday(&env);
+    until(&mut env, friday + DAY);
+    assert!(env.pool_state().yield_buffer > 0);
+    let admin = env.admin.insecure_clone();
+    let params = env.pool_state().params;
+    // Paying a week's buffer out over a day would hand it to whoever is there that day
+    let daily = PoolParams { epoch_secs: DAY as u32, ..params };
+    expect_err(env.send(&[env.set_params_ix(&admin.pubkey(), daily)], &[&admin]), pluribus::error::PluribusError::EpochChangeNotAllowed);
+    // Through 0 it works: the buffer drains on its weekly schedule, then the new length applies
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), PoolParams { epoch_secs: 0, ..params })], &[&admin]));
+    let end = env.pool_state().epoch_end;
+    until(&mut env, end + WEEK);
+    assert!(env.pool_state().yield_buffer <= 2);
+    // The empty buffer still reads a few units of dust at most, so wait for the next accrual to clear it
+    let mut pool = env.pool_state();
+    if pool.yield_buffer > 0 {
+        until(&mut env, end + 2 * WEEK);
+        pool = env.pool_state();
+    }
+    assert_eq!(pool.yield_buffer, 0);
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), daily)], &[&admin]));
+}
+
+#[test]
+fn with_nobody_lending_the_buffer_waits_and_the_next_lender_earns_it_over_time() {
+    let mut env = weekly(0);
+    open_junior(&mut env);
+    let (usdc, senior_mint, junior_mint) = (env.usdc, env.share_mint, env.junior_mint());
+    let senior = lend(&mut env, 9_000 * USDC, false);
+    let junior = lend(&mut env, 1_000 * USDC, true);
+    let user = borrow(&mut env, 1_000 * SOL, Some(5_000 * USDC));
+    let friday = next_friday(&env);
+    until(&mut env, friday + DAY);
+    let admin = env.admin.insecure_clone();
+    let params = env.pool_state().params;
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), PoolParams { epoch_secs: 0, ..params })], &[&admin]));
+    // The debt is repaid and every lender leaves, so the buffer sits with nobody to pay
+    env.fund(&usdc, &user.pubkey(), 6_000 * USDC);
+    expect_ok(env.send(&[env.repay_ix(&user.pubkey(), &user.pubkey(), u64::MAX)], &[&user]));
+    let (s, j) = (senior.pubkey(), junior.pubkey());
+    expect_ok(env.send(&[env.lend_withdraw_ix(&s, env.balance(&senior_mint, &s))], &[&senior]));
+    expect_ok(env.send(&[env.request_exit_ix(&j, env.balance(&junior_mint, &j)), env.claim_exit_ix(&j, &usdc)], &[&junior]));
+    let held = env.pool_state().yield_buffer;
+    assert!(held > 0);
+    // Weeks later a newcomer lends ten dollars: a second on it has earned about a second's worth, not the buffer
+    let later = env.now() + 3 * WEEK;
+    until(&mut env, later);
+    let newcomer = lend(&mut env, 10 * USDC, false);
+    until(&mut env, later + 1);
+    let worth = env.pool_state().value_of(false, 10 * USDC + 1, env.balance(&senior_mint, &newcomer.pubkey())).unwrap_or(0);
+    assert!(worth < 10 * USDC + held / 1_000, "ten dollars grew to {worth} in a second, with {held} waiting");
+}
+
+#[test]
+fn a_new_epoch_length_never_pays_backdated_time() {
+    let set = |env: &mut Env, epoch: i64| {
         let admin = env.admin.insecure_clone();
         let params = PoolParams { epoch_secs: epoch as u32, ..env.pool_state().params };
-        expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin]));
+        env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin])
     };
-    let mut env = pool_with_both_tranches(0);
-    day(&mut env, DAY);
+    // Daily epochs from the start, with nothing in the buffer yet
+    let mut env = weekly(0);
+    expect_ok(set(&mut env, DAY));
+    open_junior(&mut env);
+    lend(&mut env, 9_000 * USDC, false);
+    lend(&mut env, 1_000 * USDC, true);
+    borrow(&mut env, 1_000 * SOL, Some(5_000 * USDC));
     let friday = next_friday(&env);
-    // Daily epochs until Tuesday noon, then weekly
     until(&mut env, friday + 4 * DAY + DAY / 2);
-    day(&mut env, WEEK);
-    let tuesday_end = env.pool_state().epoch_end;
-    assert_eq!(tuesday_end, friday + 5 * DAY);
-    until(&mut env, tuesday_end);
+    // Straight to weekly is refused while a buffer is waiting, through 0 it works
+    assert!(set(&mut env, WEEK).is_err());
+    expect_ok(set(&mut env, 0));
+    let drained = env.pool_state().epoch_end + DAY;
+    until(&mut env, drained);
+    until(&mut env, drained + 1);
+    assert_eq!(env.pool_state().yield_buffer, 0);
+    expect_ok(set(&mut env, WEEK));
+    // The first weekly epoch runs to the next Friday and its budget pays nothing that was earned before it opened
+    let start = env.now();
+    until(&mut env, start + 60);
     let pool = env.pool_state();
-    // The new epoch runs from where the daily one ended to the next Friday, and pays its first second's worth only
-    assert_eq!((pool.epoch_start, pool.epoch_end), (tuesday_end, friday + WEEK));
+    assert_eq!(pool.epoch_end, friday + WEEK);
     assert!(pool.epoch_paid <= 1, "paid {} of {} at once", pool.epoch_paid, pool.epoch_budget);
 }
