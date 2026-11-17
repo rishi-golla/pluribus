@@ -86,7 +86,10 @@ impl Valuer {
             Valuer::Token { amount, decimals } => token_value(amount, price, decimals),
             Valuer::Lp { liquidity, lower, upper, decimals } => {
                 let (base, usdc) = lp_parts(liquidity, lower, upper, price, roots.of(price, decimals)?, decimals)?;
-                Ok(base + cut(usdc, usdc_shock)?)
+                // Orca's tick table can price a Raydium range a hair above what Raydium would pay out, so a part per
+                // billion and a base unit come off, keeping the value at or under the payout on either dex
+                let v = base + cut(usdc, usdc_shock)?;
+                Ok(v.saturating_sub(v / 1_000_000_000 + 1))
             }
         }
     }
