@@ -22,7 +22,7 @@ const TRANCHES = {
     tone: "green" as const,
     badge: Shield,
     tag: { icon: ShieldCheck, text: "Protected" },
-    blurb: "Base yield minus 20% protection fee",
+    blurb: "Weekly yield from borrower interest",
     deposits: "$9.00M",
     exit: "Instant",
     lossOrder: "3rd",
@@ -36,7 +36,7 @@ const TRANCHES = {
     tone: "orange" as const,
     badge: Zap,
     tag: { icon: Flame, text: "First loss" },
-    blurb: "Base yield plus protection fee and risk premiums",
+    blurb: "Senior rate plus 15% risk premium",
     deposits: "$1.00M",
     exit: "6-day queue",
     lossOrder: "2nd",
@@ -103,16 +103,15 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
   const soon = !!pool && !stat;
   const apy = pool ? (stat?.apy ?? null) : t.apy;
   const apyHistory = live ? inRange(live.samples, 90).map((s) => s.apy[id]) : (id === "senior" ? SENIOR_APY : JUNIOR_APY).slice(-90);
-  const fee = pool ? whole(pool.protectionFee) : 0;
   const premium = pool ? whole(pool.juniorPremiumMax) : 0;
   const target = pool ? whole(pool.juniorTarget) : 10;
   const queue = live ? `${span(live.juniorRules.waitSecs)} queue` : t.exit;
   const blurb = !stat
     ? t.blurb
     : id === "junior"
-      ? `Yield plus up to ${premium}% premium and ${fee}% fee, full at ${target}% of pool`
-      : pool?.junior
-        ? `Yield minus up to ${fee}% protection fee`
+      ? `Senior rate plus ${premium}% of senior yield, full at ${target}% of pool`
+      : pool?.epoch
+        ? "Weekly yield from borrower interest"
         : "Yield from borrower interest";
   const stats = soon
     ? ["-", "-", "-", "-"]
