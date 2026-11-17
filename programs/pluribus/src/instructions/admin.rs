@@ -66,6 +66,7 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         usdc_vault: ctx.accounts.usdc_vault.key(),
         share_mint: ctx.accounts.share_mint.key(),
         junior_mint: Pubkey::default(),
+        guardian: Pubkey::default(),
         bump: ctx.bumps.pool,
         demo_mode,
         paused: false,
@@ -81,6 +82,12 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         dust: [0; 3],
         borrow_index: [INDEX_ONE; TIERS],
         debt_shares: [0; TIERS],
+        junior_queued: 0,
+        junior_pause_start: 0,
+        junior_pause_end: 0,
+        junior_next_pause_at: 0,
+        pending_params: params,
+        pending_at: 0,
     });
     Ok(())
 }
@@ -92,14 +99,91 @@ pub struct AdminPool<'info> {
     pub pool: Box<Account<'info, Pool>>,
 }
 
+/// Raising shocks or adding scenarios applies at once
+/// Any other change waits out the activation delay, so juniors who disagree have time to leave
+/// An immediate change drops whatever was waiting
 pub fn handle_set_params(ctx: Context<AdminPool>, params: PoolParams) -> Result<()> {
     params.validate()?;
+    let now = Clock::get()?.unix_timestamp;
     let pool = &mut ctx.accounts.pool;
-    // Settle interest at the old rates first
-    pool.accrue(Clock::get()?.unix_timestamp)?;
     // A bonus above the smallest haircut already granted would make that collateral impossible to liquidate
     require!(params.bonus_fits(pool.min_liq_cost_bps), PluribusError::InvalidParams);
+    let delay = pool.params.activation_delay_secs as i64;
+    // Even with no delay nothing loosens while juniors are paused, it waits for the pause to end
+    if pool.params.only_tightens(&params) || (delay == 0 && !pool.junior_exits_paused(now)) {
+        apply_params(pool, params, now)?;
+    } else {
+        pool.pending_params = params;
+        pool.pending_at = now + delay;
+        emit!(ChangeQueued { target: pool.key(), effective_at: pool.pending_at });
+    }
+    Ok(())
+}
+
+fn apply_params(pool: &mut Account<Pool>, params: PoolParams, now: i64) -> Result<()> {
+    // Settle interest at the old rates first
+    pool.accrue(now)?;
+    // A shorter gap never brings the next pause closer than the gap that was in force until now
+    if pool.junior_pause_end != 0 {
+        let old_gap = pool.params.junior_pause_gap_secs as i64;
+        pool.junior_next_pause_at = pool.junior_next_pause_at.max(pool.junior_pause_end.saturating_add(old_gap));
+    }
     pool.params = params;
+    pool.pending_at = 0;
+    emit!(ChangeApplied { target: pool.key() });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ApplyParams<'info> {
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+}
+
+/// Permissionless: puts waiting parameters into effect once their delay has passed
+/// A pause of junior exits during the wait adds a full delay after it, see `Pool::effective_at`
+pub fn handle_apply_params(ctx: Context<ApplyParams>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let pool = &mut ctx.accounts.pool;
+    require!(pool.pending_at != 0, PluribusError::NoPendingChange);
+    require!(now >= pool.effective_at(pool.pending_at), PluribusError::ChangeNotDue);
+    let params = pool.pending_params;
+    // Collateral listed while the change waited may have a smaller haircut
+    require!(params.bonus_fits(pool.min_liq_cost_bps), PluribusError::InvalidParams);
+    apply_params(pool, params, now)
+}
+
+pub fn handle_set_guardian(ctx: Context<AdminPool>, guardian: Pubkey) -> Result<()> {
+    ctx.accounts.pool.guardian = guardian;
+    Ok(())
+}
+
+/// Freezes junior exit requests and claims for up to the capped length
+/// A new pause has to wait out the gap after the last one, in which any junior can queue, wait and claim
+pub fn handle_pause_junior_exits(ctx: Context<AdminPool>, duration_secs: u32) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let pool = &mut ctx.accounts.pool;
+    let (max_pause, gap) = (pool.params.junior_max_pause_secs, pool.params.junior_pause_gap_secs as i64);
+    // The gap fixed when the last pause began, or the one in force now if a change has since made it longer
+    let next = pool.junior_next_pause_at.max(pool.junior_pause_end.saturating_add(gap));
+    require!(
+        duration_secs > 0 && duration_secs <= max_pause && !pool.junior_exits_paused(now) && (pool.junior_pause_end == 0 || now >= next),
+        PluribusError::PauseNotAllowed
+    );
+    pool.junior_pause_start = now;
+    pool.junior_pause_end = now + duration_secs as i64;
+    pool.junior_next_pause_at = pool.junior_pause_end + gap;
+    emit!(JuniorExitsPaused { until: pool.junior_pause_end });
+    Ok(())
+}
+
+pub fn handle_unpause_junior_exits(ctx: Context<AdminPool>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let pool = &mut ctx.accounts.pool;
+    require!(pool.junior_exits_paused(now), PluribusError::PauseNotAllowed);
+    pool.junior_pause_end = now;
+    pool.junior_next_pause_at = now + pool.params.junior_pause_gap_secs as i64;
+    emit!(JuniorExitsPaused { until: now });
     Ok(())
 }
 
@@ -123,7 +207,11 @@ pub struct InitAsset<'info> {
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
     pub pool: Box<Account<'info, Pool>>,
     // Token-2022 mints can carry transfer fees and hooks, which would break vault accounting
-    #[account(constraint = *mint.to_account_info().owner == anchor_spl::token::ID @ PluribusError::UnsupportedMint)]
+    // Share tokens would let lenders borrow against the very pool their deposit backs, and juniors could step out of losses
+    #[account(
+        constraint = *mint.to_account_info().owner == anchor_spl::token::ID @ PluribusError::UnsupportedMint,
+        constraint = mint.key() != pool.share_mint && mint.key() != pool.junior_mint @ PluribusError::ShareMintNotCollateral,
+    )]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(init, payer = admin, space = 8 + Asset::INIT_SPACE, seeds = [ASSET_SEED, mint.key().as_ref()], bump)]
     pub asset: Box<Account<'info, Asset>>,
@@ -141,7 +229,7 @@ pub struct InitAsset<'info> {
     pub system_program: Program<'info, System>,
 }
 
-fn check_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
+fn check_asset(pool: &Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
     params.validate()?;
     // USDC, and only USDC, is priced at a fixed $1
     // Giving it a shock group of its own puts a gap between its draw limit and its liquidation line
@@ -150,6 +238,11 @@ fn check_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<(
         if params.oracle == ORACLE_FIXED { is_usdc } else { !is_usdc && pool.params.bonus_fits(params.liq_cost_bps) },
         PluribusError::InvalidParams
     );
+    Ok(())
+}
+
+fn record_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
+    check_asset(pool, mint, params)?;
     if params.oracle != ORACLE_FIXED {
         pool.min_liq_cost_bps = pool.min_liq_cost_bps.min(params.liq_cost_bps);
     } else {
@@ -159,7 +252,8 @@ fn check_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<(
 }
 
 pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams) -> Result<()> {
-    check_asset(&mut ctx.accounts.pool, &ctx.accounts.mint.key(), &params)?;
+    record_asset(&mut ctx.accounts.pool, &ctx.accounts.mint.key(), &params)?;
+    let now = Clock::get()?.unix_timestamp;
     ctx.accounts.asset.set_inner(Asset {
         mint: ctx.accounts.mint.key(),
         vault: ctx.accounts.vault.key(),
@@ -167,6 +261,9 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams) -> Result
         decimals: ctx.accounts.mint.decimals,
         total_deposited: 0,
         params,
+        active_at: now + ctx.accounts.pool.params.activation_delay_secs as i64,
+        pending: params,
+        pending_at: 0,
     });
     Ok(())
 }
@@ -180,10 +277,44 @@ pub struct SetAsset<'info> {
     pub asset: Box<Account<'info, Asset>>,
 }
 
+/// A pure tightening applies at once and drops whatever was waiting, any other change waits out the activation delay
 pub fn handle_set_asset(ctx: Context<SetAsset>, params: AssetParams) -> Result<()> {
-    let mint = ctx.accounts.asset.mint;
-    check_asset(&mut ctx.accounts.pool, &mint, &params)?;
-    ctx.accounts.asset.params = params;
+    let now = Clock::get()?.unix_timestamp;
+    let (pool, asset) = (&mut ctx.accounts.pool, &mut ctx.accounts.asset);
+    let delay = pool.params.activation_delay_secs as i64;
+    if asset.params.only_tightens(&params) || (delay == 0 && !pool.junior_exits_paused(now)) {
+        record_asset(pool, &asset.mint, &params)?;
+        asset.params = params;
+        asset.pending_at = 0;
+    } else {
+        check_asset(pool, &asset.mint, &params)?;
+        asset.pending = params;
+        asset.pending_at = now + delay;
+        emit!(ChangeQueued { target: asset.key(), effective_at: asset.pending_at });
+    }
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ApplyAsset<'info> {
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+}
+
+/// Permissionless: puts an asset's waiting parameters into effect once their delay has passed
+pub fn handle_apply_asset(ctx: Context<ApplyAsset>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let (pool, asset) = (&mut ctx.accounts.pool, &mut ctx.accounts.asset);
+    require!(asset.pending_at != 0, PluribusError::NoPendingChange);
+    require!(now >= pool.effective_at(asset.pending_at), PluribusError::ChangeNotDue);
+    let params = asset.pending;
+    // The pool's bonus may have changed while this waited
+    record_asset(pool, &asset.mint, &params)?;
+    asset.params = params;
+    asset.pending_at = 0;
+    emit!(ChangeApplied { target: asset.key() });
     Ok(())
 }
 
@@ -208,14 +339,19 @@ pub struct InitLpMarket<'info> {
     pub system_program: Program<'info, System>,
 }
 
-fn check_lp_cost(pool: &mut Pool, liq_cost_bps: u16) -> Result<()> {
+fn check_lp_cost(pool: &Pool, liq_cost_bps: u16) -> Result<()> {
     require!((liq_cost_bps as u128) < BPS && pool.params.bonus_fits(liq_cost_bps), PluribusError::InvalidParams);
+    Ok(())
+}
+
+fn record_lp_cost(pool: &mut Pool, liq_cost_bps: u16) -> Result<()> {
+    check_lp_cost(pool, liq_cost_bps)?;
     pool.min_liq_cost_bps = pool.min_liq_cost_bps.min(liq_cost_bps);
     Ok(())
 }
 
 pub fn handle_init_lp_market(ctx: Context<InitLpMarket>, liq_cost_bps: u16) -> Result<()> {
-    check_lp_cost(&mut ctx.accounts.pool, liq_cost_bps)?;
+    record_lp_cost(&mut ctx.accounts.pool, liq_cost_bps)?;
     let (mint_a, mint_b) = read_whirlpool_mints(&ctx.accounts.whirlpool)?;
     let base = &ctx.accounts.base_asset;
     // The valuer assumes token A is the priced asset and token B is USDC
@@ -229,6 +365,11 @@ pub fn handle_init_lp_market(ctx: Context<InitLpMarket>, liq_cost_bps: u16) -> R
         bump: ctx.bumps.lp_market,
         liq_cost_bps,
         paused: false,
+        // Never ahead of its base token, so an LP cannot bring in a token still in its own delay
+        active_at: (Clock::get()?.unix_timestamp + ctx.accounts.pool.params.activation_delay_secs as i64).max(base.active_at),
+        pending_liq_cost_bps: liq_cost_bps,
+        pending_paused: false,
+        pending_at: 0,
     });
     Ok(())
 }
@@ -242,10 +383,100 @@ pub struct SetLpMarket<'info> {
     pub lp_market: Box<Account<'info, LpMarket>>,
 }
 
+/// A higher cost or a pause applies at once and drops whatever was waiting, anything looser waits out the activation delay
 pub fn handle_set_lp_market(ctx: Context<SetLpMarket>, liq_cost_bps: u16, paused: bool) -> Result<()> {
-    check_lp_cost(&mut ctx.accounts.pool, liq_cost_bps)?;
-    ctx.accounts.lp_market.liq_cost_bps = liq_cost_bps;
-    ctx.accounts.lp_market.paused = paused;
+    let now = Clock::get()?.unix_timestamp;
+    let (pool, market) = (&mut ctx.accounts.pool, &mut ctx.accounts.lp_market);
+    let delay = pool.params.activation_delay_secs as i64;
+    let tightens = liq_cost_bps >= market.liq_cost_bps && (paused || !market.paused);
+    if tightens || (delay == 0 && !pool.junior_exits_paused(now)) {
+        record_lp_cost(pool, liq_cost_bps)?;
+        market.liq_cost_bps = liq_cost_bps;
+        market.paused = paused;
+        market.pending_at = 0;
+    } else {
+        check_lp_cost(pool, liq_cost_bps)?;
+        market.pending_liq_cost_bps = liq_cost_bps;
+        market.pending_paused = paused;
+        market.pending_at = now + delay;
+        emit!(ChangeQueued { target: market.key(), effective_at: market.pending_at });
+    }
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ApplyLpMarket<'info> {
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [LP_MARKET_SEED, lp_market.whirlpool.as_ref()], bump = lp_market.bump)]
+    pub lp_market: Box<Account<'info, LpMarket>>,
+}
+
+/// Permissionless: puts an LP market's waiting settings into effect once their delay has passed
+pub fn handle_apply_lp_market(ctx: Context<ApplyLpMarket>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let (pool, market) = (&mut ctx.accounts.pool, &mut ctx.accounts.lp_market);
+    require!(market.pending_at != 0, PluribusError::NoPendingChange);
+    require!(now >= pool.effective_at(market.pending_at), PluribusError::ChangeNotDue);
+    record_lp_cost(pool, market.pending_liq_cost_bps)?;
+    market.liq_cost_bps = market.pending_liq_cost_bps;
+    market.paused = market.pending_paused;
+    market.pending_at = 0;
+    emit!(ChangeApplied { target: market.key() });
+    Ok(())
+}
+
+/// The admin, or the guardian, whose powers only ever reduce risk
+#[derive(Accounts)]
+pub struct Guard<'info> {
+    #[account(constraint = guard.key() == pool.admin || guard.key() == pool.guardian @ PluribusError::NotGuardian)]
+    pub guard: Signer<'info>,
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+}
+
+pub fn handle_cancel_pending_params(ctx: Context<Guard>) -> Result<()> {
+    let pool = &mut ctx.accounts.pool;
+    require!(pool.pending_at != 0, PluribusError::NoPendingChange);
+    pool.pending_at = 0;
+    emit!(ChangeCancelled { target: pool.key() });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct GuardAsset<'info> {
+    #[account(constraint = guard.key() == pool.admin || guard.key() == pool.guardian @ PluribusError::NotGuardian)]
+    pub guard: Signer<'info>,
+    #[account(seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+}
+
+/// Stops an asset backing new debt and drops any change waiting on it, which also cancels a listing still in its delay
+pub fn handle_guard_asset(ctx: Context<GuardAsset>) -> Result<()> {
+    let asset = &mut ctx.accounts.asset;
+    asset.params.paused = true;
+    asset.pending_at = 0;
+    emit!(ChangeCancelled { target: asset.key() });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct GuardLpMarket<'info> {
+    #[account(constraint = guard.key() == pool.admin || guard.key() == pool.guardian @ PluribusError::NotGuardian)]
+    pub guard: Signer<'info>,
+    #[account(seeds = [POOL_SEED], bump = pool.bump)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [LP_MARKET_SEED, lp_market.whirlpool.as_ref()], bump = lp_market.bump)]
+    pub lp_market: Box<Account<'info, LpMarket>>,
+}
+
+pub fn handle_guard_lp_market(ctx: Context<GuardLpMarket>) -> Result<()> {
+    let market = &mut ctx.accounts.lp_market;
+    market.paused = true;
+    market.pending_at = 0;
+    emit!(ChangeCancelled { target: market.key() });
     Ok(())
 }
 
@@ -323,6 +554,17 @@ pub struct InitJunior<'info> {
         mint::token_program = token_program,
     )]
     pub junior_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// Holds junior shares while they wait in the exit queue
+    #[account(
+        init,
+        payer = admin,
+        seeds = [JUNIOR_ESCROW_SEED],
+        bump,
+        token::mint = junior_mint,
+        token::authority = pool,
+        token::token_program = token_program,
+    )]
+    pub junior_escrow: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{burn, mint_to, Burn, Mint, MintTo, TokenAccount, TokenInterface};
 
-use crate::{constants::*, events::*, state::*, token::*};
+use crate::{constants::*, error::PluribusError, events::*, state::*, token::*};
 
 /// Lending into either tranche: the share mint passed in decides which one
 #[derive(Accounts)]
@@ -44,6 +44,8 @@ pub fn handle_lend_withdraw(ctx: Context<Lend>, shares: u64) -> Result<()> {
     let a = ctx.accounts;
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
     let junior = a.pool.is_junior(&a.share_mint.key())?;
+    // Junior money waits out the exit queue, so it cannot step aside when a loss is coming
+    require!(!junior, PluribusError::JuniorExitQueue);
     let amount = a.pool.redeem(junior, a.share_mint.supply, shares)?;
 
     let accounts = Burn {

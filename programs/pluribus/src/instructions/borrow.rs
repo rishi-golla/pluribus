@@ -57,6 +57,8 @@ pub fn handle_deposit_token(ctx: Context<MoveToken>, amount: u64) -> Result<()> 
     let a = ctx.accounts;
     require!(amount > 0, PluribusError::ZeroAmount);
     require!(!a.asset.params.paused, PluribusError::Paused);
+    // A new listing takes no deposits until juniors have had their chance to leave, or it could shield debt from liquidation
+    require!(Clock::get()?.unix_timestamp >= a.pool.effective_at(a.asset.active_at), PluribusError::NotYetActive);
     let total = a.asset.total_deposited.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
     // A cap of zero means uncapped
     require!(a.asset.params.deposit_cap == 0 || total <= a.asset.params.deposit_cap, PluribusError::DepositCap);
@@ -91,6 +93,9 @@ pub struct DepositLp<'info> {
     pub pool: Box<Account<'info, Pool>>,
     #[account(seeds = [LP_MARKET_SEED, lp_market.whirlpool.as_ref()], bump = lp_market.bump)]
     pub lp_market: Box<Account<'info, LpMarket>>,
+    /// The LP's priced token, whose own pause and activation delay apply to its LPs too
+    #[account(seeds = [ASSET_SEED, lp_market.base_mint.as_ref()], bump = base_asset.bump)]
+    pub base_asset: Box<Account<'info, Asset>>,
     /// CHECK: Owner program, discriminator, mint and pool are checked in the handler
     // Orca keeps one position per NFT at this address
     // A bundled position sits elsewhere and shares its mint with its siblings, so it is not accepted
@@ -115,7 +120,10 @@ pub struct DepositLp<'info> {
 pub fn handle_deposit_lp(ctx: Context<DepositLp>) -> Result<()> {
     let bump = ctx.bumps.position;
     let a = ctx.accounts;
-    require!(!a.lp_market.paused, PluribusError::Paused);
+    require!(!a.lp_market.paused && !a.base_asset.params.paused, PluribusError::Paused);
+    let now = Clock::get()?.unix_timestamp;
+    let active = now >= a.pool.effective_at(a.lp_market.active_at) && now >= a.pool.effective_at(a.base_asset.active_at);
+    require!(active, PluribusError::NotYetActive);
     let orca = read_position(&a.position)?;
     // The NFT being handed over must be the one that controls this position
     require_keys_eq!(orca.position_mint, a.position_mint.key(), PluribusError::AccountMismatch);

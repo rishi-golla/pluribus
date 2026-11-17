@@ -89,6 +89,29 @@ pub fn default_params() -> PoolParams {
         protection_fee_bps: 2000,
         tier_discount_bps: [0, 40, 80],
         tier_min_healthy_secs: [0, 7 * DAY, 30 * DAY],
+        junior_target_bps: 1000,
+        junior_premium_bps: 0,
+        // No waits by default so most tests can act at once, the junior and timelock tests set their own
+        junior_min_delay_secs: 0,
+        junior_max_delay_secs: 0,
+        junior_delay_threshold_bps: 10_000,
+        junior_exit_window_secs: 2 * DAY as u32,
+        junior_exit_fee_bps: 0,
+        junior_max_pause_secs: 90 * DAY as u32,
+        junior_pause_gap_secs: 3 * DAY as u32,
+        activation_delay_secs: 0,
+    }
+}
+
+/// Realistic waits: six-day junior exits with a two-day claim window, an eight-day activation delay, pauses two weeks apart
+pub fn timed_params() -> PoolParams {
+    PoolParams {
+        junior_min_delay_secs: 6 * DAY as u32,
+        junior_max_delay_secs: 6 * DAY as u32,
+        junior_pause_gap_secs: 14 * DAY as u32,
+        junior_exit_fee_bps: 5,
+        activation_delay_secs: 8 * DAY as u32,
+        ..default_params()
     }
 }
 
@@ -117,6 +140,16 @@ impl Env {
 
     pub fn with(params: PoolParams, demo_mode: bool) -> Self {
         Self::on(LiteSVM::new(), params, demo_mode, None)
+    }
+
+    /// The same setup on `timed_params`, with the clock moved past the listings' activation delay
+    pub fn timed() -> Self {
+        let mut env = Self::with(timed_params(), true);
+        env.warp(timed_params().activation_delay_secs as i64);
+        let (sol, stock) = (env.sol, env.stock);
+        env.set_price(&sol, 150 * USDC);
+        env.set_price(&stock, 200 * USDC);
+        env
     }
 
     /// Same setup on a chain that may already hold a real Orca pool
@@ -496,6 +529,14 @@ impl Env {
         pda(&[JUNIOR_MINT_SEED])
     }
 
+    pub fn junior_escrow(&self) -> Pubkey {
+        pda(&[JUNIOR_ESCROW_SEED])
+    }
+
+    pub fn junior_exit_pda(&self, owner: &Pubkey) -> Pubkey {
+        pda(&[JUNIOR_EXIT_SEED, owner.as_ref()])
+    }
+
     pub fn init_junior_ix(&self, admin: &Pubkey) -> Instruction {
         self.ix(
             pluribus::instruction::InitJunior {}.data(),
@@ -503,6 +544,7 @@ impl Env {
                 admin: *admin,
                 pool: self.pool,
                 junior_mint: self.junior_mint(),
+                junior_escrow: self.junior_escrow(),
                 token_program: TOKEN,
                 system_program: system_program::ID,
             }
@@ -527,6 +569,158 @@ impl Env {
 
     pub fn lend_withdraw_ix(&self, lender: &Pubkey, shares: u64) -> Instruction {
         self.ix(pluribus::instruction::LendWithdraw { shares }.data(), self.lend_metas(lender), None)
+    }
+
+    /// Redeems shares for USDC: senior shares directly, junior shares by queueing and claiming in one go
+    /// The junior path only lands in one transaction while the exit delay is zero
+    pub fn redeem_ixs(&self, lender: &Pubkey, share_mint: &Pubkey, shares: u64) -> Vec<Instruction> {
+        if *share_mint == self.junior_mint() {
+            vec![self.request_exit_ix(lender, shares), self.claim_exit_ix(lender, &self.usdc.clone())]
+        } else {
+            vec![self.tranche_ix(lender, share_mint, shares, false)]
+        }
+    }
+
+    pub fn convert_ix(&self, lender: &Pubkey, shares: u64) -> Instruction {
+        self.ix(
+            pluribus::instruction::ConvertToJunior { shares }.data(),
+            pluribus::accounts::ConvertToJunior {
+                lender: *lender,
+                pool: self.pool,
+                share_mint: self.share_mint,
+                junior_mint: self.junior_mint(),
+                lender_shares: ata(lender, &self.share_mint, &TOKEN),
+                lender_junior: ata(lender, &self.junior_mint(), &TOKEN),
+                token_program: TOKEN,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn request_exit_ix(&self, owner: &Pubkey, shares: u64) -> Instruction {
+        self.ix(
+            pluribus::instruction::RequestJuniorExit { shares }.data(),
+            pluribus::accounts::RequestJuniorExit {
+                owner: *owner,
+                pool: self.pool,
+                junior_mint: self.junior_mint(),
+                owner_junior: ata(owner, &self.junior_mint(), &TOKEN),
+                junior_escrow: self.junior_escrow(),
+                exit: self.junior_exit_pda(owner),
+                token_program: TOKEN,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    /// `payout_mint` is USDC to be paid in cash, or the senior share mint to be paid in senior shares
+    pub fn claim_exit_ix(&self, owner: &Pubkey, payout_mint: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::ClaimJuniorExit {}.data(),
+            pluribus::accounts::ClaimJuniorExit {
+                owner: *owner,
+                pool: self.pool,
+                exit: self.junior_exit_pda(owner),
+                junior_mint: self.junior_mint(),
+                junior_escrow: self.junior_escrow(),
+                share_mint: self.share_mint,
+                usdc_mint: self.usdc,
+                usdc_vault: self.usdc_vault,
+                payout: ata(owner, payout_mint, &TOKEN),
+                token_program: TOKEN,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn cancel_exit_ix(&self, caller: &Pubkey, owner: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::CancelJuniorExit {}.data(),
+            pluribus::accounts::CancelJuniorExit {
+                caller: *caller,
+                pool: self.pool,
+                owner: *owner,
+                exit: self.junior_exit_pda(owner),
+                junior_mint: self.junior_mint(),
+                junior_escrow: self.junior_escrow(),
+                owner_junior: ata(owner, &self.junior_mint(), &TOKEN),
+                token_program: TOKEN,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn pause_exits_ix(&self, admin: &Pubkey, duration_secs: u32) -> Instruction {
+        self.ix(
+            pluribus::instruction::PauseJuniorExits { duration_secs }.data(),
+            pluribus::accounts::AdminPool { admin: *admin, pool: self.pool }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn unpause_exits_ix(&self, admin: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::UnpauseJuniorExits {}.data(),
+            pluribus::accounts::AdminPool { admin: *admin, pool: self.pool }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn set_guardian_ix(&self, admin: &Pubkey, guardian: Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetGuardian { guardian }.data(),
+            pluribus::accounts::AdminPool { admin: *admin, pool: self.pool }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn apply_params_ix(&self) -> Instruction {
+        self.ix(pluribus::instruction::ApplyParams {}.data(), pluribus::accounts::ApplyParams { pool: self.pool }.to_account_metas(None), None)
+    }
+
+    pub fn apply_asset_ix(&self, mint: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::ApplyAsset {}.data(),
+            pluribus::accounts::ApplyAsset { pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn apply_lp_market_ix(&self, whirlpool: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::ApplyLpMarket {}.data(),
+            pluribus::accounts::ApplyLpMarket { pool: self.pool, lp_market: self.lp_market_pda(whirlpool) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn cancel_pending_params_ix(&self, guard: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::CancelPendingParams {}.data(),
+            pluribus::accounts::Guard { guard: *guard, pool: self.pool }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn guard_asset_ix(&self, guard: &Pubkey, mint: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::GuardAsset {}.data(),
+            pluribus::accounts::GuardAsset { guard: *guard, pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn guard_lp_market_ix(&self, guard: &Pubkey, whirlpool: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::GuardLpMarket {}.data(),
+            pluribus::accounts::GuardLpMarket { guard: *guard, pool: self.pool, lp_market: self.lp_market_pda(whirlpool) }.to_account_metas(None),
+            None,
+        )
     }
 
     fn move_token_metas(&self, owner: &Pubkey, mint: &Pubkey) -> Vec<AccountMeta> {
@@ -571,6 +765,12 @@ impl Env {
     /// For an NFT held in a token account that is not the owner's associated one
     pub fn deposit_lp_from_ix(&self, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey, owner_nft: &Pubkey) -> Instruction {
         let program = self.svm.get_account(nft).unwrap().owner;
+        // The market's base token, or SOL for a market that does not exist so the program can refuse it
+        let base = self
+            .svm
+            .get_account(&self.lp_market_pda(whirlpool))
+            .and_then(|a| LpMarket::try_deserialize(&mut &a.data[..]).ok())
+            .map_or(self.sol, |m| m.base_mint);
         self.ix(
             pluribus::instruction::DepositLp {}.data(),
             pluribus::accounts::DepositLp {
@@ -578,6 +778,7 @@ impl Env {
                 credit: self.credit_pda(owner),
                 pool: self.pool,
                 lp_market: self.lp_market_pda(whirlpool),
+                base_asset: self.asset_pda(&base),
                 position: orca_position(nft),
                 position_mint: *nft,
                 owner_nft: *owner_nft,

@@ -27,6 +27,28 @@ pub struct PoolParams {
     pub protection_fee_bps: u16,
     pub tier_discount_bps: [u16; TIERS],
     pub tier_min_healthy_secs: [i64; TIERS],
+    /// Junior share of lender assets at which junior lenders earn the whole protection fee and premium
+    pub junior_target_bps: u16,
+    /// Share of all borrower interest paid to junior lenders on top of their own share, for taking losses first
+    pub junior_premium_bps: u16,
+    /// Wait before a queued junior exit can be claimed, from the min with an empty queue up to the max
+    pub junior_min_delay_secs: u32,
+    pub junior_max_delay_secs: u32,
+    /// Queued share of the junior supply at which the wait reaches its max
+    pub junior_delay_threshold_bps: u16,
+    /// Time after the wait in which an exit must be claimed, or it lapses and the shares go back to work
+    /// Between MIN_JUNIOR_EXIT_WINDOW_SECS and MAX_JUNIOR_EXIT_WINDOW_SECS
+    pub junior_exit_window_secs: u32,
+    /// Taken from a junior claim and left with the junior lenders who stay
+    pub junior_exit_fee_bps: u16,
+    /// Longest governance pause of junior exits, never above MAX_JUNIOR_PAUSE_SECS
+    pub junior_max_pause_secs: u32,
+    /// Unpaused time required between two pauses: at least the longest wait plus MAX_JUNIOR_EXIT_WINDOW_SECS,
+    /// and at least the activation delay
+    pub junior_pause_gap_secs: u32,
+    /// Wait before new collateral, or any change that is not a pure tightening, takes effect
+    /// At least the longest junior wait plus the claim window, so juniors who disagree can leave first
+    pub activation_delay_secs: u32,
 }
 
 impl PoolParams {
@@ -50,9 +72,53 @@ impl PoolParams {
             && self.tier_discount_bps[0] == 0
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
-            && self.tier_min_healthy_secs.windows(2).all(|w| w[0] < w[1]);
+            && self.tier_min_healthy_secs.windows(2).all(|w| w[0] < w[1])
+            && (1..=BPS).contains(&(self.junior_target_bps as u128))
+            && self.junior_premium_bps <= 5_000
+            && self.junior_min_delay_secs <= self.junior_max_delay_secs
+            // A queue that waits at all waits for every exit, or small exits would round their way past it
+            && (self.junior_min_delay_secs > 0 || self.junior_max_delay_secs == 0)
+            && self.junior_max_delay_secs <= MAX_JUNIOR_DELAY_SECS
+            && (1..=BPS).contains(&(self.junior_delay_threshold_bps as u128))
+            && (MIN_JUNIOR_EXIT_WINDOW_SECS..=MAX_JUNIOR_EXIT_WINDOW_SECS).contains(&self.junior_exit_window_secs)
+            && self.junior_exit_fee_bps <= MAX_JUNIOR_EXIT_FEE_BPS
+            && self.junior_max_pause_secs <= MAX_JUNIOR_PAUSE_SECS
+            // Between two pauses any junior can queue, wait out the longest delay and use the longest claim window,
+            // and every waiting change gets its full activation delay, so pauses can never be chained past the cap
+            && self.junior_pause_gap_secs as u64 >= self.junior_max_delay_secs as u64 + MAX_JUNIOR_EXIT_WINDOW_SECS as u64
+            && self.junior_pause_gap_secs >= self.activation_delay_secs
+            && self.activation_delay_secs <= MAX_ACTIVATION_DELAY_SECS
+            // A junior who queues the moment a change is announced can wait out the longest delay and still claim
+            // before it applies, so applying it and pausing in one go never traps them; with no queue they leave at once
+            && (self.junior_max_delay_secs == 0
+                || self.activation_delay_secs as u64 >= self.junior_max_delay_secs as u64 + self.junior_exit_window_secs as u64);
         require!(ok, PluribusError::InvalidParams);
         Ok(())
+    }
+
+    /// True when `next` only raises shocks or adds scenarios, the one kind of change that applies at once
+    /// Anything else waits out the activation delay
+    pub fn only_tightens(&self, next: &PoolParams) -> bool {
+        let raised = |old: &[u16], new: &[u16]| old.iter().zip(new).all(|(o, n)| n >= o);
+        let rest_same = PoolParams {
+            num_scenarios: self.num_scenarios,
+            init_shock_bps: self.init_shock_bps,
+            maint_shock_bps: self.maint_shock_bps,
+            ..*next
+        } == *self;
+        rest_same
+            && next.num_scenarios >= self.num_scenarios
+            && raised(&self.init_shock_bps, &next.init_shock_bps)
+            && raised(&self.maint_shock_bps, &next.maint_shock_bps)
+    }
+
+    /// Wait for a junior exit queued when `queued` of `supply` junior shares are in the queue, this one included
+    pub fn junior_exit_delay(&self, queued: u64, supply: u64) -> i64 {
+        let (min, max) = (self.junior_min_delay_secs as u128, self.junior_max_delay_secs as u128);
+        let threshold = self.junior_delay_threshold_bps as u128;
+        // Rounded up, so even the smallest exit moves the wait
+        let share = if supply == 0 { threshold } else { (queued as u128 * BPS).div_ceil(supply as u128).min(threshold) };
+        (min + ((max - min) * share).div_ceil(threshold)) as i64
     }
 
     /// A liquidator's bonus must be smaller than the haircut on what is seized
@@ -78,6 +144,8 @@ pub struct Pool {
     pub share_mint: Pubkey,
     /// Share mint of the junior tranche, unset until the admin opens it
     pub junior_mint: Pubkey,
+    /// May only tighten risk: pause collateral and drop waiting changes, never pause junior exits
+    pub guardian: Pubkey,
     pub bump: u8,
     /// When set, prices come from admin-written demo accounts instead of Pyth
     pub demo_mode: bool,
@@ -102,6 +170,16 @@ pub struct Pool {
     /// One borrow index per loyalty tier, since a shared index cannot charge different rates
     pub borrow_index: [u128; TIERS],
     pub debt_shares: [u128; TIERS],
+    /// Junior shares waiting in the exit queue
+    pub junior_queued: u64,
+    /// The latest governance pause of junior exits, from start until end
+    pub junior_pause_start: i64,
+    pub junior_pause_end: i64,
+    /// Earliest start of the next pause, fixed when a pause starts or is lifted so a later cut to the gap cannot bring it forward
+    pub junior_next_pause_at: i64,
+    /// Looser parameters waiting out the activation delay, live from `pending_at`, which is 0 when nothing waits
+    pub pending_params: PoolParams,
+    pub pending_at: i64,
 }
 
 impl Pool {
@@ -138,10 +216,24 @@ impl Pool {
         Ok(if junior { junior_assets } else { all - junior_assets })
     }
 
+    /// Shares that `amount` of value buys in a tranche, rounded down
+    pub fn shares_for(&self, junior: bool, supply: u64, amount: u64) -> Result<u64> {
+        let assets = self.tranche_assets(junior)?;
+        to_u64(mul_div_wide(amount as u128, supply as u128 + VIRTUAL_SHARES, assets + VIRTUAL_SHARES)?)
+    }
+
+    /// What `shares` of a tranche are worth, rounded down
+    pub fn value_of(&self, junior: bool, supply: u64, shares: u64) -> Result<u64> {
+        require!(shares > 0 && shares <= supply, PluribusError::ZeroAmount);
+        let assets = self.tranche_assets(junior)?;
+        let with_virtual = mul_div_wide(shares as u128, assets + VIRTUAL_SHARES, supply as u128 + VIRTUAL_SHARES)?;
+        // After a loss the virtual assets would promise money the tranche does not hold, so the plain price caps the payout
+        to_u64(with_virtual.min(mul_div_wide(shares as u128, assets, supply as u128)?))
+    }
+
     /// Takes a lender's USDC into a tranche and returns the shares to mint
     pub fn lend(&mut self, junior: bool, supply: u64, amount: u64) -> Result<u64> {
-        let assets = self.tranche_assets(junior)?;
-        let shares = to_u64(mul_div_wide(amount as u128, supply as u128 + VIRTUAL_SHARES, assets + VIRTUAL_SHARES)?)?;
+        let shares = self.shares_for(junior, supply, amount)?;
         require!(shares > 0, PluribusError::ZeroAmount);
         self.cash = self.cash.checked_add(amount).ok_or(PluribusError::MathOverflow)?;
         if junior {
@@ -152,11 +244,7 @@ impl Pool {
 
     /// Redeems a tranche's shares and returns the USDC to pay out
     pub fn redeem(&mut self, junior: bool, supply: u64, shares: u64) -> Result<u64> {
-        require!(shares > 0 && shares <= supply, PluribusError::ZeroAmount);
-        let assets = self.tranche_assets(junior)?;
-        let with_virtual = mul_div_wide(shares as u128, assets + VIRTUAL_SHARES, supply as u128 + VIRTUAL_SHARES)?;
-        // After a loss the virtual assets would promise money the tranche does not hold, so the plain price caps the payout
-        let amount = to_u64(with_virtual.min(mul_div_wide(shares as u128, assets, supply as u128)?))?;
+        let amount = self.value_of(junior, supply, shares)?;
         require!(amount > 0, PluribusError::ZeroAmount);
         // Lent-out USDC cannot leave, and the rate kink is what pulls it back
         require!(amount <= self.cash, PluribusError::InsufficientLiquidity);
@@ -165,6 +253,49 @@ impl Pool {
             self.junior_assets = self.junior_assets.saturating_sub(amount);
         }
         Ok(amount)
+    }
+
+    /// Moves senior shares into the junior tranche at both share prices, with no USDC changing hands
+    /// Returns the value moved and the junior shares to mint
+    pub fn to_junior(&mut self, senior_supply: u64, shares: u64, junior_supply: u64) -> Result<(u64, u64)> {
+        let value = self.value_of(false, senior_supply, shares)?;
+        let minted = self.shares_for(true, junior_supply, value)?;
+        require!(value > 0 && minted > 0, PluribusError::ZeroAmount);
+        self.junior_assets = self.junior_assets.checked_add(value).ok_or(PluribusError::MathOverflow)?;
+        Ok((value, minted))
+    }
+
+    pub fn junior_exits_paused(&self, now: i64) -> bool {
+        now < self.junior_pause_end
+    }
+
+    /// When something set to take effect at `at` really does
+    /// A pause of junior exits that began before then moves it to a full activation delay after the pause ends,
+    /// so juniors always get that long, unpaused, to leave before new risk or looser settings apply
+    pub fn effective_at(&self, at: i64) -> i64 {
+        if self.junior_pause_end > self.junior_pause_start && self.junior_pause_start <= at {
+            at.max(self.junior_pause_end.saturating_add(self.params.activation_delay_secs as i64))
+        } else {
+            at
+        }
+    }
+
+    /// What a queued exit pays before the fee: never more than the shares were worth when queued,
+    /// so a queued exit earns nothing while it waits but still takes any loss
+    pub fn junior_exit_value(&self, junior_supply: u64, exit: &JuniorExit) -> Result<u64> {
+        Ok(self.value_of(true, junior_supply, exit.shares)?.min(exit.value))
+    }
+
+    /// Last moment a queued junior exit can be claimed
+    /// A pause that overlaps the claim window moves it to a full window after the pause ends
+    pub fn junior_exit_deadline(&self, exit: &JuniorExit) -> i64 {
+        let window = (exit.window_secs.max(self.params.junior_exit_window_secs)) as i64;
+        let end = exit.unlock_at.saturating_add(window);
+        if self.junior_pause_end > exit.unlock_at && self.junior_pause_start < end {
+            self.junior_pause_end.saturating_add(window)
+        } else {
+            end
+        }
     }
 
     pub fn utilization_bps(&self) -> Result<u128> {
@@ -214,12 +345,18 @@ impl Pool {
         if junior > 0 {
             // Junior lenders earn their own share of the interest plus a cut of the senior share
             let to_lenders = interest - to_reserves - to_protocol;
-            let own = mul_div_wide(to_lenders, junior, lenders)?;
-            // A thin junior tranche covers little, so it earns the fee only in proportion to how much of the target it fills
-            // Otherwise one unit of junior money would collect the whole fee from every senior lender
-            let filled = (junior * BPS).min(lenders * JUNIOR_TARGET_BPS);
-            let fee = mul_div_wide(to_lenders - own, self.params.protection_fee_bps as u128 * filled, BPS * lenders * JUNIOR_TARGET_BPS)?;
-            self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], own + fee);
+            // A thin junior tranche covers little, so it earns the premium and fee only in proportion to how much of the target it fills
+            // Otherwise one unit of junior money would collect them in full from every senior lender
+            let target = self.params.junior_target_bps as u128;
+            // Saturating, since nothing here may fail and these products are far past any real pool
+            let filled = junior.saturating_mul(BPS).min(lenders.saturating_mul(target));
+            let scale = BPS.saturating_mul(lenders).saturating_mul(target);
+            // The premium comes off the top of the lenders' interest, then juniors take their own share of the rest
+            let premium = mul_div_wide(interest, self.params.junior_premium_bps as u128 * filled, scale)?.min(to_lenders);
+            let rest = to_lenders - premium;
+            let own = mul_div_wide(rest, junior, lenders)?;
+            let fee = mul_div_wide(rest - own, self.params.protection_fee_bps as u128 * filled, scale)?;
+            self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], premium + own + fee);
         }
         self.last_accrual = now;
         Ok(())
@@ -309,6 +446,17 @@ pub struct AssetParams {
 }
 
 impl AssetParams {
+    /// True when `next` can only make the asset safer: a higher liquidation cost, a smaller cap or a pause
+    /// Oracle limits always wait, since a stricter one can stop liquidations as surely as a looser one adds risk
+    pub fn only_tightens(&self, next: &AssetParams) -> bool {
+        // A cap of zero means uncapped
+        let cap_ok = next.deposit_cap == self.deposit_cap || (next.deposit_cap != 0 && (self.deposit_cap == 0 || next.deposit_cap < self.deposit_cap));
+        let rest_same = AssetParams { liq_cost_bps: self.liq_cost_bps, deposit_cap: self.deposit_cap, paused: self.paused, ..*next } == *self;
+        rest_same && cap_ok && next.liq_cost_bps >= self.liq_cost_bps && (next.paused || !self.paused)
+    }
+}
+
+impl AssetParams {
     pub fn validate(&self) -> Result<()> {
         require!(
             (self.liq_cost_bps as u128) < BPS
@@ -332,6 +480,11 @@ pub struct Asset {
     pub decimals: u8,
     pub total_deposited: u64,
     pub params: AssetParams,
+    /// Backs new debt only from here, so juniors can leave before a new listing adds risk
+    pub active_at: i64,
+    /// Looser parameters waiting out the activation delay, live from `pending_at`, which is 0 when nothing waits
+    pub pending: AssetParams,
+    pub pending_at: i64,
 }
 
 /// A whitelisted Orca Whirlpool whose positions count as collateral, always quoted in USDC
@@ -343,6 +496,28 @@ pub struct LpMarket {
     pub bump: u8,
     pub liq_cost_bps: u16,
     pub paused: bool,
+    /// Backs new debt only from here, so juniors can leave before a new listing adds risk
+    pub active_at: i64,
+    /// A lower liquidation cost or an unpause waiting out the activation delay, live from `pending_at` when that is not 0
+    pub pending_liq_cost_bps: u16,
+    pub pending_paused: bool,
+    pub pending_at: i64,
+}
+
+/// A junior lender's shares in the exit queue, held in the pool's escrow until claimed or cancelled
+/// They stay junior money until then: they keep earning and keep taking losses
+#[account]
+#[derive(InitSpace)]
+pub struct JuniorExit {
+    pub owner: Pubkey,
+    pub shares: u64,
+    /// What the shares were worth when queued, the most the exit can pay
+    pub value: u64,
+    pub unlock_at: i64,
+    /// Terms fixed when the exit was queued, so later parameter changes can only improve them
+    pub window_secs: u32,
+    pub fee_bps: u16,
+    pub bump: u8,
 }
 
 /// Admin-written price that replaces Pyth while `Pool::demo_mode` is on

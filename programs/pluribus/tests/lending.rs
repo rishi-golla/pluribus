@@ -61,7 +61,7 @@ fn deposit(env: &mut Env, who: &Keypair, share_mint: &Pubkey, amount: u64) -> Tx
 }
 
 fn redeem(env: &mut Env, who: &Keypair, share_mint: &Pubkey, shares: u64) -> TxResult {
-    env.send(&[env.tranche_ix(&who.pubkey(), share_mint, shares, false)], &[who])
+    env.send(&env.redeem_ixs(&who.pubkey(), share_mint, shares), &[who])
 }
 
 fn top_up(env: &mut Env, who: &Pubkey, amount: u64) {
@@ -381,10 +381,14 @@ fn dust_deposits_mint_nothing_for_free_at_any_share_price() {
 // Yield without risk
 
 #[test]
-#[ignore = "a junior lender redeems, liquidates and deposits again in one transaction, so a 902 USDC loss lands on senior lenders while 1000 USDC of junior money stands aside"]
 fn junior_lenders_cannot_step_aside_while_a_loss_is_booked() {
-    let (mut env, _senior, junior) = two_tranches(9_000 * USDC, 1_000 * USDC);
-    let (sol, junior_mint) = (env.sol, env.junior_mint());
+    // Six-day junior exits: redeeming, liquidating and depositing again in one transaction no longer works
+    let mut env = Env::timed();
+    let junior_mint = open_junior(&mut env);
+    let (usdc, senior_mint, sol) = (env.usdc, env.share_mint, env.sol);
+    let (senior, junior) = (lender(&mut env, 9_000 * USDC), lender(&mut env, 1_000 * USDC));
+    expect_ok(deposit(&mut env, &senior, &senior_mint, 9_000 * USDC));
+    expect_ok(deposit(&mut env, &junior, &junior_mint, 1_000 * USDC));
     let j = junior.pubkey();
     let user = borrower(&mut env, 10 * SOL, None);
     env.set_price(&sol, 10 * USDC);
@@ -392,18 +396,29 @@ fn junior_lenders_cannot_step_aside_while_a_loss_is_booked() {
     // Float to pay the liquidation with
     top_up(&mut env, &j, 100 * USDC);
     let before = env.pool_state();
+    let held = env.balance(&junior_mint, &j);
 
+    expect_err(env.send(&[env.tranche_ix(&j, &junior_mint, held, false)], &[&junior]), PluribusError::JuniorExitQueue);
     let steps = [
-        env.tranche_ix(&j, &junior_mint, env.balance(&junior_mint, &j), false),
+        env.request_exit_ix(&j, held),
+        env.claim_exit_ix(&j, &usdc),
         env.liquidate_ix(&j, &user.pubkey(), &sol, u64::MAX),
         env.tranche_ix(&j, &junior_mint, 1_000 * USDC, true),
     ];
-    expect_ok(env.send(&steps, &[&junior]));
+    expect_err(env.send(&steps, &[&junior]), PluribusError::ExitNotReady);
+
+    // Queueing just ahead of the loss leaves the queued shares carrying it
+    expect_ok(env.send(&[env.request_exit_ix(&j, held), env.liquidate_ix(&j, &user.pubkey(), &sol, u64::MAX)], &[&junior]));
     let after = env.pool_state();
     let loss = after.bad_debt;
     assert!(loss > 0 && loss < before.junior_assets);
     let senior = (before.tranche_assets(false).unwrap(), after.tranche_assets(false).unwrap());
-    assert!(senior.1 + 2 >= senior.0, "loss {loss}: senior assets went from {} to {} and junior assets from {} to {}", senior.0, senior.1, before.junior_assets, after.junior_assets);
+    assert!(senior.1 + 2 >= senior.0, "loss {loss}: senior assets went from {} to {}", senior.0, senior.1);
+    env.warp(6 * DAY);
+    let cash = env.balance(&usdc, &j);
+    expect_ok(env.send(&[env.claim_exit_ix(&j, &usdc)], &[&junior]));
+    let paid = env.balance(&usdc, &j) - cash;
+    assert!(paid + loss <= 1_000 * USDC, "paid {paid} after a {loss} loss");
 }
 
 #[test]

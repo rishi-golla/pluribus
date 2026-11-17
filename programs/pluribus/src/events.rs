@@ -68,6 +68,68 @@ pub struct LenderMoved {
     pub junior: bool,
 }
 
+/// Senior shares turned into junior shares, `value` USDC moving between the tranches
+#[event]
+pub struct TrancheConverted {
+    pub lender: Pubkey,
+    pub shares: u64,
+    pub value: u64,
+    pub minted: u64,
+}
+
+#[event]
+pub struct JuniorExitRequested {
+    pub owner: Pubkey,
+    pub shares: u64,
+    /// The most the exit can pay, before its fee
+    pub value: u64,
+    pub unlock_at: i64,
+    pub deadline: i64,
+}
+
+/// `paid` is USDC, or its worth in senior shares when `in_usdc` is false, after the `fee` left with junior lenders
+#[event]
+pub struct JuniorExitClaimed {
+    pub owner: Pubkey,
+    pub shares: u64,
+    pub value: u64,
+    pub fee: u64,
+    pub paid: u64,
+    pub in_usdc: bool,
+}
+
+/// `returned` of the queued `shares` went back to the owner, the rest were burned with the yield earned while queued
+#[event]
+pub struct JuniorExitCancelled {
+    pub owner: Pubkey,
+    pub shares: u64,
+    pub returned: u64,
+    pub lapsed: bool,
+}
+
+/// Junior exits are frozen until `until`, which is the present when a pause is lifted
+#[event]
+pub struct JuniorExitsPaused {
+    pub until: i64,
+}
+
+/// A change to the pool, an asset or an LP market, named by `target`, waits until `effective_at`
+#[event]
+pub struct ChangeQueued {
+    pub target: Pubkey,
+    pub effective_at: i64,
+}
+
+#[event]
+pub struct ChangeApplied {
+    pub target: Pubkey,
+}
+
+#[event]
+pub struct ChangeCancelled {
+    pub target: Pubkey,
+}
+
 #[event]
 pub struct DemoPriceSet {
     pub mint: Pubkey,

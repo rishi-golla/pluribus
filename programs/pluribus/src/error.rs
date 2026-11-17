@@ -48,4 +48,26 @@ pub enum PluribusError {
     DemoDisabled,
     #[msg("Only the program's upgrade authority can initialize the pool")]
     NotUpgradeAuthority,
+    #[msg("Junior shares leave through the exit queue")]
+    JuniorExitQueue,
+    #[msg("Junior exits are paused by governance")]
+    ExitsPaused,
+    #[msg("The exit is still in its waiting period")]
+    ExitNotReady,
+    #[msg("The exit lapsed: its claim window has passed")]
+    ExitLapsed,
+    #[msg("Only the owner can cancel an exit before it lapses")]
+    ExitNotLapsed,
+    #[msg("A pause must fit the cap and follow the last one by the required gap")]
+    PauseNotAllowed,
+    #[msg("No change is waiting")]
+    NoPendingChange,
+    #[msg("The change is still waiting out its activation delay")]
+    ChangeNotDue,
+    #[msg("Only the admin or the guardian can do this")]
+    NotGuardian,
+    #[msg("Share tokens of this pool can never be collateral")]
+    ShareMintNotCollateral,
+    #[msg("This collateral is still in its activation delay")]
+    NotYetActive,
 }

@@ -114,7 +114,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                     _ => read_price(pool, &asset, next()?, now)?,
                 };
                 let valuer = Valuer::Token { amount: pos.amount, decimals: asset.decimals };
-                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, asset.params.paused)
+                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, asset.params.paused || now < pool.effective_at(asset.active_at))
             }
             KIND_LP => {
                 let market: LpMarket = load(next()?)?;
@@ -132,7 +132,8 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 h.price[i] = read_price(pool, &asset, next()?, now)?;
                 let (lower, upper) = range_sqrt_prices(orca.tick_lower, orca.tick_upper)?;
                 let valuer = Valuer::Lp { liquidity: orca.liquidity, lower, upper, decimals: asset.decimals };
-                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused)
+                let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at);
+                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting)
             }
             _ => continue,
         };
@@ -147,7 +148,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 h.pos_maint[i][s] = maint;
                 h.maint[s] += maint;
             }
-            // Paused collateral stops backing new debt but keeps protecting what is already drawn
+            // Paused collateral, and a listing still in its activation delay, backs no new debt but keeps protecting what is already drawn
             if want_init && !paused {
                 let shocked = cut(h.price[i], params.shock(true, s, group))?;
                 h.init[s] += cut(valuer.at(shocked, params.shock(true, s, pool.usdc_group), &mut roots)?, cost)?;

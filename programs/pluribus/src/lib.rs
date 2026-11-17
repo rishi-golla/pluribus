@@ -15,7 +15,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("6axStTWfYe5AGyVJHEAyxbtk7axbPu514xvZ1d6NKSgT");
+declare_id!("6Jipm4bxEr5mrvfQn6na12EkB1ALSyh7nk7hwybpQsny");
 
 #[program]
 pub mod pluribus {
@@ -127,5 +127,57 @@ pub mod pluribus {
 
     pub fn health(ctx: Context<ViewHealth>) -> Result<HealthView> {
         keeper::handle_health(ctx)
+    }
+
+    pub fn convert_to_junior(ctx: Context<ConvertToJunior>, shares: u64) -> Result<()> {
+        junior::handle_convert_to_junior(ctx, shares)
+    }
+
+    pub fn request_junior_exit(ctx: Context<RequestJuniorExit>, shares: u64) -> Result<()> {
+        junior::handle_request_junior_exit(ctx, shares)
+    }
+
+    pub fn claim_junior_exit(ctx: Context<ClaimJuniorExit>) -> Result<()> {
+        junior::handle_claim_junior_exit(ctx)
+    }
+
+    pub fn cancel_junior_exit(ctx: Context<CancelJuniorExit>) -> Result<()> {
+        junior::handle_cancel_junior_exit(ctx)
+    }
+
+    pub fn pause_junior_exits(ctx: Context<AdminPool>, duration_secs: u32) -> Result<()> {
+        admin::handle_pause_junior_exits(ctx, duration_secs)
+    }
+
+    pub fn unpause_junior_exits(ctx: Context<AdminPool>) -> Result<()> {
+        admin::handle_unpause_junior_exits(ctx)
+    }
+
+    pub fn apply_params(ctx: Context<ApplyParams>) -> Result<()> {
+        admin::handle_apply_params(ctx)
+    }
+
+    pub fn apply_asset(ctx: Context<ApplyAsset>) -> Result<()> {
+        admin::handle_apply_asset(ctx)
+    }
+
+    pub fn apply_lp_market(ctx: Context<ApplyLpMarket>) -> Result<()> {
+        admin::handle_apply_lp_market(ctx)
+    }
+
+    pub fn set_guardian(ctx: Context<AdminPool>, guardian: Pubkey) -> Result<()> {
+        admin::handle_set_guardian(ctx, guardian)
+    }
+
+    pub fn cancel_pending_params(ctx: Context<Guard>) -> Result<()> {
+        admin::handle_cancel_pending_params(ctx)
+    }
+
+    pub fn guard_asset(ctx: Context<GuardAsset>) -> Result<()> {
+        admin::handle_guard_asset(ctx)
+    }
+
+    pub fn guard_lp_market(ctx: Context<GuardLpMarket>) -> Result<()> {
+        admin::handle_guard_lp_market(ctx)
     }
 }
