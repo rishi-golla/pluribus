@@ -79,8 +79,9 @@ impl PoolParams {
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
             && self.tier_min_healthy_secs.windows(2).all(|w| w[0] < w[1])
-            && (1..=BPS).contains(&(self.junior_target_bps as u128))
-            && self.junior_premium_bps as u128 <= BPS
+            // A tiny target with a large premium would hand most of the yield to a sliver of junior money
+            && (100..=BPS).contains(&(self.junior_target_bps as u128))
+            && self.junior_premium_bps <= 5_000
             && self.junior_min_delay_secs <= self.junior_max_delay_secs
             // A queue that waits at all waits for every exit, or small exits would round their way past it
             && (self.junior_min_delay_secs > 0 || self.junior_max_delay_secs == 0)
@@ -189,13 +190,11 @@ pub struct Pool {
     /// Lenders' interest not yet paid out: it collects here and is paid out evenly over the next epoch
     /// It belongs to no lender until paid, so it takes losses first
     pub yield_buffer: u64,
-    /// The current payout epoch and what each tranche gets over it, fixed when it opened
+    /// The current payout epoch and the budget it pays out evenly, fixed when it opened
     pub epoch_start: i64,
     pub epoch_end: i64,
-    pub epoch_senior_budget: u64,
-    pub epoch_junior_budget: u64,
-    pub epoch_senior_paid: u64,
-    pub epoch_junior_paid: u64,
+    pub epoch_budget: u64,
+    pub epoch_paid: u64,
 }
 
 impl Pool {
@@ -370,9 +369,9 @@ impl Pool {
                 let to_junior = mul_div_wide(to_lenders, junior, senior + junior)?;
                 self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], to_junior);
             }
-            self.release_buffer()?;
+            self.drain(now, weights)?;
         } else {
-            self.collect(to_lenders, now)?;
+            self.collect(to_lenders, now, weights)?;
         }
         self.last_accrual = now;
         Ok(())
@@ -381,35 +380,43 @@ impl Pool {
     /// Puts the lenders' part of the interest in the buffer and pays out what the epochs owe up to `now`
     /// When an epoch boundary passed since the last accrual, only the interest earned before it funds the new epoch's budget,
     /// the rest arrives after it opens, so a late accrual never pays out a week's interest in the week it was earned
-    fn collect(&mut self, to_lenders: u128, now: i64) -> Result<()> {
+    fn collect(&mut self, to_lenders: u128, now: i64, weights: (u128, u128)) -> Result<()> {
         if now < self.epoch_end {
             self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], to_lenders);
-            return self.pay_epoch(now);
+            return self.pay_epoch(now, weights);
         }
         let len = self.params.epoch_secs as i64;
-        let start = EPOCH_ANCHOR + (now - EPOCH_ANCHOR).div_euclid(len) * len;
+        let aligned = EPOCH_ANCHOR + (now - EPOCH_ANCHOR).div_euclid(len) * len;
+        // After a change of length the aligned start can fall inside the old epoch, which is never paid twice
+        let start = aligned.max(self.epoch_end);
         // Interest accrues evenly over the gap, so it splits at the boundary by time
         let gap = (now - self.last_accrual).max(1);
         let after = (now - start.max(self.last_accrual)).clamp(0, gap);
         let later = mul_div_wide(to_lenders, after as u128, gap as u128)?;
         self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], to_lenders - later);
         let end = self.epoch_end;
-        self.pay_epoch(end)?;
-        self.open_epoch(start)?;
+        self.pay_epoch(end, weights)?;
+        let budget = to_u64(mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?)?;
+        self.open_epoch(start, aligned + len, budget);
         self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], later);
-        self.pay_epoch(now)
+        self.pay_epoch(now, weights)
     }
 
-    /// Pays out whatever the buffer still holds from a time with epochs, split by the tranches' weights now
-    fn release_buffer(&mut self) -> Result<()> {
-        let (senior, junior) = self.split_weights()?;
-        // Nobody to pay yet: it waits in the buffer
-        if self.yield_buffer > 0 && senior + junior > 0 {
-            let all = self.yield_buffer;
-            let to_junior = to_u64(mul_div_wide(all as u128, junior, senior + junior)?)?;
-            self.pay(all - to_junior, to_junior);
+    /// With epochs off, a buffer left from a time with epochs keeps paying on its schedule:
+    /// the open epoch runs to its end, then whatever remains is paid over one more epoch of the same length,
+    /// so switching epochs off never pays out early
+    fn drain(&mut self, now: i64, weights: (u128, u128)) -> Result<()> {
+        if self.yield_buffer == 0 {
+            return Ok(());
         }
-        Ok(())
+        if now >= self.epoch_end {
+            let end = self.epoch_end;
+            self.pay_epoch(end, weights)?;
+            let len = (end - self.epoch_start).max(1);
+            let rest = self.yield_buffer;
+            self.open_epoch(end, end + len, rest);
+        }
+        self.pay_epoch(now, weights)
     }
 
     /// How a payout splits between the tranches, as senior and junior weights
@@ -436,53 +443,33 @@ impl Pool {
         self.junior_assets = self.junior_assets.saturating_add(junior);
     }
 
-    /// Pays the epoch's budgets out evenly over its length, up to `until`
-    fn pay_epoch(&mut self, until: i64) -> Result<()> {
+    /// Pays the epoch's budget out evenly over its length, up to `until`
+    /// Each slice splits by the weights over the time it covers, the same ones every accrual takes before anything moves,
+    /// so a tranche's share follows how long money sat in it and a deposit around the epoch's opening gains nothing
+    fn pay_epoch(&mut self, until: i64, weights: (u128, u128)) -> Result<()> {
         let span = (self.epoch_end - self.epoch_start).max(1) as u128;
         let elapsed = (until - self.epoch_start).clamp(0, span as i64) as u128;
-        let due_senior = to_u64(mul_div_floor(self.epoch_senior_budget as u128, elapsed, span)?)?;
-        let due_junior = to_u64(mul_div_floor(self.epoch_junior_budget as u128, elapsed, span)?)?;
-        let (mut senior, mut junior) = (due_senior.saturating_sub(self.epoch_senior_paid), due_junior.saturating_sub(self.epoch_junior_paid));
-        // A loss can leave the buffer short of the budget, and then what it holds is shared in the same ratio
-        let owed = senior as u128 + junior as u128;
-        let held = self.yield_buffer as u128;
-        if owed > held {
-            senior = to_u64(mul_div_floor(senior as u128, held, owed)?)?;
-            junior = to_u64(mul_div_floor(junior as u128, held, owed)?)?;
+        let due = to_u64(mul_div_floor(self.epoch_budget as u128, elapsed, span)?)?;
+        // A loss can leave the buffer short of the budget, and then it pays what it holds
+        let amount = due.saturating_sub(self.epoch_paid).min(self.yield_buffer);
+        self.epoch_paid = self.epoch_paid.max(due);
+        let (senior, junior) = weights;
+        // With nobody to pay the slice stays in the buffer for the next epoch
+        if amount > 0 && senior + junior > 0 {
+            let to_junior = to_u64(mul_div_wide(amount as u128, junior, senior + junior)?)?;
+            self.pay(amount - to_junior, to_junior);
         }
-        // An emptied or wiped-out junior tranche covers nobody, so the rest of its budget goes to seniors
-        if self.junior_assets == 0 {
-            senior += junior;
-            junior = 0;
-        }
-        self.pay(senior, junior);
-        self.epoch_senior_paid = due_senior;
-        self.epoch_junior_paid = due_junior;
         Ok(())
     }
 
-    /// Opens the epoch starting at `start`, aligned to Fridays at 00:00 UTC
-    /// Its budget is the buffer less the margin, which carries into the next epoch, split by the tranches' sizes now
-    /// The budget is fixed for the epoch, so the yield a lender sees moves only as money enters or leaves its tranche
-    fn open_epoch(&mut self, start: i64) -> Result<()> {
+    /// Opens an epoch that pays `budget` from the buffer evenly from `start` to `end`
+    /// The budget is fixed for the epoch, so the yield a lender sees moves only as money enters or leaves the pool
+    fn open_epoch(&mut self, start: i64, end: i64, budget: u64) {
         self.epoch_start = start;
-        self.epoch_end = start + self.params.epoch_secs as i64;
-        let budget = to_u64(mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?)?;
-        let (senior, junior) = self.split_weights()?;
-        let to_junior = if senior + junior == 0 { 0 } else { to_u64(mul_div_wide(budget as u128, junior, senior + junior)?)? };
-        // Nobody to pay: the whole buffer carries over
-        self.epoch_senior_budget = if senior + junior == 0 { 0 } else { budget - to_junior };
-        self.epoch_junior_budget = to_junior;
-        self.epoch_senior_paid = 0;
-        self.epoch_junior_paid = 0;
-        emit!(EpochOpened {
-            start: self.epoch_start,
-            end: self.epoch_end,
-            senior_budget: self.epoch_senior_budget,
-            junior_budget: self.epoch_junior_budget,
-            buffer: self.yield_buffer,
-        });
-        Ok(())
+        self.epoch_end = end;
+        self.epoch_budget = budget;
+        self.epoch_paid = 0;
+        emit!(EpochOpened { start, end, budget, buffer: self.yield_buffer });
     }
 
     /// Adds a scaled amount to a balance, keeping the part under one base unit for the next accrual

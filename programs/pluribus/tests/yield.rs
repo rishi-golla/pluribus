@@ -91,43 +91,69 @@ fn interest_waits_in_the_buffer_and_each_friday_a_fixed_budget_is_paid_out_over_
     assert_eq!((friday - EPOCH_ANCHOR).rem_euclid(WEEK), 0);
     close(tranches(&env).0, start.0, 3);
     close(tranches(&env).1, start.1, 3);
-    let budget = (pool.epoch_senior_budget + pool.epoch_junior_budget) as u128;
+    let budget = pool.epoch_budget as u128;
     // The budget is the buffer less the 10% margin
     close(budget, pool.yield_buffer as u128 * 9 / 10, 1);
-    // A junior dollar earns the senior rate times 1 + 15% x 9000 / 1000
-    let rate = |budget: u64, size: u128| budget as f64 / size as f64;
-    let ratio = rate(pool.epoch_junior_budget, start.1) / rate(pool.epoch_senior_budget, start.0);
-    assert!((ratio - 2.35).abs() < 1e-3, "junior to senior rate {ratio}");
 
-    // Half way through, half of each budget has been paid
-    let (senior_budget, junior_budget) = (pool.epoch_senior_budget as u128, pool.epoch_junior_budget as u128);
+    // Half way through, half of the budget has been paid
     until(&mut env, friday + WEEK / 2);
-    close(tranches(&env).0, start.0 + senior_budget / 2, 3);
-    close(tranches(&env).1, start.1 + junior_budget / 2, 3);
+    let mid = tranches(&env);
+    close((mid.0 + mid.1) - (start.0 + start.1), budget / 2, 3);
+    // A junior dollar earns the senior rate times 1 + 15% x 9000 / 1000
+    let ratio = ((mid.1 - start.1) as f64 / start.1 as f64) / ((mid.0 - start.0) as f64 / start.0 as f64);
+    assert!((ratio - 2.35).abs() < 2e-3, "junior to senior rate {ratio}");
 
     // By the next Friday all of it, and the margin plus the new week's interest fund the next budget
     until(&mut env, friday + WEEK);
-    close(tranches(&env).0, start.0 + senior_budget, 4);
-    close(tranches(&env).1, start.1 + junior_budget, 4);
+    let end = tranches(&env);
+    close((end.0 + end.1) - (start.0 + start.1), budget, 4);
     let next = env.pool_state();
     assert_eq!(next.epoch_start, friday + WEEK);
-    close((next.epoch_senior_budget + next.epoch_junior_budget) as u128, next.yield_buffer as u128 * 9 / 10, 1);
+    close(next.epoch_budget as u128, next.yield_buffer as u128 * 9 / 10, 1);
     assert!(next.yield_buffer as u128 > budget / 9, "the margin carried over");
 }
 
 #[test]
-fn money_moving_mid_week_changes_nobodys_budget_only_the_rate_it_pays() {
+fn money_moving_mid_week_leaves_the_budget_alone_and_lowers_the_rate_it_pays() {
     let mut env = pool_with_both_tranches(0);
     let friday = next_friday(&env);
     until(&mut env, friday);
-    let pool = env.pool_state();
-    let budgets = (pool.epoch_senior_budget, pool.epoch_junior_budget);
-    assert!(budgets.0 > 0 && budgets.1 > 0);
+    let budget = env.pool_state().epoch_budget;
+    assert!(budget > 0);
     until(&mut env, friday + DAY);
-    // A new senior lender joins: the senior budget stays put, so it is now shared by twice the money
+    // A new senior lender joins: the week's dollars stay put, so they are now shared by more money
     lend(&mut env, 9_000 * USDC, false);
-    let pool = env.pool_state();
-    assert_eq!((pool.epoch_senior_budget, pool.epoch_junior_budget), budgets);
+    assert_eq!(env.pool_state().epoch_budget, budget);
+}
+
+#[test]
+fn a_deposit_held_across_the_friday_opening_earns_only_for_the_seconds_it_sat_there() {
+    // The same week with and without a million-dollar senior deposit made a second before Friday and taken out a second after
+    let run = |whale: bool| {
+        let mut env = pool_with_both_tranches(0);
+        let friday = next_friday(&env);
+        until(&mut env, friday - 1);
+        let start = tranches(&env);
+        if whale {
+            let big = lend(&mut env, 1_000_000 * USDC, false);
+            until(&mut env, friday + 1);
+            let shares = env.balance(&env.share_mint.clone(), &big.pubkey());
+            expect_ok(env.send(&[env.lend_withdraw_ix(&big.pubkey(), shares)], &[&big]));
+            let usdc = env.usdc;
+            (env.balance(&usdc, &big.pubkey()) as i128 - 1_000_000 * USDC as i128, start, friday, env)
+        } else {
+            (0, start, friday, env)
+        }
+    };
+    let (_, honest_start, friday, mut honest) = run(false);
+    let (whale_gain, attacked_start, _, mut attacked) = run(true);
+    until(&mut honest, friday + WEEK - 1);
+    until(&mut attacked, friday + WEEK - 1);
+    let gain = |env: &Env, start: (u128, u128)| (tranches(env).1 - start.1) as f64;
+    // Juniors keep their share of the week, and the deposit made next to nothing
+    let (honest_junior, attacked_junior) = (gain(&honest, honest_start), gain(&attacked, attacked_start));
+    assert!((attacked_junior / honest_junior - 1.0).abs() < 0.01, "juniors got {attacked_junior} instead of {honest_junior}");
+    assert!(whale_gain <= 1_000, "the deposit made {whale_gain}");
 }
 
 #[test]
@@ -190,9 +216,9 @@ fn after_skipped_weeks_the_current_epoch_opens_with_everything_in_the_buffer() {
     until(&mut env, friday + 3 * WEEK + 2 * DAY);
     let pool = env.pool_state();
     assert_eq!(pool.epoch_start, friday + 3 * WEEK);
-    let budget = (pool.epoch_senior_budget + pool.epoch_junior_budget) as u128;
+    let budget = pool.epoch_budget as u128;
     // Two of seven days of the budget are already paid
-    let paid = (pool.epoch_senior_paid + pool.epoch_junior_paid) as u128;
+    let paid = pool.epoch_paid as u128;
     close(paid, budget * 2 / 7, 2);
     // The budget is 90% of the interest earned before this Friday: about 27.7 of the 29.7 days since the pool opened,
     // while the last two days' interest arrived after the epoch opened and waits for the next one
@@ -202,7 +228,7 @@ fn after_skipped_weeks_the_current_epoch_opens_with_everything_in_the_buffer() {
 }
 
 #[test]
-fn once_the_last_junior_leaves_the_rest_of_the_junior_budget_goes_to_seniors() {
+fn once_the_last_junior_leaves_the_rest_of_the_week_goes_to_seniors_and_a_newcomer_gets_only_its_share() {
     let mut env = weekly(0);
     open_junior(&mut env);
     lend(&mut env, 9_000 * USDC, false);
@@ -211,33 +237,81 @@ fn once_the_last_junior_leaves_the_rest_of_the_junior_budget_goes_to_seniors() {
     let (j, usdc, junior_mint) = (junior.pubkey(), env.usdc, env.junior_mint());
     let friday = next_friday(&env);
     until(&mut env, friday);
-    let budgets = (env.pool_state().epoch_senior_budget as u128, env.pool_state().epoch_junior_budget as u128);
-    assert!(budgets.1 > 0);
+    let budget = env.pool_state().epoch_budget as u128;
     // No exit delay in these tests, so the junior leaves at once
     expect_ok(env.send(&[env.request_exit_ix(&j, env.balance(&junior_mint, &j)), env.claim_exit_ix(&j, &usdc)], &[&junior]));
     assert_eq!(env.pool_state().junior_assets, 0);
     let senior_start = tranches(&env).0;
-    until(&mut env, friday + WEEK - 1);
-    // Nearly all of both budgets reach seniors, and no junior assets build up with no shares behind them
+    until(&mut env, friday + 3 * DAY);
+    // Three days of the budget reach seniors, and no junior assets build up with no shares behind them
     assert_eq!(env.pool_state().junior_assets, 0);
-    let gained = tranches(&env).0 - senior_start;
-    assert!(gained + 3 >= (budgets.0 + budgets.1) * (WEEK as u128 - 1) / WEEK as u128, "seniors gained {gained} of {budgets:?}");
+    close(tranches(&env).0 - senior_start, budget * 3 / 7, 3);
+    // A dollar of new junior money earns about what its size and the premium say, not the junior part of the week
+    let newcomer = lend(&mut env, USDC, true);
+    until(&mut env, friday + WEEK - 1);
+    let worth = env.pool_state().value_of(true, 1_000_000, env.balance(&junior_mint, &newcomer.pubkey())).unwrap_or(0);
+    assert!(worth < USDC + USDC / 100, "a dollar grew to {worth} in four days");
 }
 
 #[test]
-fn turning_epochs_off_pays_the_whole_buffer_out_at_the_next_accrual() {
+fn turning_epochs_off_keeps_paying_the_buffer_on_its_schedule() {
     let mut env = pool_with_both_tranches(1_000);
     let friday = next_friday(&env);
     until(&mut env, friday + DAY);
-    let held = env.pool_state().yield_buffer;
+    let pool = env.pool_state();
+    let (held, end) = (pool.yield_buffer, pool.epoch_end);
     assert!(held > 0);
-    let before = env.pool_state().lender_assets().unwrap();
     let admin = env.admin.insecure_clone();
     // No activation delay in these tests, so this applies at once
-    let off = PoolParams { epoch_secs: 0, ..env.pool_state().params };
+    let off = PoolParams { epoch_secs: 0, ..pool.params };
     expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), off)], &[&admin]));
+    // A minute later almost all of it is still waiting, so nobody can grab the buffer by being there at the switch
     until(&mut env, friday + DAY + 60);
+    assert!(env.pool_state().yield_buffer > held * 8 / 10);
+    // The open week runs to its end, then the rest pays out over one more week
+    until(&mut env, end + WEEK / 2);
+    let left = env.pool_state().yield_buffer;
+    assert!(left > 0 && left < held / 2);
+    until(&mut env, end + WEEK);
+    assert!(env.pool_state().yield_buffer <= 2);
+}
+
+#[test]
+fn turning_epochs_off_and_on_within_a_week_continues_the_same_week() {
+    let mut env = pool_with_both_tranches(1_000);
+    let friday = next_friday(&env);
+    until(&mut env, friday + DAY);
+    let budget = env.pool_state().epoch_budget;
+    let admin = env.admin.insecure_clone();
+    let params = env.pool_state().params;
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), PoolParams { epoch_secs: 0, ..params })], &[&admin]));
+    until(&mut env, friday + 2 * DAY);
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin]));
+    until(&mut env, friday + WEEK);
+    // The week's budget was paid once, and the next one is funded as usual
     let pool = env.pool_state();
-    assert_eq!(pool.yield_buffer, 0);
-    assert!(pool.lender_assets().unwrap() >= before + held as u128);
+    assert_eq!(pool.epoch_start, friday + WEEK);
+    assert!(pool.epoch_budget as u128 * 10 > budget as u128 * 8, "next budget {} after {budget}", pool.epoch_budget);
+}
+
+#[test]
+fn a_longer_epoch_starts_where_the_last_one_ended_and_never_pays_backdated_time() {
+    let day = |env: &mut Env, epoch: i64| {
+        let admin = env.admin.insecure_clone();
+        let params = PoolParams { epoch_secs: epoch as u32, ..env.pool_state().params };
+        expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin]));
+    };
+    let mut env = pool_with_both_tranches(0);
+    day(&mut env, DAY);
+    let friday = next_friday(&env);
+    // Daily epochs until Tuesday noon, then weekly
+    until(&mut env, friday + 4 * DAY + DAY / 2);
+    day(&mut env, WEEK);
+    let tuesday_end = env.pool_state().epoch_end;
+    assert_eq!(tuesday_end, friday + 5 * DAY);
+    until(&mut env, tuesday_end);
+    let pool = env.pool_state();
+    // The new epoch runs from where the daily one ended to the next Friday, and pays its first second's worth only
+    assert_eq!((pool.epoch_start, pool.epoch_end), (tuesday_end, friday + WEEK));
+    assert!(pool.epoch_paid <= 1, "paid {} of {} at once", pool.epoch_paid, pool.epoch_budget);
 }

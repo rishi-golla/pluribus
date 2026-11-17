@@ -92,10 +92,8 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         yield_buffer: 0,
         epoch_start: Clock::get()?.unix_timestamp,
         epoch_end: Clock::get()?.unix_timestamp,
-        epoch_senior_budget: 0,
-        epoch_junior_budget: 0,
-        epoch_senior_paid: 0,
-        epoch_junior_paid: 0,
+        epoch_budget: 0,
+        epoch_paid: 0,
     });
     Ok(())
 }

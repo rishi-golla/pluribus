@@ -122,13 +122,12 @@ pub struct ChangeQueued {
     pub effective_at: i64,
 }
 
-/// A payout epoch opened: `senior_budget` and `junior_budget` are paid out evenly until `end`, out of `buffer`
+/// A payout epoch opened: `budget` is paid out of `buffer` evenly until `end`, split between the tranches by their weights
 #[event]
 pub struct EpochOpened {
     pub start: i64,
     pub end: i64,
-    pub senior_budget: u64,
-    pub junior_budget: u64,
+    pub budget: u64,
     pub buffer: u64,
 }
 
