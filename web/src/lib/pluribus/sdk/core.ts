@@ -197,11 +197,11 @@ export function healthAccounts(
 export type LpLocation = { market: PublicKey; position: PublicKey; pool: PublicKey; dexProgram: PublicKey; baseMint: PublicKey };
 
 // Finds each LP position of `credit` on Orca or Raydium, keyed by NFT mint
-// With only Orca markets listed every position is in the main whirlpool, so nothing is fetched
+// With only the main whirlpool listed every position is in it, so nothing is fetched
 export async function locateLps(connection: Connection, d: Deployment, credit: CreditAccount): Promise<Map<string, LpLocation>> {
   const lps = credit.positions.filter((p) => p.kind === KIND_LP);
   const markets = [{ pool: d.whirlpool, dexProgram: WHIRLPOOL_PROGRAM_ID.toBase58(), baseMint: d.solMint }, ...(d.lpMarkets ?? [])];
-  const orcaOnly = markets.every((m) => m.dexProgram === WHIRLPOOL_PROGRAM_ID.toBase58());
+  const orcaOnly = !d.lpMarkets?.length;
   const programs = orcaOnly ? [WHIRLPOOL_PROGRAM_ID] : [...new Set(markets.map((m) => m.dexProgram))].map((k) => new PublicKey(k));
   const candidates = lps.flatMap((p) => programs.map((dexProgram) => ({ mint: p.mint, dexProgram, position: pda.lpPosition(dexProgram, p.mint) })));
   const accounts = orcaOnly || !candidates.length ? [] : await connection.getMultipleAccountsInfo(candidates.map((c) => c.position));
