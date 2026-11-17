@@ -202,6 +202,29 @@ fn after_skipped_weeks_the_current_epoch_opens_with_everything_in_the_buffer() {
 }
 
 #[test]
+fn once_the_last_junior_leaves_the_rest_of_the_junior_budget_goes_to_seniors() {
+    let mut env = weekly(0);
+    open_junior(&mut env);
+    lend(&mut env, 9_000 * USDC, false);
+    let junior = lend(&mut env, 1_000 * USDC, true);
+    borrow(&mut env, 1_000 * SOL, Some(5_000 * USDC));
+    let (j, usdc, junior_mint) = (junior.pubkey(), env.usdc, env.junior_mint());
+    let friday = next_friday(&env);
+    until(&mut env, friday);
+    let budgets = (env.pool_state().epoch_senior_budget as u128, env.pool_state().epoch_junior_budget as u128);
+    assert!(budgets.1 > 0);
+    // No exit delay in these tests, so the junior leaves at once
+    expect_ok(env.send(&[env.request_exit_ix(&j, env.balance(&junior_mint, &j)), env.claim_exit_ix(&j, &usdc)], &[&junior]));
+    assert_eq!(env.pool_state().junior_assets, 0);
+    let senior_start = tranches(&env).0;
+    until(&mut env, friday + WEEK - 1);
+    // Nearly all of both budgets reach seniors, and no junior assets build up with no shares behind them
+    assert_eq!(env.pool_state().junior_assets, 0);
+    let gained = tranches(&env).0 - senior_start;
+    assert!(gained + 3 >= (budgets.0 + budgets.1) * (WEEK as u128 - 1) / WEEK as u128, "seniors gained {gained} of {budgets:?}");
+}
+
+#[test]
 fn turning_epochs_off_pays_the_whole_buffer_out_at_the_next_accrual() {
     let mut env = pool_with_both_tranches(1_000);
     let friday = next_friday(&env);

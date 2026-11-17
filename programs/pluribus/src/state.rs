@@ -450,6 +450,11 @@ impl Pool {
             senior = to_u64(mul_div_floor(senior as u128, held, owed)?)?;
             junior = to_u64(mul_div_floor(junior as u128, held, owed)?)?;
         }
+        // An emptied or wiped-out junior tranche covers nobody, so the rest of its budget goes to seniors
+        if self.junior_assets == 0 {
+            senior += junior;
+            junior = 0;
+        }
         self.pay(senior, junior);
         self.epoch_senior_paid = due_senior;
         self.epoch_junior_paid = due_junior;
