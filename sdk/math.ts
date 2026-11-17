@@ -145,7 +145,7 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const next = (yieldBuffer * (1 - p.yieldMarginBps / BPS) * SECONDS_PER_YEAR) / Math.max(p.epochSecs, 1);
   // After whole epochs with no transaction the program pays the stale part at once, so today's interest is the better guess
   const stale = now >= epochEnd + p.epochSecs;
-  const lenderYear = weekly ? (now < epochEnd ? streaming : stale ? toLenders : next) : toLenders + streaming;
+  const lenderYear = weekly ? (now < epochEnd ? streaming : stale ? toLenders * (1 - p.yieldMarginBps / BPS) : next) : toLenders + streaming;
   const seniorYear = weights > 0 ? (lenderYear * seniorAssets) / weights : lenderYear;
   const juniorYear = weights > 0 ? (lenderYear * juniorWeight) / weights : 0;
   // An empty tranche shows what its first dollar would earn: the senior rate, and for juniors the premium per unit of target on top
