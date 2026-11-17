@@ -64,17 +64,28 @@ pub fn handle_update_vol(ctx: Context<UpdateVol>) -> Result<()> {
     // A multiplier token's jump far from the last sample might be the feed repricing for a split the mint has yet to
     // apply: it is noted and only folded in once it has held for the guard with no multiplier change
     if scaled && token2022::far(asset, q.price) {
-        if asset.jump_since == 0 || q.publish_time < asset.jump_since {
+        // A first jump, or one far from the jump already noted, starts its hold
+        if asset.jump_since == 0 || token2022::far_from(asset.jump_price as u128, q.price) {
             asset.jump_since = q.publish_time;
+            asset.jump_price = q.price as u64;
         }
         if q.publish_time < asset.jump_since + asset.params.jump_hold_secs as i64 {
             return Ok(());
         }
-    } else if q.publish_time <= asset.jump_since {
+    } else if asset.jump_since != 0 {
         // A price from before a noted jump says nothing about whether it held
-        return Ok(());
+        if q.publish_time <= asset.jump_since {
+            return Ok(());
+        }
+        // One back near the last sample ends the jump, and that sticks even when it is too soon to sample
+        asset.jump_since = 0;
+        asset.jump_price = 0;
+        if q.publish_time < asset.vol_time + p.vol_min_interval_secs as i64 {
+            return Ok(());
+        }
     }
     asset.jump_since = 0;
+    asset.jump_price = 0;
     asset.record_vol(q.price as u64, q.conf as u64, q.publish_time, p)?;
     let (shock_init_bps, shock_maint_bps) = asset.dynamic_shocks(p);
     emit!(VolUpdated { mint: asset.mint, price: q.price as u64, shock_init_bps: shock_init_bps as u64, shock_maint_bps: shock_maint_bps as u64 });
@@ -153,6 +164,8 @@ pub struct HealthView {
     pub tier: u8,
     pub position_value: [u64; MAX_POSITIONS],
     pub position_price: [u64; MAX_POSITIONS],
+    /// Positions whose price is unclear around a corporate action, which can't be seized yet
+    pub position_unclear: [bool; MAX_POSITIONS],
 }
 
 /// Read-only: clients simulate this so the dashboard and keeper use the program's own numbers
@@ -171,6 +184,7 @@ pub fn handle_health(ctx: Context<ViewHealth>) -> Result<HealthView> {
         tier: credit.tier,
         position_value: [0; MAX_POSITIONS],
         position_price: [0; MAX_POSITIONS],
+        position_unclear: h.unclear,
     };
     for i in 0..MAX_POSITIONS {
         view.position_value[i] = to_u64(h.market[i])?;

@@ -133,6 +133,9 @@ fn an_xstock_is_worth_its_share_price_times_the_multiplier_in_force() {
     // A 2-for-1 split scheduled a day out: balances double then and the share price halves
     let x = Xstock { multiplier: 1.05, new_multiplier: 2.1, switch_at: now + DAY, ..Default::default() };
     let mint = list(&mut env, &x, 200);
+    // A volatility sample is what tells the two bases apart around the change
+    let keeper = env.wallet();
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
     let user = env.user();
     env.deposit(&user, &mint, 10 * SHARE);
     let value = |env: &mut Env| env.health(&user.pubkey()).position_value[0] as f64 / USDC as f64;
@@ -556,6 +559,42 @@ fn a_jump_up_lifts_nothing_and_the_token_is_not_seized_at_the_old_price() {
     env.fund(&sol, &liquidator.pubkey(), 0);
     expect_err(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &me, &mint, u64::MAX)], &[&liquidator]), PluribusError::PriceUnclear);
     expect_ok(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &me, &sol, u64::MAX)], &[&liquidator]));
+}
+
+#[test]
+fn a_jump_counts_as_held_only_while_the_price_stays_near_it() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let mint = list(&mut env, &Xstock::default(), 100);
+    let keeper = env.wallet();
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    let user = env.user();
+    let me = user.pubkey();
+    env.deposit(&user, &mint, 10 * SHARE);
+    let crank = |env: &mut Env| env.send(&[env.update_vol_ix(&mint)], &[&keeper]);
+    // A $60 print is noted, and $100 ten seconds later ends it even though that is too soon for a sample
+    env.warp(30);
+    env.set_price(&mint, 60 * USDC);
+    expect_ok(crank(&mut env));
+    assert_eq!(env.load::<Asset>(&env.asset_pda(&mint)).jump_price, 60 * USDC);
+    env.warp(10);
+    env.set_price(&mint, 100 * USDC);
+    expect_ok(crank(&mut env));
+    assert_eq!(env.load::<Asset>(&env.asset_pda(&mint)).jump_since, 0);
+    // Days later the feed moves to $1000 a share for a reverse split the mint hasn't applied: a fresh jump, held at the sample
+    env.warp(2 * DAY);
+    env.set_price(&mint, 1_000 * USDC);
+    let h = env.health(&me);
+    assert!((h.position_value[0] as f64 / (1_000.0 * USDC as f64) - 1.0).abs() < 1e-6, "value {}", h.position_value[0]);
+    assert_eq!(h.credit_limit, 0);
+    expect_ok(crank(&mut env));
+    // A jump to somewhere else before its hold is up starts the hold again instead of inheriting it
+    env.warp(3_600);
+    env.set_price(&mint, 40 * USDC);
+    expect_ok(crank(&mut env));
+    let asset: Asset = env.load(&env.asset_pda(&mint));
+    assert_eq!((asset.jump_since, asset.jump_price), (env.now(), 40 * USDC));
+    assert_eq!(env.health(&me).credit_limit, 0);
 }
 
 #[test]

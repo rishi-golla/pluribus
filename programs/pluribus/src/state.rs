@@ -723,8 +723,10 @@ pub struct Asset {
     pub mult_prev_since: i64,
     /// Publish time of the first sample that jumped far from the last one with no multiplier change, 0 when none
     pub jump_since: i64,
+    /// The token price of that jump, which it must stay near to count as held
+    pub jump_price: u64,
     /// Room for fields added later without moving the ones above
-    pub reserved: [u8; 23],
+    pub reserved: [u8; 15],
 }
 
 impl Asset {

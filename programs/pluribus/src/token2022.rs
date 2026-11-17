@@ -109,7 +109,8 @@ impl Scaled {
 /// new debt, and of the two bases the one that leaves the token's worth nearest the last sampled price is used
 pub fn multiplier(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> Option<(u128, bool)> {
     let (prev, cur) = (asset.mult_prev as u128, asset.mult as u128);
-    let guard = MULTIPLIER_GUARD_SECS;
+    // As wide as the jump hold, since that is how far apart the issuer and the feed may be on a split
+    let guard = MULTIPLIER_GUARD_SECS.max(asset.params.jump_hold_secs as i64);
     if asset.mult_prev_since != 0 && t < asset.mult_prev_since + guard {
         return None;
     }
@@ -139,10 +140,14 @@ pub fn multiplier(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> O
     Some((cur, true))
 }
 
-/// Whether a token price is far from the last sample, more than half again either way
+/// Whether a token price is more than half again away from a reference, either way
+pub fn far_from(reference: u128, token_price: u128) -> bool {
+    reference > 0 && (token_price * 2 > reference * 3 || token_price * 3 < reference * 2)
+}
+
+/// Whether a token price is far from the last sample
 pub fn far(asset: &Asset, token_price: u128) -> bool {
-    let r = asset.vol_price as u128;
-    r > 0 && (token_price * 2 > r * 3 || token_price * 3 < r * 2)
+    far_from(asset.vol_price as u128, token_price)
 }
 
 /// The token price for a per-share `price` published at `t`, and whether it is clear
@@ -157,7 +162,8 @@ pub fn token_price(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> 
         (low, false)
     });
     let token = crate::math::mul_div_floor(price, m, MULTIPLIER_ONE)?;
-    let held = asset.jump_since != 0 && t >= asset.jump_since + asset.params.jump_hold_secs as i64;
+    // Held only while the price stays near the jump that was noted, so an old jump never lends its hold to a new one
+    let held = asset.jump_since != 0 && t >= asset.jump_since + asset.params.jump_hold_secs as i64 && !far_from(asset.jump_price as u128, token);
     if sure && (held || !far(asset, token)) {
         return Ok((token, true));
     }
@@ -167,13 +173,13 @@ pub fn token_price(asset: &Asset, s: &Scaled, now: i64, t: i64, price: u128) -> 
 
 /// Of two multipliers, the one that puts the token's price nearer the last sampled token price
 /// A split leaves a token's worth about where it was, so the wrong basis is off by the split's ratio
-/// With no sample to go by, the higher one, so no one is liquidated over the mix-up
+/// With no sample to go by, the lower one, since an unclear token is never seized and only its line is at stake
 fn closest(asset: &Asset, price: u128, a: u128, b: u128) -> u128 {
     if a == b {
         return a;
     }
     if asset.vol_price == 0 {
-        return a.max(b);
+        return a.min(b);
     }
     // Comparison only, never a payout, so floating point is fine here
     let off = |m: u128| {
@@ -204,6 +210,7 @@ pub fn sync(asset: &mut Asset, s: &Scaled, now: i64) -> bool {
     // Sampling starts over on the new basis, and the last price stays as the reference that tells the bases apart
     asset.vol_time = 0;
     asset.jump_since = 0;
+    asset.jump_price = 0;
     true
 }
 
