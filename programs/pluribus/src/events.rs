@@ -47,6 +47,8 @@ pub struct Liquidated {
 pub struct BadDebt {
     pub account: Pubkey,
     pub loss: u64,
+    /// Lenders' interest not yet paid out, which takes losses first
+    pub covered_by_buffer: u64,
     pub covered_by_reserves: u64,
     pub covered_by_protocol_fees: u64,
     pub covered_by_junior: u64,
@@ -118,6 +120,16 @@ pub struct JuniorExitsPaused {
 pub struct ChangeQueued {
     pub target: Pubkey,
     pub effective_at: i64,
+}
+
+/// A payout epoch opened: `senior_budget` and `junior_budget` are paid out evenly until `end`, out of `buffer`
+#[event]
+pub struct EpochOpened {
+    pub start: i64,
+    pub end: i64,
+    pub senior_budget: u64,
+    pub junior_budget: u64,
+    pub buffer: u64,
 }
 
 #[event]

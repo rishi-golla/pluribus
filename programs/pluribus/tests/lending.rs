@@ -217,7 +217,8 @@ fn assert_books(env: &Env, holders: &[Pubkey]) {
     let debt = pool.total_debt().unwrap();
     assert_eq!(pool.tranche_assets(false).unwrap() + pool.tranche_assets(true).unwrap(), all, "tranches against lender assets");
     assert!(pool.junior_assets as u128 <= all, "junior assets {} above lender assets {all}", pool.junior_assets);
-    assert_eq!(all + pool.reserves as u128 + pool.protocol_fees as u128, pool.cash as u128 + debt, "claims against cash and debt");
+    let claims_on_pool = all + pool.reserves as u128 + pool.protocol_fees as u128 + pool.yield_buffer as u128;
+    assert_eq!(claims_on_pool, pool.cash as u128 + debt, "claims against cash and debt");
     let mut claims = 0;
     for mint in [env.share_mint, env.junior_mint()] {
         let held: u64 = holders.iter().map(|h| env.balance(&mint, h)).sum();
@@ -229,18 +230,19 @@ fn assert_books(env: &Env, holders: &[Pubkey]) {
     assert!(claims <= pool.cash as u128 + debt, "lenders claim more than cash plus debt");
 }
 
-/// Checks that a loss went to reserves first, then uncollected fees, then junior lenders, then senior ones
+/// Checks that a loss went to unpaid interest first, then reserves, then uncollected fees, then junior lenders, then senior ones
 /// Returns what senior and junior lenders absorbed
 #[track_caller]
 fn assert_loss_order(before: &Pool, after: &Pool) -> (u128, u128) {
     let loss = after.bad_debt - before.bad_debt;
-    let from_reserves = loss.min(before.reserves);
-    let from_fees = (loss - from_reserves).min(before.protocol_fees);
-    let from_junior = (loss - from_reserves - from_fees).min(before.junior_assets);
-    let from_senior = (loss - from_reserves - from_fees - from_junior) as u128;
+    let from_buffer = loss.min(before.yield_buffer);
+    let from_reserves = (loss - from_buffer).min(before.reserves);
+    let from_fees = (loss - from_buffer - from_reserves).min(before.protocol_fees);
+    let from_junior = (loss - from_buffer - from_reserves - from_fees).min(before.junior_assets);
+    let from_senior = (loss - from_buffer - from_reserves - from_fees - from_junior) as u128;
     assert_eq!(
-        (after.reserves, after.protocol_fees, after.junior_assets),
-        (before.reserves - from_reserves, before.protocol_fees - from_fees, before.junior_assets - from_junior),
+        (after.yield_buffer, after.reserves, after.protocol_fees, after.junior_assets),
+        (before.yield_buffer - from_buffer, before.reserves - from_reserves, before.protocol_fees - from_fees, before.junior_assets - from_junior),
         "loss {loss}"
     );
     // Debt rounds up per account and per tier, so senior lenders can come out a few base units ahead and never behind
@@ -762,18 +764,12 @@ fn random_walk(seed: u64, steps: usize, default_sol: u64) {
                 let (to_reserves, to_protocol) = (interest * p.reserve_factor_bps as u128 / BPS, interest * p.protocol_fee_bps as u128 / BPS);
                 assert_eq!((after.reserves - before.reserves) as u128, (to_reserves + before.dust[0] as u128) / DUST, "step {step}");
                 assert_eq!((after.protocol_fees - before.protocol_fees) as u128, (to_protocol + before.dust[1] as u128) / DUST, "step {step}");
-                let (all, junior) = (before.lender_assets().unwrap(), before.tranche_assets(true).unwrap());
                 let gained = (after.junior_assets - before.junior_assets) as u128;
-                if junior == 0 {
-                    assert_eq!(gained, 0, "step {step}");
-                } else {
-                    // Junior lenders get their own share and at most the full protection fee on top
-                    let to_lenders = interest - to_reserves - to_protocol;
-                    let own = to_lenders * junior / all;
-                    let fee = (to_lenders - own) * p.protection_fee_bps as u128 / BPS;
-                    let carried = before.dust[2] as u128;
-                    assert!(gained >= (own + carried) / DUST && gained <= (own + fee + carried) / DUST, "step {step}: junior gained {gained}");
-                }
+                // Juniors take their weighted part of the lenders' interest: their own share plus the premium
+                let (senior_weight, junior_weight) = before.split_weights().unwrap();
+                let to_lenders = (interest - to_reserves - to_protocol + before.dust[2] as u128) / DUST;
+                let expected = if senior_weight + junior_weight == 0 { 0 } else { to_lenders * junior_weight / (senior_weight + junior_weight) };
+                assert!(gained + 2 >= expected && gained <= expected + 2, "step {step}: junior gained {gained}, expected {expected}");
                 // The three carried fractions can tick over together and take up to 3 base units back from senior lenders
                 slack = [3, 0];
             }

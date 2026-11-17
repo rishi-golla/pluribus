@@ -88,6 +88,14 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         junior_next_pause_at: 0,
         pending_params: params,
         pending_at: 0,
+        // The first accrual opens the first epoch, with nothing in the buffer to pay yet
+        yield_buffer: 0,
+        epoch_start: Clock::get()?.unix_timestamp,
+        epoch_end: Clock::get()?.unix_timestamp,
+        epoch_senior_budget: 0,
+        epoch_junior_budget: 0,
+        epoch_senior_paid: 0,
+        epoch_junior_paid: 0,
     });
     Ok(())
 }

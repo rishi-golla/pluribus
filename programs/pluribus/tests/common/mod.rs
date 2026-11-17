@@ -86,11 +86,13 @@ pub fn default_params() -> PoolParams {
         kink_bps: 9000,
         reserve_factor_bps: 1000,
         protocol_fee_bps: 1000,
-        protection_fee_bps: 2000,
+        // Interest reaches lenders as it accrues unless a test opts into weekly epochs
+        yield_margin_bps: 0,
+        epoch_secs: 0,
         tier_discount_bps: [0, 40, 80],
         tier_min_healthy_secs: [0, 7 * DAY, 30 * DAY],
         junior_target_bps: 1000,
-        junior_premium_bps: 0,
+        junior_premium_bps: 1500,
         // No waits by default so most tests can act at once, the junior and timelock tests set their own
         junior_min_delay_secs: 0,
         junior_max_delay_secs: 0,

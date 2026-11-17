@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{constants::*, error::PluribusError, math::*};
+use crate::{constants::*, error::PluribusError, events::EpochOpened, math::*};
 
 /// Admin-set risk and rate parameters
 /// Shocks are a scenario-by-group table in bps: row = scenario, column = risk group
@@ -23,13 +23,17 @@ pub struct PoolParams {
     pub reserve_factor_bps: u16,
     /// Share of borrower interest the protocol keeps as revenue
     pub protocol_fee_bps: u16,
-    /// Share of the senior lenders' interest paid to junior lenders for taking losses first
-    pub protection_fee_bps: u16,
+    /// Share of the yield buffer held back when an epoch opens, so it carries into the next one
+    /// It smooths the yield from week to week and takes losses before anyone else
+    pub yield_margin_bps: u16,
+    /// Length of a payout epoch, aligned to Fridays at 00:00 UTC, or 0 to pay lenders' interest out as it accrues
+    pub epoch_secs: u32,
     pub tier_discount_bps: [u16; TIERS],
     pub tier_min_healthy_secs: [i64; TIERS],
-    /// Junior share of lender assets at which junior lenders earn the whole protection fee and premium
+    /// Junior share of lender assets at which junior lenders earn the whole premium, below it the premium scales down
     pub junior_target_bps: u16,
-    /// Share of all borrower interest paid to junior lenders on top of their own share, for taking losses first
+    /// Risk premium: junior lenders earn the senior rate plus this share of the senior yield on every senior dollar they cover
+    /// Junior rate = senior rate x (1 + premium x senior / junior), the premium scaled down below the target share
     pub junior_premium_bps: u16,
     /// Wait before a queued junior exit can be claimed, from the min with an empty queue up to the max
     pub junior_min_delay_secs: u32,
@@ -68,13 +72,15 @@ impl PoolParams {
             && (1..BPS).contains(&(self.kink_bps as u128))
             // Lenders always keep at least half the interest
             && self.reserve_factor_bps as u32 + self.protocol_fee_bps as u32 <= 5_000
-            && self.protection_fee_bps <= 5_000
+            // An epoch always pays out at least half of what the buffer holds
+            && self.yield_margin_bps <= 5_000
+            && (self.epoch_secs == 0 || (MIN_EPOCH_SECS..=MAX_EPOCH_SECS).contains(&self.epoch_secs))
             && self.tier_discount_bps[0] == 0
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
             && self.tier_min_healthy_secs.windows(2).all(|w| w[0] < w[1])
             && (1..=BPS).contains(&(self.junior_target_bps as u128))
-            && self.junior_premium_bps <= 5_000
+            && self.junior_premium_bps as u128 <= BPS
             && self.junior_min_delay_secs <= self.junior_max_delay_secs
             // A queue that waits at all waits for every exit, or small exits would round their way past it
             && (self.junior_min_delay_secs > 0 || self.junior_max_delay_secs == 0)
@@ -180,6 +186,16 @@ pub struct Pool {
     /// Looser parameters waiting out the activation delay, live from `pending_at`, which is 0 when nothing waits
     pub pending_params: PoolParams,
     pub pending_at: i64,
+    /// Lenders' interest not yet paid out: it collects here and is paid out evenly over the next epoch
+    /// It belongs to no lender until paid, so it takes losses first
+    pub yield_buffer: u64,
+    /// The current payout epoch and what each tranche gets over it, fixed when it opened
+    pub epoch_start: i64,
+    pub epoch_end: i64,
+    pub epoch_senior_budget: u64,
+    pub epoch_junior_budget: u64,
+    pub epoch_senior_paid: u64,
+    pub epoch_junior_paid: u64,
 }
 
 impl Pool {
@@ -195,9 +211,10 @@ impl Pool {
         Ok(total)
     }
 
-    /// What lender shares are backed by
+    /// What lender shares are backed by, interest still waiting in the yield buffer left out
     pub fn lender_assets(&self) -> Result<u128> {
-        Ok((self.cash as u128 + self.total_debt()?).saturating_sub(self.reserves as u128 + self.protocol_fees as u128))
+        let claims = self.reserves as u128 + self.protocol_fees as u128 + self.yield_buffer as u128;
+        Ok((self.cash as u128 + self.total_debt()?).saturating_sub(claims))
     }
 
     /// Which tranche a share mint stands for
@@ -328,7 +345,9 @@ impl Pool {
             return Ok(());
         }
         let base = self.base_rate_bps()?;
-        let (lenders, junior, debt) = (self.lender_assets()?, self.tranche_assets(true)?, self.total_debt()?);
+        let debt = self.total_debt()?;
+        // Taken before the interest lands, so one long accrual and many short ones split it the same way
+        let weights = self.split_weights()?;
         for t in 0..TIERS {
             let rate = base.saturating_sub(self.params.tier_discount_bps[t] as u128);
             let growth = mul_div_wide_ceil(self.borrow_index[t], rate * dt as u128, BPS * SECONDS_PER_YEAR)?;
@@ -342,23 +361,122 @@ impl Pool {
         let to_protocol = mul_div_wide(interest, self.params.protocol_fee_bps as u128, BPS)?;
         self.reserves = Self::carry(self.reserves, &mut self.dust[0], to_reserves);
         self.protocol_fees = Self::carry(self.protocol_fees, &mut self.dust[1], to_protocol);
-        if junior > 0 {
-            // Junior lenders earn their own share of the interest plus a cut of the senior share
-            let to_lenders = interest - to_reserves - to_protocol;
-            // A thin junior tranche covers little, so it earns the premium and fee only in proportion to how much of the target it fills
-            // Otherwise one unit of junior money would collect them in full from every senior lender
-            let target = self.params.junior_target_bps as u128;
-            // Saturating, since nothing here may fail and these products are far past any real pool
-            let filled = junior.saturating_mul(BPS).min(lenders.saturating_mul(target));
-            let scale = BPS.saturating_mul(lenders).saturating_mul(target);
-            // The premium comes off the top of the lenders' interest, then juniors take their own share of the rest
-            let premium = mul_div_wide(interest, self.params.junior_premium_bps as u128 * filled, scale)?.min(to_lenders);
-            let rest = to_lenders - premium;
-            let own = mul_div_wide(rest, junior, lenders)?;
-            let fee = mul_div_wide(rest - own, self.params.protection_fee_bps as u128 * filled, scale)?;
-            self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], premium + own + fee);
+        let to_lenders = interest - to_reserves - to_protocol;
+        if self.params.epoch_secs == 0 {
+            // No epochs: lenders are paid as interest accrues, seniors by the rise in lender assets and juniors here,
+            // with the junior part carried at the fine scale so frequent accruals round none of it away
+            let (senior, junior) = weights;
+            if junior > 0 {
+                let to_junior = mul_div_wide(to_lenders, junior, senior + junior)?;
+                self.junior_assets = Self::carry(self.junior_assets, &mut self.dust[2], to_junior);
+            }
+            self.release_buffer()?;
+        } else {
+            self.collect(to_lenders, now)?;
         }
         self.last_accrual = now;
+        Ok(())
+    }
+
+    /// Puts the lenders' part of the interest in the buffer and pays out what the epochs owe up to `now`
+    /// When an epoch boundary passed since the last accrual, only the interest earned before it funds the new epoch's budget,
+    /// the rest arrives after it opens, so a late accrual never pays out a week's interest in the week it was earned
+    fn collect(&mut self, to_lenders: u128, now: i64) -> Result<()> {
+        if now < self.epoch_end {
+            self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], to_lenders);
+            return self.pay_epoch(now);
+        }
+        let len = self.params.epoch_secs as i64;
+        let start = EPOCH_ANCHOR + (now - EPOCH_ANCHOR).div_euclid(len) * len;
+        // Interest accrues evenly over the gap, so it splits at the boundary by time
+        let gap = (now - self.last_accrual).max(1);
+        let after = (now - start.max(self.last_accrual)).clamp(0, gap);
+        let later = mul_div_wide(to_lenders, after as u128, gap as u128)?;
+        self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], to_lenders - later);
+        let end = self.epoch_end;
+        self.pay_epoch(end)?;
+        self.open_epoch(start)?;
+        self.yield_buffer = Self::carry(self.yield_buffer, &mut self.dust[2], later);
+        self.pay_epoch(now)
+    }
+
+    /// Pays out whatever the buffer still holds from a time with epochs, split by the tranches' weights now
+    fn release_buffer(&mut self) -> Result<()> {
+        let (senior, junior) = self.split_weights()?;
+        // Nobody to pay yet: it waits in the buffer
+        if self.yield_buffer > 0 && senior + junior > 0 {
+            let all = self.yield_buffer;
+            let to_junior = to_u64(mul_div_wide(all as u128, junior, senior + junior)?)?;
+            self.pay(all - to_junior, to_junior);
+        }
+        Ok(())
+    }
+
+    /// How a payout splits between the tranches, as senior and junior weights
+    /// Juniors earn the senior rate per dollar plus the premium on every senior dollar they cover
+    /// A thin junior tranche covers little, so the premium scales down until juniors hold the target share
+    pub fn split_weights(&self) -> Result<(u128, u128)> {
+        let lenders = self.lender_assets()?;
+        let junior = self.tranche_assets(true)?;
+        let senior = lenders - junior;
+        if junior == 0 {
+            return Ok((senior, 0));
+        }
+        let target = self.params.junior_target_bps as u128;
+        // Saturating, since nothing here may fail and these products are far past any real pool
+        let filled = junior.saturating_mul(BPS).min(lenders.saturating_mul(target));
+        let scale = BPS.saturating_mul(lenders).saturating_mul(target);
+        let premium = mul_div_wide(senior.saturating_mul(self.params.junior_premium_bps as u128), filled, scale)?;
+        Ok((senior, junior.saturating_add(premium)))
+    }
+
+    /// Moves a payout from the yield buffer into the tranches; seniors gain theirs as lender assets rise
+    fn pay(&mut self, senior: u64, junior: u64) {
+        self.yield_buffer -= senior + junior;
+        self.junior_assets = self.junior_assets.saturating_add(junior);
+    }
+
+    /// Pays the epoch's budgets out evenly over its length, up to `until`
+    fn pay_epoch(&mut self, until: i64) -> Result<()> {
+        let span = (self.epoch_end - self.epoch_start).max(1) as u128;
+        let elapsed = (until - self.epoch_start).clamp(0, span as i64) as u128;
+        let due_senior = to_u64(mul_div_floor(self.epoch_senior_budget as u128, elapsed, span)?)?;
+        let due_junior = to_u64(mul_div_floor(self.epoch_junior_budget as u128, elapsed, span)?)?;
+        let (mut senior, mut junior) = (due_senior.saturating_sub(self.epoch_senior_paid), due_junior.saturating_sub(self.epoch_junior_paid));
+        // A loss can leave the buffer short of the budget, and then what it holds is shared in the same ratio
+        let owed = senior as u128 + junior as u128;
+        let held = self.yield_buffer as u128;
+        if owed > held {
+            senior = to_u64(mul_div_floor(senior as u128, held, owed)?)?;
+            junior = to_u64(mul_div_floor(junior as u128, held, owed)?)?;
+        }
+        self.pay(senior, junior);
+        self.epoch_senior_paid = due_senior;
+        self.epoch_junior_paid = due_junior;
+        Ok(())
+    }
+
+    /// Opens the epoch starting at `start`, aligned to Fridays at 00:00 UTC
+    /// Its budget is the buffer less the margin, which carries into the next epoch, split by the tranches' sizes now
+    /// The budget is fixed for the epoch, so the yield a lender sees moves only as money enters or leaves its tranche
+    fn open_epoch(&mut self, start: i64) -> Result<()> {
+        self.epoch_start = start;
+        self.epoch_end = start + self.params.epoch_secs as i64;
+        let budget = to_u64(mul_div_floor(self.yield_buffer as u128, BPS - self.params.yield_margin_bps as u128, BPS)?)?;
+        let (senior, junior) = self.split_weights()?;
+        let to_junior = if senior + junior == 0 { 0 } else { to_u64(mul_div_wide(budget as u128, junior, senior + junior)?)? };
+        // Nobody to pay: the whole buffer carries over
+        self.epoch_senior_budget = if senior + junior == 0 { 0 } else { budget - to_junior };
+        self.epoch_junior_budget = to_junior;
+        self.epoch_senior_paid = 0;
+        self.epoch_junior_paid = 0;
+        emit!(EpochOpened {
+            start: self.epoch_start,
+            end: self.epoch_end,
+            senior_budget: self.epoch_senior_budget,
+            junior_budget: self.epoch_junior_budget,
+            buffer: self.yield_buffer,
+        });
         Ok(())
     }
 
@@ -414,21 +532,25 @@ impl Pool {
         Ok(())
     }
 
-    /// Drops debt that no collateral backs and returns the loss with what reserves, protocol fees and junior lenders absorbed
-    /// Reserves pay first, then the protocol's uncollected cut, then junior lenders, and senior lenders take what is left
-    pub fn write_off(&mut self, credit: &mut CreditAccount) -> Result<(u64, u64, u64, u64)> {
+    /// Drops debt that no collateral backs and returns the loss with what the yield buffer, reserves, protocol fees and junior lenders absorbed
+    /// Interest not yet paid out goes first, then reserves, then the protocol's uncollected cut, then junior lenders,
+    /// and senior lenders take what is left
+    pub fn write_off(&mut self, credit: &mut CreditAccount) -> Result<(u64, u64, u64, u64, u64)> {
         let loss = to_u64(self.debt_of(credit)?)?;
         self.debt_shares[credit.tier as usize] -= credit.debt_shares;
         credit.debt_shares = 0;
-        let from_reserves = loss.min(self.reserves);
+        let from_buffer = loss.min(self.yield_buffer);
+        self.yield_buffer -= from_buffer;
+        let loss_left = loss - from_buffer;
+        let from_reserves = loss_left.min(self.reserves);
         self.reserves -= from_reserves;
         // Interest that was never paid is not revenue, so it goes before lenders take a loss
-        let from_fees = (loss - from_reserves).min(self.protocol_fees);
+        let from_fees = (loss_left - from_reserves).min(self.protocol_fees);
         self.protocol_fees -= from_fees;
-        let from_junior = (loss - from_reserves - from_fees).min(self.junior_assets);
+        let from_junior = (loss_left - from_reserves - from_fees).min(self.junior_assets);
         self.junior_assets -= from_junior;
         self.bad_debt = self.bad_debt.saturating_add(loss);
-        Ok((loss, from_reserves, from_fees, from_junior))
+        Ok((loss, from_buffer, from_reserves, from_fees, from_junior))
     }
 }
 

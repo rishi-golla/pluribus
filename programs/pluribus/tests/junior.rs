@@ -631,7 +631,10 @@ fn settings_that_could_trap_junior_money_are_rejected() {
         ("shortest wait above the longest", PoolParams { junior_min_delay_secs: 7 * day, ..p }),
         ("wait above thirty days", PoolParams { junior_max_delay_secs: 31 * day, junior_pause_gap_secs: 40 * day, activation_delay_secs: 30 * day, ..p }),
         ("junior target of zero", PoolParams { junior_target_bps: 0, ..p }),
-        ("premium above half the interest", PoolParams { junior_premium_bps: 5_001, ..p }),
+        ("premium above the whole senior yield", PoolParams { junior_premium_bps: 10_001, ..p }),
+        ("margin holding back more than half the buffer", PoolParams { yield_margin_bps: 5_001, ..p }),
+        ("epoch under a minute", PoolParams { epoch_secs: 59, ..p }),
+        ("epoch over thirty days", PoolParams { epoch_secs: 30 * day + 1, ..p }),
         ("delay threshold of zero", PoolParams { junior_delay_threshold_bps: 0, ..p }),
     ];
     for (name, params) in bad {
@@ -656,9 +659,9 @@ fn share_tokens_of_the_pool_can_never_be_listed_as_collateral() {
 // The junior premium
 
 #[test]
-fn the_junior_premium_comes_off_the_top_and_scales_with_how_full_the_tranche_is() {
+fn juniors_earn_the_senior_rate_times_one_plus_the_premium_per_senior_dollar_scaled_below_the_target() {
     for (senior_usdc, junior_usdc) in [(9_000u64, 1_000u64), (9_999, 1)] {
-        let mut env = Env::with(PoolParams { junior_premium_bps: 1_000, ..default_params() }, true);
+        let mut env = Env::with(PoolParams { junior_premium_bps: 1_500, ..default_params() }, true);
         open_junior(&mut env);
         lend(&mut env, senior_usdc * USDC, false);
         lend(&mut env, junior_usdc * USDC, true);
@@ -666,16 +669,14 @@ fn the_junior_premium_comes_off_the_top_and_scales_with_how_full_the_tranche_is(
         let before = env.pool_state();
         pass(&mut env, YEAR);
         let after = env.pool_state();
-        // Lenders get 80% of the interest, so the interest is their gain over 0.8
-        let interest = (after.lender_assets().unwrap() - before.lender_assets().unwrap()) as f64 / 0.8;
-        let (junior, lenders) = ((junior_usdc * USDC) as f64, ((senior_usdc + junior_usdc) * USDC) as f64);
-        let filled = (junior / (lenders * 0.1)).min(1.0);
-        let premium = interest * 0.1 * filled;
-        let rest = interest * 0.8 - premium;
-        let own = rest * junior / lenders;
-        let fee = (rest - own) * 0.2 * filled;
+        // Everything lenders earned, split senior : junior as S : J + 15% x filled x S
+        let to_lenders = (after.lender_assets().unwrap() - before.lender_assets().unwrap()) as f64;
+        let (senior, junior) = ((senior_usdc * USDC) as f64, (junior_usdc * USDC) as f64);
+        let filled = (junior / ((senior + junior) * 0.1)).min(1.0);
+        let junior_weight = junior + 0.15 * filled * senior;
+        let want = to_lenders * junior_weight / (senior + junior_weight);
         let junior_gain = (after.junior_assets - before.junior_assets) as f64;
-        assert!(near(junior_gain, premium + own + fee, 1e-4), "{junior_usdc}: junior gained {junior_gain}, expected {}", premium + own + fee);
+        assert!(near(junior_gain, want, 1e-4), "{junior_usdc}: junior gained {junior_gain}, expected {want}");
         assert_eq!(after.tranche_assets(false).unwrap() + after.tranche_assets(true).unwrap(), after.lender_assets().unwrap());
     }
 }
