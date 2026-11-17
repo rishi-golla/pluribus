@@ -4,7 +4,7 @@ use anchor_spl::{
     token_interface::{close_account, CloseAccount, Mint, TokenAccount, TokenInterface},
 };
 
-use crate::{constants::*, error::PluribusError, events::*, math::to_u64, orca::read_position, risk::*, state::*, token::*};
+use crate::{clmm::read_position, constants::*, error::PluribusError, events::*, math::to_u64, risk::*, state::*, token::*};
 
 #[derive(Accounts)]
 pub struct OpenAccount<'info> {
@@ -98,9 +98,9 @@ pub struct DepositLp<'info> {
     #[account(seeds = [ASSET_SEED, lp_market.base_mint.as_ref()], bump = base_asset.bump)]
     pub base_asset: Box<Account<'info, Asset>>,
     /// CHECK: Owner program, discriminator, mint and pool are checked in the handler
-    // Orca keeps one position per NFT at this address
-    // A bundled position sits elsewhere and shares its mint with its siblings, so it is not accepted
-    #[account(seeds = [b"position", position_mint.key().as_ref()], seeds::program = WHIRLPOOL_PROGRAM_ID, bump)]
+    // The market's dex keeps one position per NFT at this address
+    // An Orca bundled position sits elsewhere and shares its mint with its siblings, so it is not accepted
+    #[account(seeds = [b"position", position_mint.key().as_ref()], seeds::program = lp_market.dex_program, bump)]
     pub position: UncheckedAccount<'info>,
     pub position_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut, token::mint = position_mint, token::token_program = token_program)]
@@ -125,11 +125,10 @@ pub fn handle_deposit_lp(ctx: Context<DepositLp>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let active = now >= a.pool.effective_at(a.lp_market.active_at) && now >= a.pool.effective_at(a.base_asset.active_at);
     require!(active, PluribusError::NotYetActive);
-    let orca = read_position(&a.position)?;
+    let lp = read_position(&a.lp_market, &a.position)?;
     // The NFT being handed over must be the one that controls this position
-    require_keys_eq!(orca.position_mint, a.position_mint.key(), PluribusError::AccountMismatch);
-    require_keys_eq!(orca.whirlpool, a.lp_market.whirlpool, PluribusError::PoolNotWhitelisted);
-    require!(orca.liquidity > 0, PluribusError::InvalidLpPosition);
+    require_keys_eq!(lp.mint, a.position_mint.key(), PluribusError::AccountMismatch);
+    require!(lp.liquidity > 0, PluribusError::InvalidLpPosition);
 
     a.credit.add_lp(&a.position_mint.key(), bump)?;
     pull(&a.token_program, &a.position_mint, &a.owner_nft, &a.vault_nft, &a.owner, 1)?;

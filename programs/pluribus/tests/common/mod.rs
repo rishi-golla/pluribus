@@ -53,6 +53,36 @@ pub fn orca_position(mint: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"position", mint.as_ref()], &WHIRLPOOL_PROGRAM_ID).0
 }
 
+/// Raydium CLMM's devnet program, one of the two whose positions the protocol accepts
+pub const RAYDIUM: Pubkey = RAYDIUM_CLMM_PROGRAMS[1];
+
+/// Where a dex keeps the position account for a position NFT, and its bump
+pub fn position_pda(program: &Pubkey, mint: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"position", mint.as_ref()], program)
+}
+
+/// A Raydium CLMM PoolState with only the fields the program reads: discriminator and the two mints
+pub fn raydium_pool_bytes(mint0: &Pubkey, mint1: &Pubkey) -> Vec<u8> {
+    let mut data = vec![0u8; 1544];
+    data[..8].copy_from_slice(&[0xf7, 0xed, 0xe3, 0xf5, 0xd7, 0xc3, 0xde, 0x46]);
+    data[73..105].copy_from_slice(mint0.as_ref());
+    data[105..137].copy_from_slice(mint1.as_ref());
+    data
+}
+
+/// A Raydium CLMM PersonalPositionState over raw ticks, which price token 1 in token 0
+pub fn raydium_position_bytes(pool: &Pubkey, mint: &Pubkey, liquidity: u128, lower: i32, upper: i32, bump: u8) -> Vec<u8> {
+    let mut data = vec![0u8; 281];
+    data[..8].copy_from_slice(&[0x46, 0x6f, 0x96, 0x7e, 0xe6, 0x0f, 0x19, 0x75]);
+    data[8] = bump;
+    data[9..41].copy_from_slice(mint.as_ref());
+    data[41..73].copy_from_slice(pool.as_ref());
+    data[73..77].copy_from_slice(&lower.to_le_bytes());
+    data[77..81].copy_from_slice(&upper.to_le_bytes());
+    data[81..97].copy_from_slice(&liquidity.to_le_bytes());
+    data
+}
+
 pub fn tick(price: f64) -> i32 {
     ((price / 1000.0).ln() / 1.0001f64.ln()).round() as i32
 }
@@ -383,6 +413,34 @@ impl Env {
         self.set_raw(*address, WHIRLPOOL_PROGRAM_ID, data);
     }
 
+    pub fn set_raydium_pool(&mut self, address: &Pubkey, mint0: &Pubkey, mint1: &Pubkey) {
+        self.set_raw(*address, RAYDIUM, raydium_pool_bytes(mint0, mint1));
+    }
+
+    /// A Raydium position in `pool` over raw ticks, with its NFT in `owner`'s wallet, returning the NFT mint
+    pub fn raydium_lp(&mut self, owner: &Pubkey, pool: &Pubkey, lower: i32, upper: i32, liquidity: u128, nft_program: &Pubkey) -> Pubkey {
+        let mint = self.new_mint(0, nft_program);
+        self.fund(&mint, owner, 1);
+        let (address, bump) = position_pda(&RAYDIUM, &mint);
+        self.set_raw(address, RAYDIUM, raydium_position_bytes(pool, &mint, liquidity, lower, upper, bump));
+        mint
+    }
+
+    /// The position account an NFT controls and the pool it is in, looked up on Orca and then Raydium
+    pub fn position_of(&self, nft: &Pubkey) -> (Pubkey, Pubkey) {
+        let orca = orca_position(nft);
+        if let Some(a) = self.svm.get_account(&orca).filter(|a| a.owner == WHIRLPOOL_PROGRAM_ID && a.data.len() >= 40) {
+            return (orca, Pubkey::new_from_array(a.data[8..40].try_into().unwrap()));
+        }
+        for program in RAYDIUM_CLMM_PROGRAMS {
+            let (address, _) = position_pda(&program, nft);
+            if let Some(a) = self.svm.get_account(&address).filter(|a| a.owner == program && a.data.len() >= 73) {
+                return (address, Pubkey::new_from_array(a.data[41..73].try_into().unwrap()));
+            }
+        }
+        (orca, Pubkey::default())
+    }
+
     /// An Orca position in `whirlpool` over a price range, with its NFT in `owner`'s wallet, returning the NFT mint
     pub fn lp(&mut self, owner: &Pubkey, whirlpool: &Pubkey, lower: f64, upper: f64, liquidity: u128, nft_program: &Pubkey) -> Pubkey {
         let mint = self.new_mint(0, nft_program);
@@ -458,9 +516,7 @@ impl Env {
             match p.kind {
                 KIND_TOKEN => keys.extend(self.token_health_keys(&p.mint)),
                 KIND_LP => {
-                    let position = orca_position(&p.mint);
-                    let data = self.svm.get_account(&position).unwrap().data;
-                    let whirlpool = Pubkey::new_from_array(data[8..40].try_into().unwrap());
+                    let (position, whirlpool) = self.position_of(&p.mint);
                     let market: LpMarket = self.load(&self.lp_market_pda(&whirlpool));
                     keys.extend([self.lp_market_pda(&whirlpool), position, self.asset_pda(&market.base_mint), self.price_account(&market.base_mint)]);
                 }
@@ -847,7 +903,7 @@ impl Env {
                 pool: self.pool,
                 lp_market: self.lp_market_pda(whirlpool),
                 base_asset: self.asset_pda(&base),
-                position: orca_position(nft),
+                position: self.position_of(nft).0,
                 position_mint: *nft,
                 owner_nft: *owner_nft,
                 vault_nft: ata(&self.pool, nft, &program),
@@ -873,7 +929,7 @@ impl Env {
         }
         .to_account_metas(None);
         let mut health = self.health_metas(owner);
-        let at = health.iter().position(|m| m.pubkey == orca_position(nft)).unwrap() - 1;
+        let at = health.iter().position(|m| m.pubkey == self.position_of(nft).0).unwrap() - 1;
         health.drain(at..at + 4);
         metas.extend(health);
         Instruction::new_with_bytes(pluribus::ID, &pluribus::instruction::WithdrawLp {}.data(), metas)

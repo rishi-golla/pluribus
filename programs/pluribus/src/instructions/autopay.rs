@@ -66,6 +66,8 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
     let mint = a.position_mint.key();
     a.credit.find(KIND_LP, &mint)?;
+    // Fees are collected through Orca with the base token in vault A, so other markets keep their fees in the position
+    require!(a.lp_market.dex_program == WHIRLPOOL_PROGRAM_ID && a.lp_market.base_first, PluribusError::UnsupportedDex);
     let orca = read_position(&a.position)?;
     require_keys_eq!(orca.position_mint, mint, PluribusError::AccountMismatch);
     require_keys_eq!(orca.whirlpool, a.whirlpool.key(), PluribusError::PoolNotWhitelisted);

@@ -74,4 +74,6 @@ pub enum PluribusError {
     EpochChangeNotAllowed,
     #[msg("A volatility sample needs a newer price")]
     VolTooSoon,
+    #[msg("This needs an Orca market with the base token first")]
+    UnsupportedDex,
 }

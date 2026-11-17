@@ -75,4 +75,7 @@ pub const STAKE_POOL_PROGRAMS: [Pubkey; 2] =
 pub const LAMPORTS_PER_SOL: u128 = 1_000_000_000;
 
 pub const WHIRLPOOL_PROGRAM_ID: Pubkey = pubkey!("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc");
+/// Raydium CLMM on mainnet and on devnet, the only other programs whose positions can back debt
+pub const RAYDIUM_CLMM_PROGRAMS: [Pubkey; 2] =
+    [pubkey!("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"), pubkey!("DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH")];
 pub const PYTH_RECEIVER_ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");

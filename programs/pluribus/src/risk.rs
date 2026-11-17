@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{constants::*, error::PluribusError, math::*, oracle::*, orca::*, state::*, token2022};
+use crate::{clmm, constants::*, error::PluribusError, math::*, oracle::*, state::*, token2022};
 
 /// An account's collateral valued under every scenario
 #[derive(Default)]
@@ -95,7 +95,7 @@ impl Valuer {
 /// Values every position, reading its accounts from `rem` in slot order
 /// Token: asset, its mint if it is a Token-2022 token, then its price account unless the asset is fixed at $1,
 /// then for a staking token the SOL price account and, for an SPL stake pool, the pool account
-/// LP: LP market, Orca position, base asset, base price account
+/// LP: LP market, the dex's position, base asset, base price account
 pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64, scope: Scope) -> Result<Health> {
     let params = &pool.params;
     let n = params.num_scenarios as usize;
@@ -159,21 +159,18 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
             KIND_LP => {
                 let market: LpMarket = load(next()?)?;
                 let account = next()?;
-                // Only the position at Orca's own address for this NFT counts, never another account naming the mint
-                let expected = Pubkey::create_program_address(&[b"position", pos.mint.as_ref(), &[pos.bump]], &WHIRLPOOL_PROGRAM_ID)
-                    .map_err(|_| error!(PluribusError::AccountMismatch))?;
-                require_keys_eq!(account.key(), expected, PluribusError::AccountMismatch);
-                let orca = read_position(account)?;
-                require_keys_eq!(orca.position_mint, pos.mint, PluribusError::AccountMismatch);
-                require_keys_eq!(orca.whirlpool, market.whirlpool, PluribusError::PoolNotWhitelisted);
+                // Only the position at the dex's own address for this NFT counts, never another account naming the mint
+                require_keys_eq!(account.key(), clmm::position_address(&market, &pos.mint, pos.bump)?, PluribusError::AccountMismatch);
+                let lp = clmm::read_position(&market, account)?;
+                require_keys_eq!(lp.mint, pos.mint, PluribusError::AccountMismatch);
                 let asset: Asset = load(next()?)?;
                 require_keys_eq!(asset.mint, market.base_mint, PluribusError::AccountMismatch);
                 // Oracle price only: the pool's own price can be pushed around inside one transaction
                 let priced = read_price(pool, &asset, next()?, now)?;
                 require!(priced.fresh || scope != Scope::Draw, PluribusError::StalePrice);
                 h.price[i] = priced.price;
-                let (lower, upper) = range_sqrt_prices(orca.tick_lower, orca.tick_upper)?;
-                let valuer = Valuer::Lp { liquidity: orca.liquidity, lower, upper, decimals: asset.decimals };
+                let (lower, upper) = range_sqrt_prices(lp.tick_lower, lp.tick_upper)?;
+                let valuer = Valuer::Lp { liquidity: lp.liquidity, lower, upper, decimals: asset.decimals };
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
                 let d = asset.dynamic_shocks(params);
                 (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d)

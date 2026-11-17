@@ -922,7 +922,7 @@ fn only_whitelisted_tokens_and_pools_become_collateral() {
     assert!(env.send(&[swap(init, TOKEN, TOKEN_2022)], &[&admin]).is_err());
     assert!(env.svm.get_account(&env.asset_pda(&classic)).is_none());
 
-    // The valuer needs token A to be an oracle-priced asset and token B to be USDC
+    // A pool pairs an oracle-priced asset with USDC, in either order
     let mut market_for = |a: &Pubkey, b: &Pubkey, base: &Pubkey| {
         let pool = Pubkey::new_unique();
         env.set_whirlpool(&pool, a, b);
@@ -932,8 +932,14 @@ fn only_whitelisted_tokens_and_pools_become_collateral() {
     };
     expect_err(market_for(&sol, &stock, &sol), PluribusError::PoolNotWhitelisted);
     expect_err(market_for(&stock, &usdc, &sol), PluribusError::PoolNotWhitelisted);
-    expect_err(market_for(&usdc, &sol, &sol), PluribusError::PoolNotWhitelisted);
     expect_err(market_for(&usdc, &usdc, &usdc), PluribusError::PoolNotWhitelisted);
+    expect_err(market_for(&usdc, &stock, &sol), PluribusError::PoolNotWhitelisted);
+    // USDC first lists too, with the range turned around when positions are valued
+    let flipped = Pubkey::new_unique();
+    env.set_whirlpool(&flipped, &usdc, &sol);
+    expect_ok(env.send(&[env.init_lp_market_ix(&flipped, &sol, 500)], &[&admin]));
+    let market: LpMarket = env.load(&env.lp_market_pda(&flipped));
+    assert!(!market.base_first && market.dex_program == WHIRLPOOL_PROGRAM_ID);
 
     // A whirlpool look-alike under another owner, and an Orca account that is not a whirlpool
     let fake = Pubkey::new_unique();

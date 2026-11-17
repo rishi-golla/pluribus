@@ -769,10 +769,11 @@ impl Asset {
     }
 }
 
-/// A whitelisted Orca Whirlpool whose positions count as collateral, always quoted in USDC
+/// A whitelisted Orca Whirlpool or Raydium CLMM pool whose positions count as collateral, always quoted in USDC
 #[account]
 #[derive(InitSpace)]
 pub struct LpMarket {
+    /// The pool, Orca or Raydium
     pub whirlpool: Pubkey,
     pub base_mint: Pubkey,
     pub bump: u8,
@@ -784,6 +785,10 @@ pub struct LpMarket {
     pub pending_liq_cost_bps: u16,
     pub pending_paused: bool,
     pub pending_at: i64,
+    /// The program that owns the pool and its positions
+    pub dex_program: Pubkey,
+    /// Whether the base token is the pool's first token and USDC its second, which turns the range around when it is not
+    pub base_first: bool,
 }
 
 /// A junior lender's shares in the exit queue, held in the pool's escrow until claimed or cancelled
@@ -816,11 +821,11 @@ pub struct DemoPrice {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, InitSpace)]
 pub struct Position {
     pub kind: u8,
-    /// Token mint, or the Orca position NFT mint
+    /// Token mint, or the position NFT mint of an LP
     pub mint: Pubkey,
     /// Token base units, or 1 for an LP position
     pub amount: u64,
-    /// Bump of Orca's address for an LP position, so the health check can confirm it cheaply
+    /// Bump of the dex's address for an LP position, so the health check can confirm it cheaply
     pub bump: u8,
 }
 

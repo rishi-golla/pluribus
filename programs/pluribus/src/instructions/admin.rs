@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{constants::*, error::PluribusError, events::*, orca::read_whirlpool_mints, state::*, token::push};
+use crate::{clmm::read_pool, constants::*, error::PluribusError, events::*, state::*, token::push};
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -365,7 +365,7 @@ pub struct InitLpMarket<'info> {
     pub admin: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
     pub pool: Box<Account<'info, Pool>>,
-    /// CHECK: Owner, discriminator and mints are checked in the handler
+    /// CHECK: An Orca Whirlpool or Raydium CLMM pool, whose owner, discriminator and mints are checked in the handler
     pub whirlpool: UncheckedAccount<'info>,
     #[account(seeds = [ASSET_SEED, base_asset.mint.as_ref()], bump = base_asset.bump)]
     pub base_asset: Box<Account<'info, Asset>>,
@@ -393,11 +393,13 @@ fn record_lp_cost(pool: &mut Pool, liq_cost_bps: u16) -> Result<()> {
 
 pub fn handle_init_lp_market(ctx: Context<InitLpMarket>, liq_cost_bps: u16) -> Result<()> {
     record_lp_cost(&mut ctx.accounts.pool, liq_cost_bps)?;
-    let (mint_a, mint_b) = read_whirlpool_mints(&ctx.accounts.whirlpool)?;
+    let (dex_program, mint_a, mint_b) = read_pool(&ctx.accounts.whirlpool)?;
     let base = &ctx.accounts.base_asset;
-    // The valuer assumes token A is the priced asset and token B is USDC
+    // The pool pairs the base token with USDC, in either order
+    let usdc = ctx.accounts.pool.usdc_mint;
+    let base_first = mint_a == base.mint && mint_b == usdc;
     require!(
-        mint_a == base.mint && mint_b == ctx.accounts.pool.usdc_mint && base.params.oracle != ORACLE_FIXED,
+        (base_first || (mint_a == usdc && mint_b == base.mint)) && base.params.oracle != ORACLE_FIXED,
         PluribusError::PoolNotWhitelisted
     );
     // An LP is valued at its base token's own price alone, so a base whose price needs more is left out:
@@ -417,6 +419,8 @@ pub fn handle_init_lp_market(ctx: Context<InitLpMarket>, liq_cost_bps: u16) -> R
         pending_liq_cost_bps: liq_cost_bps,
         pending_paused: false,
         pending_at: 0,
+        dex_program,
+        base_first,
     });
     Ok(())
 }
