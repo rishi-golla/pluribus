@@ -3991,6 +3991,11 @@
       "code": 6033,
       "name": "NotYetActive",
       "msg": "This collateral is still in its activation delay"
+    },
+    {
+      "code": 6034,
+      "name": "EpochChangeNotAllowed",
+      "msg": "The epoch length can only change once the yield buffer is paid out, or to 0"
     }
   ],
   "types": [

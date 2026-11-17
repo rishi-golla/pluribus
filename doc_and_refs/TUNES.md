@@ -36,7 +36,7 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
-| `epoch_secs` | 7d (Friday 00:00 UTC) | 0, or 60s to 30d | Lenders' interest collects in a buffer and is paid out evenly over the next epoch, each moment's slice split by the tranches' weights. 0 pays interest as it accrues (used on localnet); a leftover buffer still pays out on its schedule. Lengths that don't divide a week aren't Friday-aligned. |
+| `epoch_secs` | 7d (Friday 00:00 UTC) | 0, or 60s to 30d | Lenders' interest collects in a buffer and is paid out evenly over the next epoch, each moment's slice split by the tranches' weights. 0 pays interest as it accrues (used on localnet); a leftover buffer still pays out on its schedule. Lengths that don't divide a week aren't Friday-aligned. A new length only applies once the buffer is empty: go through 0 first and the buffer drains on its old schedule. |
 | `yield_margin_bps` | 1000 | ≤ 5000 | Share of the buffer held back when an epoch opens. It carries into the next week, smoothing the yield and taking losses before the reserve. Higher = steadier yield and a bigger loss cushion, lower = lenders paid sooner. |
 
 ## Crash scenarios and liquidation

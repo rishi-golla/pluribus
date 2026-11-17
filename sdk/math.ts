@@ -86,6 +86,7 @@ type PoolLike = {
   epochStart: Numeric;
   epochEnd: Numeric;
   epochBudget: Numeric;
+  epochPaid: Numeric;
   params: {
     baseRateBps: number;
     slope1Bps: number;
@@ -129,15 +130,16 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const weights = seniorAssets + juniorWeight;
   const interest = (borrowRateBps / BPS) * debt;
   const toLenders = interest * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
-  // With weekly epochs lenders share the epoch's fixed budget by their weights, otherwise today's interest as it accrues
-  // An epoch that has ended opens at the next accrual with the buffer less the margin
+  // Lenders get the rest of the open epoch's budget over the time it has left, never more than the buffer holds,
+  // plus, with epochs off, today's interest as it accrues
+  // With epochs on and the epoch over, the next one opens with the buffer less the margin
   const now = Date.now() / 1000;
   const [epochStart, epochEnd] = [num(pool.epochStart), num(pool.epochEnd)];
   const weekly = p.epochSecs > 0;
-  const live = now < epochEnd && epochEnd > epochStart;
-  const budget = live ? num(pool.epochBudget) / 1e6 : yieldBuffer * (1 - p.yieldMarginBps / BPS);
-  const perYear = SECONDS_PER_YEAR / (live ? epochEnd - epochStart : p.epochSecs || 1);
-  const lenderYear = weekly ? budget * perYear : toLenders;
+  const left = Math.max(Math.min(num(pool.epochBudget) - num(pool.epochPaid), num(pool.yieldBuffer)), 0) / 1e6;
+  const streaming = now < epochEnd ? (left / Math.max(epochEnd - Math.max(now, epochStart), 1)) * SECONDS_PER_YEAR : 0;
+  const next = (yieldBuffer * (1 - p.yieldMarginBps / BPS) * SECONDS_PER_YEAR) / Math.max(p.epochSecs, 1);
+  const lenderYear = weekly ? (now < epochEnd ? streaming : next) : toLenders + streaming;
   const seniorYear = weights > 0 ? (lenderYear * seniorAssets) / weights : lenderYear;
   const juniorYear = weights > 0 ? (lenderYear * juniorWeight) / weights : 0;
   // An empty tranche shows what its first dollar would earn: the senior rate, and for juniors the premium per unit of target on top

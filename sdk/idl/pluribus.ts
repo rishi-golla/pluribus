@@ -3997,6 +3997,11 @@ export type Pluribus = {
       "code": 6033,
       "name": "notYetActive",
       "msg": "This collateral is still in its activation delay"
+    },
+    {
+      "code": 6034,
+      "name": "epochChangeNotAllowed",
+      "msg": "The epoch length can only change once the yield buffer is paid out, or to 0"
     }
   ],
   "types": [
