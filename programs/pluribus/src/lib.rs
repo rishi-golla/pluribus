@@ -8,6 +8,7 @@ pub mod orca;
 pub mod risk;
 pub mod state;
 pub mod token;
+pub mod token2022;
 
 use anchor_lang::prelude::*;
 

@@ -52,7 +52,12 @@ pub struct Liquidate<'info> {
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = collateral_mint)]
     pub liquidator_collateral: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// Moves the USDC, which is always a classic token
+    #[account(address = anchor_spl::token::ID @ PluribusError::AccountMismatch)]
     pub token_program: Interface<'info, TokenInterface>,
+    /// Moves the collateral, classic or Token-2022 as the asset was listed
+    #[account(address = asset.token_program @ PluribusError::AccountMismatch)]
+    pub collateral_token_program: Interface<'info, TokenInterface>,
 }
 
 /// The liquidator repays USDC and takes token collateral worth that plus the bonus
@@ -92,7 +97,7 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     a.credit.remove_token(&mint, seize)?;
     a.asset.total_deposited = a.asset.total_deposited.saturating_sub(seize);
     pull(&a.token_program, &a.usdc_mint, &a.liquidator_usdc, &a.usdc_vault, &a.liquidator, repay)?;
-    push(&a.token_program, &a.collateral_mint, &a.vault, &a.liquidator_collateral, &a.pool, seize)?;
+    push(&a.collateral_token_program, &a.collateral_mint, &a.vault, &a.liquidator_collateral, &a.pool, seize)?;
     emit!(Liquidated {
         account: a.credit.key(),
         liquidator: a.liquidator.key(),

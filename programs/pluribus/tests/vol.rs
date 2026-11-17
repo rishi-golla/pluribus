@@ -41,12 +41,12 @@ fn a_calm_asset_keeps_the_table_and_a_volatile_one_falls_further_in_every_scenar
     env.lender(100_000 * USDC);
     // 80% a year over a day at z = 3 is about 12.6%, under the table's 30% crypto crash
     let calm = volatile(&mut env, 8_000);
-    let d = asset(&env, &calm).dynamic_shock(300) as f64;
+    let d = asset(&env, &calm).dynamic_shocks(&default_params()).0 as f64;
     assert!((d / expected_shock(8_000.0, 3.0, DAY as f64) - 1.0).abs() < 0.01, "shock {d}");
     let table = limit_for(&mut env, &calm, 10);
     // 300% a year is about 47% over a day: the crypto crash deepens to that, and the others keep their share of it
     let wild = volatile(&mut env, 30_000);
-    let d = asset(&env, &wild).dynamic_shock(300) as f64;
+    let d = asset(&env, &wild).dynamic_shocks(&default_params()).0 as f64;
     assert!(d > 4_500.0 && d < 4_800.0, "shock {d}");
     let shocked = limit_for(&mut env, &wild, 10);
     // $1000 of tokens less the 5% cost: the worst scenario now keeps 1 - d instead of 70%
@@ -85,11 +85,11 @@ fn the_crank_learns_volatility_from_fresh_prices_and_refuses_samples_it_cannot_t
     env.warp(60);
     env.set_price(&mint, 110 * USDC);
     expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
-    // A 10% move over a minute: squared return per second, a sixtieth of an hour into the fast average
+    // A 10% move against the midpoint, its squared return spread over each average's span
     let a = asset(&env, &mint);
-    let sample = 0.01 / 60.0 * VOL_SCALE as f64;
-    assert!((a.var_fast as f64 / (sample / 60.0) - 1.0).abs() < 0.01, "fast {}", a.var_fast);
-    assert!((a.var_slow as f64 / (sample * 60.0 / (7.0 * DAY as f64)) - 1.0).abs() < 0.01, "slow {}", a.var_slow);
+    let r2 = (10.0f64 / 105.0).powi(2) * VOL_SCALE as f64;
+    assert!((a.var_fast as f64 / (r2 / 3_600.0) - 1.0).abs() < 0.01, "fast {}", a.var_fast);
+    assert!((a.var_slow as f64 / (r2 / (7.0 * DAY as f64)) - 1.0).abs() < 0.01, "slow {}", a.var_slow);
     // Too old or too uncertain a price is refused
     env.warp(61);
     expect_err(env.send(&[env.update_vol_ix(&mint)], &[&keeper]), PluribusError::StalePrice);
@@ -110,15 +110,14 @@ fn volatility_rises_fast_and_fades_slowly() {
     env.warp(3_600);
     env.set_price(&mint, 70 * USDC);
     expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
-    let crash = asset(&env, &mint).dynamic_shock(300);
-    // The fast average takes the whole hour: 0.09 per hour of variance over a day at z = 3 is a 441% shock before the cap
+    let p = default_params();
+    let crash = asset(&env, &mint).dynamic_shocks(&p).0;
+    // The fast average takes the move over an hour: far past the cap for draws
     assert!(crash > 4_000, "shock after the crash {crash}");
-    // The slow average spreads the same hour over a week: 0.09 over 7 days, a day of it at z = 3 is about 34%
-    let slow_now = {
-        let a = asset(&env, &mint);
-        Asset { var_fast: 0, ..a }.dynamic_shock(300)
-    };
-    assert!((slow_now as f64 / 3_402.0 - 1.0).abs() < 0.02, "slow shock {slow_now}");
+    // The slow average spreads it over a week and sets the liquidation line: (30 / 85)^2 over 7 days, a day of it at z = 2.33
+    let slow_now = asset(&env, &mint).dynamic_shocks(&p).1;
+    let want = 2.33 * ((30.0f64 / 85.0).powi(2) / 7.0).sqrt() * 10_000.0;
+    assert!((slow_now as f64 / want - 1.0).abs() < 0.02, "slow shock {slow_now}, want {want}");
     // A calm day of hourly samples: the fast average drops away and the slow one fades by a day's weight of seven
     for _ in 0..24 {
         env.warp(3_600);
@@ -127,11 +126,65 @@ fn volatility_rises_fast_and_fades_slowly() {
     }
     let a = asset(&env, &mint);
     assert!(a.var_fast < a.var_slow / 100, "fast {} slow {}", a.var_fast, a.var_slow);
-    let after_a_day = a.dynamic_shock(300);
+    let after_a_day = a.dynamic_shocks(&p).1;
     let fade = (1.0f64 - 1.0 / 168.0).powi(24).sqrt();
     assert!((after_a_day as f64 / (slow_now as f64 * fade) - 1.0).abs() < 0.01, "a day later the shock is {after_a_day}");
-    // Still deeper than the table's 30% crypto crash a day after the move
-    assert!(after_a_day > 3_000);
+    // Still deeper than the table's 20% crypto crash for liquidations a day after the move
+    assert!(after_a_day > 2_000);
+}
+
+#[test]
+fn a_single_round_trip_sample_never_makes_a_healthy_borrower_liquidatable() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let mint = volatile(&mut env, 8_000);
+    let user = env.user();
+    env.deposit(&user, &mint, 10 * SOL);
+    let limit = env.health(&user.pubkey()).credit_limit;
+    expect_ok(env.draw(&user, limit * 96 / 100));
+    let keeper = env.wallet();
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    // 100 to 102 and back, a minute apart, then a weekend gap and a 2% jump
+    for (wait, price) in [(60, 102), (60, 100), (64 * 3_600, 102)] {
+        env.warp(wait);
+        env.set_price(&mint, price * USDC);
+        expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+        let h = env.health(&user.pubkey());
+        assert!(h.liquidation_limit > h.debt, "liquidatable after a {price} print: limit {} debt {}", h.liquidation_limit, h.debt);
+    }
+}
+
+#[test]
+fn a_move_inside_the_price_band_teaches_nothing() {
+    let mut env = Env::new();
+    let mint = volatile(&mut env, 0);
+    let keeper = env.wallet();
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    env.warp(60);
+    // 1.9% up with a 1.9% band
+    expect_ok(env.set_price_conf(&mint, 101_900_000, 1_900_000));
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    let a = asset(&env, &mint);
+    assert_eq!((a.var_fast, a.var_slow), (0, 0));
+}
+
+#[test]
+fn raising_a_groups_worst_shock_alone_waits_since_it_lowers_the_dynamic_shock_elsewhere() {
+    let mut env = Env::timed();
+    let admin = env.admin.insecure_clone();
+    let params = timed_params();
+    let mut worse = params;
+    worse.init_shock_bps[0] = 9_000;
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), worse)], &[&admin]));
+    let pool = env.pool_state();
+    assert_eq!((pool.params, pool.pending_at > 0), (params, true));
+    // Raising every scenario of the group in proportion keeps the share and applies at once
+    let mut scaled = params;
+    for s in 0..params.num_scenarios as usize {
+        scaled.init_shock_bps[s * MAX_GROUPS] = params.init_shock_bps[s * MAX_GROUPS] * 2;
+    }
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), scaled)], &[&admin]));
+    assert_eq!(env.pool_state().params, scaled);
 }
 
 #[test]
@@ -156,6 +209,7 @@ fn volatility_settings_that_make_no_sense_are_rejected() {
         ("liquidation z above draw z", PoolParams { z_maint_x100: 301, ..p }),
         ("fast average slower than the slow one", PoolParams { vol_tau_fast_secs: 8 * DAY as u32, ..p }),
         ("no minimum interval", PoolParams { vol_min_interval_secs: 0, ..p }),
+        ("minimum interval longer than the fast average", PoolParams { vol_min_interval_secs: 3_601, ..p }),
         ("cap at 100%", PoolParams { max_shock_bps: 10_000, ..p }),
         ("cap under a table shock", PoolParams { max_shock_bps: 2_999, ..p }),
     ];

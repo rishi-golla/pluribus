@@ -50,6 +50,7 @@ pub struct MoveToken<'info> {
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = owner)]
     pub owner_token: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(address = asset.token_program @ PluribusError::AccountMismatch)]
     pub token_program: Interface<'info, TokenInterface>,
 }
 

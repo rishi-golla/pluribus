@@ -59,10 +59,8 @@ pub struct PoolParams {
     /// Two averages of each asset's variance: the fast one lets a rise in volatility in quickly, the slow one makes it fade slowly
     pub vol_tau_fast_secs: u32,
     pub vol_tau_slow_secs: u32,
-    /// A volatility sample needs a price this much newer than the last one, at most this old and this certain,
-    /// and counts at most `vol_max_dt_secs` of elapsed time
+    /// A volatility sample needs a price this much newer than the last one, at most this old and this certain
     pub vol_min_interval_secs: u32,
-    pub vol_max_dt_secs: u32,
     pub vol_max_age_secs: u32,
     pub vol_conf_cap_bps: u16,
     /// Largest shock any scenario can apply, dynamic or not
@@ -114,7 +112,7 @@ impl PoolParams {
             && 0 < self.vol_tau_fast_secs
             && self.vol_tau_fast_secs <= self.vol_tau_slow_secs
             && 0 < self.vol_min_interval_secs
-            && self.vol_min_interval_secs <= self.vol_max_dt_secs
+            && self.vol_min_interval_secs <= self.vol_tau_fast_secs
             && self.vol_max_age_secs > 0
             && (1..=2_000).contains(&self.vol_conf_cap_bps)
             && (self.max_shock_bps as u128) < BPS
@@ -141,6 +139,18 @@ impl PoolParams {
             && next.num_scenarios >= self.num_scenarios
             && raised(&self.init_shock_bps, &next.init_shock_bps)
             && raised(&self.maint_shock_bps, &next.maint_shock_bps)
+            && self.keeps_dynamic_share(next, true)
+            && self.keeps_dynamic_share(next, false)
+    }
+
+    /// A dynamic shock reaches each scenario as table / worst of the group, so raising a group's worst entry alone
+    /// would lower it everywhere else: a tightening must keep that share in every scenario that already existed
+    fn keeps_dynamic_share(&self, next: &PoolParams, init: bool) -> bool {
+        let worst = |p: &PoolParams, g: u8| (0..p.num_scenarios as usize).map(|s| p.shock(init, s, g)).max().unwrap_or(0);
+        (0..MAX_GROUPS as u8).all(|g| {
+            let (old_worst, new_worst) = (worst(self, g), worst(next, g));
+            (0..self.num_scenarios as usize).all(|s| next.shock(init, s, g) * old_worst >= self.shock(init, s, g) * new_worst)
+        })
     }
 
     /// Wait for a junior exit queued when `queued` of `supply` junior shares are in the queue, this one included
@@ -623,6 +633,11 @@ pub struct AssetParams {
     /// The SOL price to value the backing with: the SOL mint for demo prices, its Pyth feed otherwise
     pub rate_base_mint: Pubkey,
     pub rate_feed_id: [u8; 32],
+    /// Oldest price that still counts for liquidations and the liquidation line, at least `max_price_age_secs`
+    /// Longer for stocks so a weekend's last price still lets bad debt be liquidated, while draws keep the short limit
+    pub liq_price_age_secs: u32,
+    /// Multiply the per-share price by the mint's corporate-action multiplier, for a per-share feed on a scaled token
+    pub ui_multiplier: bool,
 }
 
 impl AssetParams {
@@ -660,7 +675,10 @@ impl AssetParams {
                 // A staking token has a market price of its own to compare with its backing
                 && self.rate_source <= RATE_FIXED
                 && (self.rate_source == RATE_NONE || self.oracle == ORACLE_PYTH)
-                && (self.rate_source != RATE_FIXED || self.fixed_rate > 0),
+                && (self.rate_source != RATE_FIXED || self.fixed_rate > 0)
+                && (self.rate_source == RATE_NONE || self.rate_base_mint != Pubkey::default())
+                && (self.rate_source != RATE_STAKE_POOL || self.rate_account != Pubkey::default())
+                && self.liq_price_age_secs >= self.max_price_age_secs,
             PluribusError::InvalidParams
         );
         Ok(())
@@ -688,17 +706,27 @@ pub struct Asset {
     /// The price and publish time of the last volatility sample
     pub vol_price: u64,
     pub vol_time: i64,
+    /// Classic SPL Token or Token-2022, which every transfer of this asset must go through
+    pub token_program: Pubkey,
     /// Room for fields added later without moving the ones above
     pub reserved: [u8; 64],
 }
 
 impl Asset {
-    /// The dynamic shock z x sigma x sqrt(T) in bps, from the higher of the two variance averages
-    pub fn dynamic_shock(&self, z_x100: u16) -> u128 {
-        let var = self.var_fast.max(self.var_slow);
+    /// The dynamic shock z x sigma x sqrt(T) in bps for a variance per second
+    pub fn dynamic_shock(&self, var: u128, z_x100: u16) -> u128 {
         let spread = var.saturating_mul(self.params.vol_horizon_secs as u128).isqrt();
         // sqrt(var x T) carries a scale of 1e9, so z / 100 x that / 1e9 x 1e4 bps
         (z_x100 as u128).saturating_mul(spread) / 10_000_000
+    }
+
+    /// Dynamic shocks for draws and liquidations
+    /// Draws take the higher of both averages, so a burst of volatility stops new debt at once
+    /// The liquidation line follows only the slow average, so no single sample can make a healthy account liquidatable
+    pub fn dynamic_shocks(&self, p: &PoolParams) -> (u128, u128) {
+        let init = self.dynamic_shock(self.var_fast.max(self.var_slow), p.z_init_x100);
+        let maint = self.dynamic_shock(self.var_slow, p.z_maint_x100);
+        (init, maint.min(init))
     }
 
     /// Variance per second for an annual volatility in bps, used to seed a new listing
@@ -707,29 +735,34 @@ impl Asset {
         s * s * (VOL_SCALE / BPS / BPS) / SECONDS_PER_YEAR
     }
 
-    /// Folds one price sample into both averages: the squared simple return per second, weighted by elapsed time over each average's span
-    pub fn record_vol(&mut self, price: u64, publish_time: i64, p: &PoolParams) -> Result<()> {
+    /// Folds one price sample into both averages, each an average of realized variance per second over its span:
+    /// the old value fades with the real time elapsed, and the move adds its squared return spread over the span
+    /// Only the part of the move beyond the price's own uncertainty counts, measured against the midpoint so up and down weigh alike
+    pub fn record_vol(&mut self, price: u64, conf: u64, publish_time: i64, p: &PoolParams) -> Result<()> {
         if self.vol_time != 0 && self.vol_price > 0 {
             require!(publish_time >= self.vol_time + p.vol_min_interval_secs as i64, PluribusError::VolTooSoon);
-            // A long gap, like a weekend, counts at most this long, so the jump that ends it reads as large
-            let dt = (publish_time - self.vol_time).clamp(p.vol_min_interval_secs as i64, p.vol_max_dt_secs as i64) as u128;
+            let elapsed = (publish_time - self.vol_time) as u128;
             let (p0, p1) = (self.vol_price as u128, price as u128);
-            let r = p1.abs_diff(p0);
+            let moved = p1.abs_diff(p0).saturating_sub(conf as u128);
+            let mid = (p0 + p1) / 2;
             let overflow = || error!(PluribusError::MathOverflow);
-            let r2 = r.checked_mul(r).ok_or_else(overflow)?;
-            let base = p0.checked_mul(p0).and_then(|x| x.checked_mul(dt)).ok_or_else(overflow)?;
-            let sample = mul_div_wide(r2, VOL_SCALE, base)?;
+            let r2 = mul_div_wide(moved.checked_mul(moved).ok_or_else(overflow)?, VOL_SCALE, mid.checked_mul(mid).ok_or_else(overflow)?)?;
             let fold = |v: u128, tau: u32| -> Result<u128> {
                 let tau = tau as u128;
-                if dt >= tau {
-                    return Ok(sample);
-                }
-                let step = mul_div_floor(sample.abs_diff(v), dt, tau)?;
-                Ok(if sample >= v { v.saturating_add(step) } else { v - step })
+                let kept = if elapsed >= tau { 0 } else { mul_div_floor(v, tau - elapsed, tau)? };
+                Ok(kept.saturating_add(r2 / tau))
             };
             self.var_fast = fold(self.var_fast, p.vol_tau_fast_secs)?;
             self.var_slow = fold(self.var_slow, p.vol_tau_slow_secs)?;
         }
+        self.vol_price = price;
+        self.vol_time = publish_time;
+        Ok(())
+    }
+
+    /// Measures from this price again without folding in the move since the last sample, for a move that is not volatility
+    pub fn restart_vol(&mut self, price: u64, publish_time: i64, p: &PoolParams) -> Result<()> {
+        require!(publish_time >= self.vol_time + p.vol_min_interval_secs as i64, PluribusError::VolTooSoon);
         self.vol_price = price;
         self.vol_time = publish_time;
         Ok(())

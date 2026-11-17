@@ -225,10 +225,10 @@ pub struct InitAsset<'info> {
     pub admin: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
     pub pool: Box<Account<'info, Pool>>,
-    // Token-2022 mints can carry transfer fees and hooks, which would break vault accounting
+    // Classic tokens, or Token-2022 mints whose extensions pass the allow-list in `token2022::check_listable`
     // Share tokens would let lenders borrow against the very pool their deposit backs, and juniors could step out of losses
     #[account(
-        constraint = *mint.to_account_info().owner == anchor_spl::token::ID @ PluribusError::UnsupportedMint,
+        constraint = *mint.to_account_info().owner == token_program.key() @ PluribusError::UnsupportedMint,
         constraint = mint.key() != pool.share_mint && mint.key() != pool.junior_mint @ PluribusError::ShareMintNotCollateral,
     )]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
@@ -257,6 +257,9 @@ fn check_asset(pool: &Pool, mint: &Pubkey, params: &AssetParams) -> Result<()> {
         if params.oracle == ORACLE_FIXED { is_usdc } else { !is_usdc && pool.params.bonus_fits(params.liq_cost_bps) },
         PluribusError::InvalidParams
     );
+    // A dynamic shock is laid over its group's column, so it needs a group with a column that shocks something
+    let worst = (0..pool.params.num_scenarios as usize).map(|s| pool.params.shock(true, s, params.group)).max().unwrap_or(0);
+    require!(params.vol_horizon_secs == 0 || worst > 0, PluribusError::InvalidParams);
     Ok(())
 }
 
@@ -274,6 +277,14 @@ fn record_asset(pool: &mut Pool, mint: &Pubkey, params: &AssetParams) -> Result<
 pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_seed_bps: u32) -> Result<()> {
     record_asset(&mut ctx.accounts.pool, &ctx.accounts.mint.key(), &params)?;
     require!(sigma_seed_bps <= 100_000, PluribusError::InvalidParams);
+    let token_program = ctx.accounts.token_program.key();
+    if token_program == anchor_spl::token_2022::ID {
+        crate::token2022::check_listable(&ctx.accounts.mint.to_account_info())?;
+    } else {
+        require_keys_eq!(token_program, anchor_spl::token::ID, PluribusError::UnsupportedMint);
+    }
+    // USDC is moved with the classic program everywhere
+    require!(ctx.accounts.mint.key() != ctx.accounts.pool.usdc_mint || token_program == anchor_spl::token::ID, PluribusError::UnsupportedMint);
     let now = Clock::get()?.unix_timestamp;
     let seed = Asset::seed_variance(sigma_seed_bps);
     ctx.accounts.asset.set_inner(Asset {
@@ -290,6 +301,7 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         var_slow: seed,
         vol_price: 0,
         vol_time: 0,
+        token_program,
         reserved: [0; 64],
     });
     Ok(())
@@ -309,6 +321,8 @@ pub fn handle_set_asset(ctx: Context<SetAsset>, params: AssetParams) -> Result<(
     let now = Clock::get()?.unix_timestamp;
     let (pool, asset) = (&mut ctx.accounts.pool, &mut ctx.accounts.asset);
     let delay = pool.params.activation_delay_secs as i64;
+    // A token can't become a staking token after listing, since an LP market may already value it at its own price alone
+    require!(asset.params.rate_source != RATE_NONE || params.rate_source == RATE_NONE, PluribusError::InvalidParams);
     if asset.params.only_tightens(&params) || (delay == 0 && !pool.junior_exits_paused(now)) {
         record_asset(pool, &asset.mint, &params)?;
         asset.params = params;
@@ -384,6 +398,12 @@ pub fn handle_init_lp_market(ctx: Context<InitLpMarket>, liq_cost_bps: u16) -> R
     // The valuer assumes token A is the priced asset and token B is USDC
     require!(
         mint_a == base.mint && mint_b == ctx.accounts.pool.usdc_mint && base.params.oracle != ORACLE_FIXED,
+        PluribusError::PoolNotWhitelisted
+    );
+    // An LP is valued at its base token's own price alone, so a base whose price needs more is left out:
+    // a staking token's backing cap and a Token-2022 token's multiplier would both be skipped
+    require!(
+        base.params.rate_source == RATE_NONE && base.token_program == anchor_spl::token::ID,
         PluribusError::PoolNotWhitelisted
     );
     ctx.accounts.lp_market.set_inner(LpMarket {

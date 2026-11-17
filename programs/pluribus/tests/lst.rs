@@ -114,6 +114,27 @@ fn only_the_listed_stake_pool_from_a_known_program_and_up_to_date_counts() {
 }
 
 #[test]
+fn a_staking_tokens_volatility_follows_its_sol_backing_when_that_sets_its_price() {
+    let mut env = Env::with(lst_params(), true);
+    let admin = env.admin.insecure_clone();
+    let mint = env.new_mint(9, &TOKEN);
+    let params = AssetParams { vol_horizon_secs: DAY as u32, ..lst_asset(&env, RATE_FIXED, Pubkey::default(), 1_000_000_000) };
+    expect_ok(env.send(&[env.init_asset_ix(&mint, params)], &[&admin]));
+    let sol = env.sol;
+    let keeper = env.wallet();
+    env.set_price(&mint, 160 * USDC);
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    // SOL falls 40% while the token's own feed sits still: its price follows SOL down, and so does its volatility
+    env.warp(3_600);
+    env.set_price(&sol, 90 * USDC);
+    env.set_price(&mint, 160 * USDC);
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    let asset: Asset = env.load(&env.asset_pda(&mint));
+    assert_eq!(asset.vol_price, 90 * USDC);
+    assert!(asset.dynamic_shocks(&env.pool_state().params).0 > 4_000);
+}
+
+#[test]
 fn a_devnet_stand_in_uses_a_fixed_rate() {
     let mut env = Env::with(lst_params(), true);
     let admin = env.admin.insecure_clone();
@@ -137,4 +158,26 @@ fn staking_token_settings_that_make_no_sense_are_rejected() {
     for (name, params) in bad {
         assert!(failed_with(&env.send(&[env.init_asset_ix(&mint, params)], &[&admin]), PluribusError::InvalidParams), "{name}");
     }
+}
+
+#[test]
+fn a_staking_token_is_never_an_lp_base_and_no_token_becomes_a_staking_token_after_listing() {
+    let mut env = jito(210);
+    let admin = env.admin.insecure_clone();
+    // An LP is valued at its base's own price, which would skip the backing cap
+    let pool = Pubkey::new_unique();
+    let usdc = env.usdc;
+    env.set_whirlpool(&pool, &JITOSOL, &usdc);
+    expect_err(env.send(&[env.init_lp_market_ix(&pool, &JITOSOL, 600)], &[&admin]), PluribusError::PoolNotWhitelisted);
+    // SOL backs an LP market already, so it can't take on a backing cap the LP would never see
+    let sol = env.sol;
+    let base: Asset = env.load(&env.asset_pda(&sol));
+    let capped = AssetParams { rate_source: RATE_FIXED, fixed_rate: 1_000_000_000, rate_base_mint: sol, ..base.params };
+    expect_err(env.send(&[env.set_asset_ix(&admin.pubkey(), &sol, capped)], &[&admin]), PluribusError::InvalidParams);
+    // A backing with nowhere to read the SOL price from is refused at listing
+    let mint = env.new_mint(9, &TOKEN);
+    let blind = AssetParams { rate_base_mint: Pubkey::default(), ..lst_asset(&env, RATE_FIXED, Pubkey::default(), 1_000_000_000) };
+    expect_err(env.send(&[env.init_asset_ix(&mint, blind)], &[&admin]), PluribusError::InvalidParams);
+    let nowhere = lst_asset(&env, RATE_STAKE_POOL, Pubkey::default(), 0);
+    expect_err(env.send(&[env.init_asset_ix(&mint, nowhere)], &[&admin]), PluribusError::InvalidParams);
 }

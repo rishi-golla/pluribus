@@ -19,18 +19,25 @@ pub fn load<T: AccountDeserialize>(acc: &AccountInfo) -> Result<T> {
     T::try_deserialize(&mut &acc.try_borrow_data()?[..])
 }
 
-/// Collateral price for `asset` in USDC with 6 decimals, taken at the low end of the confidence band
-/// Fails when the price is stale or too uncertain, so anything that needs a health check stops
-pub fn read_price(pool: &Pool, asset: &Asset, acc: &AccountInfo, now: i64) -> Result<u128> {
-    checked_low(read_quote(pool, asset, acc)?, &asset.params, now)
+/// A collateral price in USDC with 6 decimals at the low end of the confidence band, and whether it is fresh enough for draws
+/// A price older than `liq_price_age_secs` or too uncertain fails, so anything that needs a health check stops
+pub struct Priced {
+    pub price: u128,
+    pub fresh: bool,
+    pub publish_time: i64,
 }
 
-/// The low end of a quote's band, once it is fresh and certain enough for `params`
-fn checked_low(q: Quote, p: &AssetParams, now: i64) -> Result<u128> {
+/// The low end of a quote's band, once it is certain enough and not past the liquidation age for `params`
+fn checked_low(q: Quote, p: &AssetParams, now: i64) -> Result<Priced> {
     require!(q.price > 0, PluribusError::InvalidPriceAccount);
-    require!(now.saturating_sub(q.publish_time) <= p.max_price_age_secs as i64, PluribusError::StalePrice);
+    let age = now.saturating_sub(q.publish_time);
+    require!(age <= p.liq_price_age_secs as i64, PluribusError::StalePrice);
     require!(q.conf * BPS <= q.price * p.max_conf_bps as u128, PluribusError::PriceTooUncertain);
-    Ok(q.price - q.conf)
+    Ok(Priced { price: q.price - q.conf, fresh: age <= p.max_price_age_secs as i64, publish_time: q.publish_time })
+}
+
+pub fn read_price(pool: &Pool, asset: &Asset, acc: &AccountInfo, now: i64) -> Result<Priced> {
+    checked_low(read_quote(pool, asset, acc)?, &asset.params, now)
 }
 
 /// The raw quote for `asset`, from its demo account in demo mode or its Pyth account otherwise, checked for the right feed
@@ -48,16 +55,19 @@ fn quote_for(pool: &Pool, mint: &Pubkey, feed: &[u8; 32], acc: &AccountInfo) -> 
 
 /// What a staking token's SOL backing is worth per whole token, with SOL at the low end of its band
 /// `pool_acc` is the stake pool for RATE_STAKE_POOL and unused for RATE_FIXED
-pub fn backing_price(pool: &Pool, asset: &Asset, sol_acc: &AccountInfo, pool_acc: Option<&AccountInfo>, now: i64) -> Result<u128> {
+pub fn backing_price(pool: &Pool, asset: &Asset, sol_acc: &AccountInfo, pool_acc: Option<&AccountInfo>, now: i64) -> Result<Priced> {
     let p = &asset.params;
-    let sol = checked_low(quote_for(pool, &p.rate_base_mint, &p.rate_feed_id, sol_acc)?, p, now)?;
-    // Lamports behind `den` base units of the token
+    let Priced { price: sol, fresh, publish_time } = checked_low(quote_for(pool, &p.rate_base_mint, &p.rate_feed_id, sol_acc)?, p, now)?;
+    // Lamports behind `units` base units of the token
     let (lamports, units) = match p.rate_source {
         RATE_FIXED => (p.fixed_rate as u128, pow10(asset.decimals)?),
         RATE_STAKE_POOL => stake_pool_rate(asset, pool_acc.ok_or_else(|| error!(PluribusError::MissingAccount))?)?,
         _ => return err!(PluribusError::InvalidParams),
     };
-    mul_div_floor(sol, lamports.checked_mul(pow10(asset.decimals)?).ok_or_else(|| error!(PluribusError::MathOverflow))?, units * LAMPORTS_PER_SOL)
+    let overflow = || error!(PluribusError::MathOverflow);
+    let num = lamports.checked_mul(pow10(asset.decimals)?).ok_or_else(overflow)?;
+    let den = units.checked_mul(LAMPORTS_PER_SOL).ok_or_else(overflow)?;
+    Ok(Priced { price: mul_div_wide(sol, num, den)?, fresh, publish_time })
 }
 
 /// Total lamports and pool token supply of an SPL stake pool, checked to be the asset's own pool and updated this epoch or the last
@@ -70,7 +80,7 @@ fn stake_pool_rate(asset: &Asset, acc: &AccountInfo) -> Result<(u128, u128)> {
     let lamports = u64::from_le_bytes(d[258..266].try_into().unwrap());
     let supply = u64::from_le_bytes(d[266..274].try_into().unwrap());
     let epoch = u64::from_le_bytes(d[274..282].try_into().unwrap());
-    // A pool not brought up to date would miss a slash, which is the one thing that lowers the rate
+    // A slash is the one thing that lowers the rate, and a pool more than an epoch behind could still be missing one
     require!(epoch + 1 >= Clock::get()?.epoch && supply > 0, PluribusError::StalePrice);
     Ok((lamports as u128, supply as u128))
 }

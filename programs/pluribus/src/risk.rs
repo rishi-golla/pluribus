@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{constants::*, error::PluribusError, math::*, oracle::*, orca::*, state::*};
+use crate::{constants::*, error::PluribusError, math::*, oracle::*, orca::*, state::*, token2022};
 
 /// An account's collateral valued under every scenario
 #[derive(Default)]
@@ -93,7 +93,7 @@ impl Valuer {
 }
 
 /// Values every position, reading its accounts from `rem` in slot order
-/// Token: asset, then its price account unless the asset is fixed at $1,
+/// Token: asset, its mint if it is a Token-2022 token, then its price account unless the asset is fixed at $1,
 /// then for a staking token the SOL price account and, for an SPL stake pool, the pool account
 /// LP: LP market, Orca position, base asset, base price account
 pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64, scope: Scope) -> Result<Health> {
@@ -110,24 +110,50 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
             KIND_TOKEN => {
                 let asset: Asset = load(next()?)?;
                 require_keys_eq!(asset.mint, pos.mint, PluribusError::AccountMismatch);
+                // A Token-2022 asset's mint follows: its issuer can pause it or scale every balance
+                let mint = if asset.token_program == anchor_spl::token_2022::ID {
+                    let acc = next()?;
+                    require_keys_eq!(acc.key(), asset.mint, PluribusError::AccountMismatch);
+                    require_keys_eq!(*acc.owner, anchor_spl::token_2022::ID, PluribusError::AccountMismatch);
+                    Some(token2022::read_state(acc)?)
+                } else {
+                    None
+                };
+                let (mut fresh, mut moving) = (true, false);
                 h.price[i] = match asset.params.oracle {
                     ORACLE_FIXED => PRICE_ONE,
                     _ => {
                         let own = read_price(pool, &asset, next()?, now)?;
+                        fresh = own.fresh;
                         // A staking token is worth no more than the SOL behind it, so a thin market cannot lift it above that
-                        match asset.params.rate_source {
-                            RATE_NONE => own,
+                        let price = match asset.params.rate_source {
+                            RATE_NONE => own.price,
                             source => {
                                 let sol = next()?;
                                 let stake_pool = if source == RATE_STAKE_POOL { Some(next()?) } else { None };
-                                own.min(backing_price(pool, &asset, sol, stake_pool, now)?)
+                                let backing = backing_price(pool, &asset, sol, stake_pool, now)?;
+                                fresh &= backing.fresh;
+                                own.price.min(backing.price)
                             }
+                        };
+                        // A per-share price for a token whose balances carry a corporate-action multiplier
+                        match mint.as_ref().and_then(|m| m.scaled).filter(|_| asset.params.ui_multiplier) {
+                            Some(s) => {
+                                let (m, near) = s.multiplier_for(own.publish_time);
+                                moving = near;
+                                mul_div_floor(price, m, token2022::MULTIPLIER_ONE)?
+                            }
+                            None => price,
                         }
                     }
                 };
+                require!(fresh || scope != Scope::Draw, PluribusError::StalePrice);
                 let valuer = Valuer::Token { amount: pos.amount, decimals: asset.decimals };
-                let paused = asset.params.paused || now < pool.effective_at(asset.active_at);
-                let d = (asset.dynamic_shock(params.z_init_x100), asset.dynamic_shock(params.z_maint_x100));
+                // A halted mint can't be seized, a price only fresh enough for liquidations backs no new debt,
+                // and neither does a token whose multiplier is changing around its price's publish time
+                let halted = mint.is_some_and(|m| m.halted);
+                let paused = asset.params.paused || now < pool.effective_at(asset.active_at) || halted || moving || !fresh;
+                let d = asset.dynamic_shocks(params);
                 (valuer, asset.params.group, asset.params.liq_cost_bps as u128, paused, d)
             }
             KIND_LP => {
@@ -143,11 +169,13 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let asset: Asset = load(next()?)?;
                 require_keys_eq!(asset.mint, market.base_mint, PluribusError::AccountMismatch);
                 // Oracle price only: the pool's own price can be pushed around inside one transaction
-                h.price[i] = read_price(pool, &asset, next()?, now)?;
+                let priced = read_price(pool, &asset, next()?, now)?;
+                require!(priced.fresh || scope != Scope::Draw, PluribusError::StalePrice);
+                h.price[i] = priced.price;
                 let (lower, upper) = range_sqrt_prices(orca.tick_lower, orca.tick_upper)?;
                 let valuer = Valuer::Lp { liquidity: orca.liquidity, lower, upper, decimals: asset.decimals };
-                let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at);
-                let d = (asset.dynamic_shock(params.z_init_x100), asset.dynamic_shock(params.z_maint_x100));
+                let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
+                let d = asset.dynamic_shocks(params);
                 (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d)
             }
             _ => continue,

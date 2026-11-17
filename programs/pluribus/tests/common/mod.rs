@@ -107,7 +107,6 @@ pub fn default_params() -> PoolParams {
         vol_tau_fast_secs: 3_600,
         vol_tau_slow_secs: 7 * DAY as u32,
         vol_min_interval_secs: 60,
-        vol_max_dt_secs: 3_600,
         vol_max_age_secs: 60,
         vol_conf_cap_bps: 200,
         max_shock_bps: 9_500,
@@ -143,6 +142,8 @@ pub fn asset_params(group: u8, oracle: u8, feed: [u8; 32], liq_cost_bps: u16) ->
         fixed_rate: 0,
         rate_base_mint: Pubkey::default(),
         rate_feed_id: [0; 32],
+        liq_price_age_secs: 60,
+        ui_multiplier: false,
     }
 }
 
@@ -401,6 +402,11 @@ impl Env {
         pda(&[ASSET_SEED, mint.as_ref()])
     }
 
+    /// The token program that owns `mint`, classic or Token-2022
+    pub fn token_program_of(&self, mint: &Pubkey) -> Pubkey {
+        self.svm.get_account(mint).map_or(TOKEN, |a| a.owner)
+    }
+
     pub fn vault_pda(&self, mint: &Pubkey) -> Pubkey {
         pda(&[VAULT_SEED, mint.as_ref()])
     }
@@ -432,8 +438,11 @@ impl Env {
         if *mint == self.usdc {
             return keys;
         }
-        keys.push(self.price_account(mint));
         let asset: Asset = self.load(&self.asset_pda(mint));
+        if asset.token_program == TOKEN_2022 {
+            keys.push(*mint);
+        }
+        keys.push(self.price_account(mint));
         if asset.params.rate_source != RATE_NONE {
             keys.push(self.price_account(&asset.params.rate_base_mint));
         }
@@ -484,7 +493,7 @@ impl Env {
                 mint: *mint,
                 asset: self.asset_pda(mint),
                 vault: self.vault_pda(mint),
-                token_program: TOKEN,
+                token_program: self.token_program_of(mint),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -493,11 +502,12 @@ impl Env {
     }
 
     pub fn update_vol_ix(&self, mint: &Pubkey) -> Instruction {
-        self.ix(
-            pluribus::instruction::UpdateVol {}.data(),
-            pluribus::accounts::UpdateVol { pool: self.pool, asset: self.asset_pda(mint), price: self.price_account(mint) }.to_account_metas(None),
-            None,
-        )
+        let mut metas = pluribus::accounts::UpdateVol { pool: self.pool, asset: self.asset_pda(mint), price: self.price_account(mint) }.to_account_metas(None);
+        // What its health check reads besides the asset and its own price: a Token-2022 mint, a staking token's backing
+        let price = self.price_account(mint);
+        let extra = self.token_health_keys(mint).into_iter().skip(1).filter(|k| *k != price);
+        metas.extend(extra.map(|k| AccountMeta::new_readonly(k, false)));
+        self.ix(pluribus::instruction::UpdateVol {}.data(), metas, None)
     }
 
     pub fn set_asset_ix(&self, admin: &Pubkey, mint: &Pubkey, params: AssetParams) -> Instruction {
@@ -789,8 +799,8 @@ impl Env {
             asset: self.asset_pda(mint),
             mint: *mint,
             vault: self.vault_pda(mint),
-            owner_token: ata(owner, mint, &TOKEN),
-            token_program: TOKEN,
+            owner_token: ata(owner, mint, &self.token_program_of(mint)),
+            token_program: self.token_program_of(mint),
         }
         .to_account_metas(None)
     }
@@ -934,8 +944,9 @@ impl Env {
                 asset: self.asset_pda(mint),
                 collateral_mint: *mint,
                 vault: self.vault_pda(mint),
-                liquidator_collateral: ata(liquidator, mint, &TOKEN),
+                liquidator_collateral: ata(liquidator, mint, &self.token_program_of(mint)),
                 token_program: TOKEN,
+                collateral_token_program: self.token_program_of(mint),
             }
             .to_account_metas(None),
             Some(owner),

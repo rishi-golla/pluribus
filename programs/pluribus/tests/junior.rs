@@ -406,11 +406,13 @@ fn loosening_waits_out_the_activation_delay_and_tightening_applies_at_once() {
     expect_ok(env.send(&[env.cancel_pending_params_ix(&g)], &[&guardian]));
     expect_err(env.send(&[env.apply_params_ix()], &[&stranger]), PluribusError::NoPendingChange);
 
-    // Raising shocks applies at once and drops whatever was waiting
+    // Raising shocks applies at once and drops whatever was waiting, as long as no group's worst shock rises alone
     expect_ok(env.send(&[env.set_params_ix(&a, cheaper)], &[&admin]));
-    expect_ok(env.send(&[env.set_params_ix(&a, params)], &[&admin]));
+    let mut tighter = looser;
+    tighter.init_shock_bps[MAX_GROUPS] = 2_000;
+    expect_ok(env.send(&[env.set_params_ix(&a, tighter)], &[&admin]));
     let pool = env.pool_state();
-    assert_eq!((pool.params, pool.pending_at), (params, 0));
+    assert_eq!((pool.params, pool.pending_at), (tighter, 0));
     // The guardian cannot set parameters
     expect_anchor(env.send(&[env.set_params_ix(&g, looser)], &[&guardian]), ErrorCode::ConstraintHasOne);
 

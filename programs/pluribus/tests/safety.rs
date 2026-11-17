@@ -896,7 +896,7 @@ fn a_sixth_position_is_rejected() {
 // Rule 8: whitelist
 
 #[test]
-fn only_whitelisted_classic_tokens_and_pools_become_collateral() {
+fn only_whitelisted_tokens_and_pools_become_collateral() {
     let mut env = Env::new();
     let admin = env.admin.insecure_clone();
     let user = env.user();
@@ -909,13 +909,18 @@ fn only_whitelisted_classic_tokens_and_pools_become_collateral() {
     expect_anchor(env.send(&[env.deposit_token_ix(&me, &unlisted, 1_000_000)], &[&user]), ErrorCode::AccountNotInitialized);
     assert!(!env.credit(&me).has_collateral());
 
-    // A Token-2022 mint is refused whichever token program comes with it
+    // A Token-2022 mint lists only through the Token-2022 program, never paired with the classic one
     let modern = env.new_mint(6, &TOKEN_2022);
     let init = env.init_asset_ix(&modern, asset_params(GROUP_STOCK, ORACLE_PYTH, STOCK_FEED, 1000));
-    // The classic program will not make a vault for it, and the program's own check catches the other pairing
-    assert!(env.send(&[init.clone()], &[&admin]).is_err());
-    expect_err(env.send(&[swap(init, TOKEN, TOKEN_2022)], &[&admin]), PluribusError::UnsupportedMint);
+    // The classic program refuses to make a vault for it before the program's own check runs
+    assert!(env.send(&[swap(init.clone(), TOKEN_2022, TOKEN)], &[&admin]).is_err());
     assert!(env.svm.get_account(&env.asset_pda(&modern)).is_none());
+    expect_ok(env.send(&[init], &[&admin]));
+    // And a classic mint never through Token-2022
+    let classic = env.new_mint(6, &TOKEN);
+    let init = env.init_asset_ix(&classic, asset_params(GROUP_STOCK, ORACLE_PYTH, STOCK_FEED, 1000));
+    assert!(env.send(&[swap(init, TOKEN, TOKEN_2022)], &[&admin]).is_err());
+    assert!(env.svm.get_account(&env.asset_pda(&classic)).is_none());
 
     // The valuer needs token A to be an oracle-priced asset and token B to be USDC
     let mut market_for = |a: &Pubkey, b: &Pubkey, base: &Pubkey| {

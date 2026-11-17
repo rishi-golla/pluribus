@@ -19,7 +19,7 @@ const LIQ_PAYER: usize = 5;
 const LIQ_ASSET: usize = 6;
 const LIQ_VAULT: usize = 8;
 const LIQ_RECEIVER: usize = 9;
-const LIQ_HEALTH: usize = 11;
+const LIQ_HEALTH: usize = 12;
 // Account positions inside the liquidate_lp instruction
 const LP_COLLATERAL_VAULT: usize = 7;
 const LP_VAULT_NFT: usize = 9;
