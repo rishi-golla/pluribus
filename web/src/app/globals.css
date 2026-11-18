@@ -136,4 +136,113 @@
   .wallet-avatar {
     background: conic-gradient(from 200deg, #9e8cff, #3ddc97, #6aa8ff, #9e8cff);
   }
+
+  /* The guides on /docs, rendered from the repository's markdown */
+  .docs {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--color-t2);
+  }
+  .docs :is(h1, h2, h3, h4) {
+    color: var(--color-t1);
+    font-weight: 500;
+    scroll-margin-top: 24px;
+  }
+  .docs h1 {
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: -0.045em;
+    margin-bottom: 20px;
+  }
+  .docs h2 {
+    font-size: 26px;
+    line-height: 1.2;
+    letter-spacing: -0.035em;
+    margin-top: 56px;
+    padding-top: 28px;
+    border-top: 1px solid var(--color-line);
+  }
+  .docs h3 {
+    font-size: 18px;
+    letter-spacing: -0.02em;
+    margin-top: 32px;
+  }
+  .docs :is(p, ul, ol, pre, .docs-table) {
+    margin-top: 14px;
+  }
+  .docs :is(ul, ol) {
+    padding-left: 22px;
+  }
+  .docs ul {
+    list-style: disc;
+  }
+  .docs ol {
+    list-style: decimal;
+  }
+  .docs li + li {
+    margin-top: 4px;
+  }
+  .docs li::marker {
+    color: var(--color-t3);
+  }
+  .docs strong {
+    color: var(--color-t1);
+    font-weight: 500;
+  }
+  .docs a {
+    color: var(--color-brand);
+    text-underline-offset: 3px;
+  }
+  .docs a:hover {
+    text-decoration: underline;
+  }
+  .docs code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    color: var(--color-t1);
+    background: var(--color-s3);
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+    padding: 1px 5px;
+  }
+  .docs pre {
+    background: var(--color-s1);
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .docs pre code {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+  }
+  .docs-table {
+    overflow-x: auto;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+  }
+  .docs table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .docs :is(th, td) {
+    padding: 9px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .docs th {
+    color: var(--color-t3);
+    font-weight: 500;
+    background: var(--color-s1);
+  }
+  .docs tr + tr td,
+  .docs tbody tr:first-child td {
+    border-top: 1px solid var(--color-line);
+  }
 }
