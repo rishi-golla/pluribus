@@ -35,8 +35,8 @@ import {
   fetchPool,
   getProgram,
   ix,
-  pda,
-} from "../sdk/index.ts";
+  pda, type Asset } from "../sdk/index.ts";
+import { feedTimes, pushFeeds } from "./pyth.ts";
 
 const env = process.env;
 const BPS = new BN(10_000);
@@ -70,6 +70,9 @@ const keeper = Keypair.fromSecretKey(Uint8Array.from(secret));
 const me = keeper.publicKey;
 const intervalMs = millis("INTERVAL_MS", 5000);
 const autopayMs = millis("AUTOPAY_INTERVAL_MS", 600_000);
+// How often the push feeds of live assets are posted again; PYTH_PUSH=0 leaves them to someone else
+const pythMs = millis("PYTH_INTERVAL_MS", 30_000);
+const pythPush = env.PYTH_PUSH !== "0" && cluster !== "localnet";
 const dryRun = env.DRY_RUN === "1";
 
 const connection = new Connection(env.RPC_URL ?? d.rpcUrl, "confirmed");
@@ -81,6 +84,9 @@ const keeperUsdc = getAssociatedTokenAddressSync(usdcMint, me);
 const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
 const usd = (units: BN) => (Number(units.toString()) / 1e6).toFixed(2);
 const symbol = (mint: PublicKey) => d.assets[mint.toBase58()]?.symbol ?? mint.toBase58();
+// Names for the feeds in the log, the first asset on a shared feed winning
+const symbols = new Map<string, string>();
+for (const a of Object.values(d.assets)) if (a.feedId && !symbols.has(a.feedId)) symbols.set(a.feedId, a.symbol);
 // The program's own message when a transaction failed inside it, else the first line of the error and its cause
 const reason = (e: any): string =>
   decodeError(e?.logs ?? [])?.message ?? [e?.message ?? e, e?.cause?.message].filter(Boolean).join(": ").split("\n")[0];
@@ -210,16 +216,14 @@ async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicK
 }
 
 // Re-sends each demo price before it is halfway to stale
-async function heartbeat(pool: Pool, now: number) {
+// An asset switched to its live feed reads Pyth instead, so its demo account is left alone
+async function heartbeat(pool: Pool, assets: (Asset | null)[], now: number) {
   if (!pool.demoMode || !pool.admin.equals(me)) return;
   const mints = Object.keys(d.assets).map((m) => new PublicKey(m));
-  const [prices, assets] = await Promise.all([
-    program.account.demoPrice.fetchMultiple(mints.map(pda.demoPrice)),
-    program.account.asset.fetchMultiple(mints.map(pda.asset)),
-  ]);
+  const prices = await program.account.demoPrice.fetchMultiple(mints.map(pda.demoPrice));
   for (const [i, mint] of mints.entries()) {
     const [price, asset] = [prices[i], assets[i]];
-    if (!price || !asset || (now - price.publishTime.toNumber()) * 2 <= asset.params.maxPriceAgeSecs) continue;
+    if (!price || !asset || asset.livePrice || (now - price.publishTime.toNumber()) * 2 <= asset.params.maxPriceAgeSecs) continue;
     await attempt(`Demo feed heartbeat for ${symbol(mint)}`, async () =>
       send(
         `Demo feed heartbeat: ${symbol(mint)} kept at ${usd(price.price)}`,
@@ -229,18 +233,54 @@ async function heartbeat(pool: Pool, now: number) {
   }
 }
 
+// Pyth feed ids in hex, without the placeholder an asset carries while it has no feed
+const feedHex = (id: number[]) => (id.some((b) => b !== 0) ? Buffer.from(id).toString("hex") : null);
+
+// The feeds the program reads for one asset: its own, and the SOL feed behind a staking token's backing
+function feedsOf(asset: Asset): string[] {
+  const p = asset.params;
+  return [feedHex(p.pythFeedId), p.rateSource !== 0 ? feedHex(p.rateFeedId) : null].filter((f): f is string => !!f);
+}
+
+// An asset is priced from Pyth once the pool has left demo mode, or while the admin has switched it to its live feed
+const isLive = (pool: Pool, asset: Asset) => !pool.demoMode || asset.livePrice;
+
+// Posts fresh Hermes updates to the push accounts of `feeds` that are more than `maxAgeSecs` old, and logs what moved
+async function postFeeds(what: string, feeds: Iterable<string>, maxAgeSecs: number, now: number) {
+  const ids = [...new Set(feeds)];
+  if (!pythPush || !ids.length) return;
+  if (dryRun) return log(`Dry run, not posted: ${what}`);
+  const posted = await pushFeeds(connection, keeper, ids, maxAgeSecs, now);
+  if (posted.length) log(`${what}: ${posted.map((p) => `${symbols.get(p.feedId) ?? p.feedId.slice(0, 8)} at ${p.publishTime}`).join(", ")}`);
+}
+
+// Keeps the push feed of every asset the program prices from Pyth fresh, so its health checks never meet a stale price
+async function pythFeeds(pool: Pool, assets: (Asset | null)[], now: number) {
+  const live = assets.filter((a): a is Asset => !!a && isLive(pool, a));
+  await postFeeds("Pyth feeds posted", live.flatMap(feedsOf), pythMs / 1000, now);
+}
+
 // Feeds each asset's latest price into its volatility once it is a sample the program will take
-async function volatility(pool: Pool, now: number) {
-  const mints = Object.keys(d.assets).filter((m) => d.assets[m].priceAccount);
-  const assets = await program.account.asset.fetchMultiple(mints.map((m) => pda.asset(new PublicKey(m))));
+async function volatility(pool: Pool, assets: (Asset | null)[], now: number) {
   const p = pool.params;
-  for (const [i, m] of mints.entries()) {
-    const asset = assets[i];
-    if (!asset || asset.params.volHorizonSecs === 0) continue;
-    const priceAccount = new PublicKey(d.assets[m].priceAccount!);
-    const quote = pool.demoMode ? await program.account.demoPrice.fetchNullable(priceAccount) : null;
-    // Pyth accounts are read by the program itself, so outside demo mode the keeper just tries
-    const published = quote ? quote.publishTime.toNumber() : now;
+  // `assets` runs in the deployment's order, and USDC has no price account
+  const rows = Object.keys(d.assets).flatMap((m, i) => (d.assets[m].priceAccount && assets[i] ? [{ m, asset: assets[i] }] : []));
+  // A sample needs a price at most `volMaxAgeSecs` old, which a feed posted every half minute or so would often miss,
+  // so the feeds of assets that are due a sample are refreshed first
+  const due = rows.filter(({ asset }) => asset.params.volHorizonSecs !== 0 && isLive(pool, asset) && now >= asset.volTime.toNumber() + p.volMinIntervalSecs);
+  await attempt("Pyth feeds before volatility", () =>
+    postFeeds("Pyth feeds posted for volatility", due.flatMap(({ asset }) => feedsOf(asset)), p.volMaxAgeSecs / 3, now),
+  );
+  for (const { m, asset } of rows) {
+    if (asset.params.volHorizonSecs === 0) continue;
+    // The demo account's publish time, or for a live asset the oldest of its feeds, since the program takes the older price
+    let published = now;
+    if (isLive(pool, asset)) {
+      published = Math.min(now, ...(await feedTimes(connection, feedsOf(asset))).values());
+    } else {
+      const quote = await program.account.demoPrice.fetchNullable(new PublicKey(d.assets[m].priceAccount!));
+      if (quote) published = quote.publishTime.toNumber();
+    }
     if (published < asset.volTime.toNumber() + p.volMinIntervalSecs || now - published > p.volMaxAgeSecs) continue;
     const mint = new PublicKey(m);
     await attempt(`Volatility of ${symbol(mint)}`, async () =>
@@ -278,10 +318,12 @@ async function pass() {
   if (!clock) throw new Error("The RPC returned no clock sysvar");
   // The chain's own time, which is what the program compares against
   const now = Number(clock.data.readBigInt64LE(32));
+  const assets = await program.account.asset.fetchMultiple(Object.keys(d.assets).map((m) => pda.asset(new PublicKey(m))));
   // First, because a stale price blocks every health check below
-  await attempt("Demo feed heartbeat", () => heartbeat(pool, now));
+  await attempt("Pyth feeds", () => pythFeeds(pool, assets, now));
+  await attempt("Demo feed heartbeat", () => heartbeat(pool, assets, now));
   // Right after, while a fresh price is still young enough to count
-  await attempt("Volatility", () => volatility(pool, now));
+  await attempt("Volatility", () => volatility(pool, assets, now));
   for (const { account } of credits) {
     if (stopping) return;
     const owner = account.owner;
