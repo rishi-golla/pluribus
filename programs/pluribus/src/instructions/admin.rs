@@ -103,6 +103,41 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
 }
 
 #[derive(Accounts)]
+pub struct MigratePool<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// CHECK: Read raw, since a pool from before the last layout change cannot be deserialized; owner, address and admin are checked in the handler
+    #[account(mut, seeds = [POOL_SEED], bump)]
+    pub pool: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Grows a pool created before fields were appended to `Pool` to the current size, the admin paying the extra rent
+/// The new bytes start at zero, which every appended field takes as its starting value, and a pool already at size is left alone
+pub fn handle_migrate_pool(ctx: Context<MigratePool>) -> Result<()> {
+    let a = ctx.accounts;
+    let pool = a.pool.to_account_info();
+    require_keys_eq!(*pool.owner, crate::ID, PluribusError::WrongOwner);
+    let size = 8 + Pool::INIT_SPACE;
+    {
+        let data = pool.try_borrow_data()?;
+        // Layout: discriminator, then the admin key
+        require!(data.len() >= 40 && data[..8] == *Pool::DISCRIMINATOR, PluribusError::AccountMismatch);
+        require!(data[8..40] == a.admin.key().to_bytes(), PluribusError::AccountMismatch);
+        if data.len() >= size {
+            return Ok(());
+        }
+    }
+    let rent = Rent::get()?.minimum_balance(size).saturating_sub(pool.lamports());
+    if rent > 0 {
+        let accounts = anchor_lang::system_program::Transfer { from: a.admin.to_account_info(), to: pool.clone() };
+        anchor_lang::system_program::transfer(CpiContext::new(a.system_program.key(), accounts), rent)?;
+    }
+    pool.resize(size)?;
+    Ok(())
+}
+
+#[derive(Accounts)]
 pub struct AdminPool<'info> {
     pub admin: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]

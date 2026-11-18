@@ -190,4 +190,8 @@ pub mod pluribus {
     pub fn guard_lp_market(ctx: Context<GuardLpMarket>) -> Result<()> {
         admin::handle_guard_lp_market(ctx)
     }
+
+    pub fn migrate_pool(ctx: Context<MigratePool>) -> Result<()> {
+        admin::handle_migrate_pool(ctx)
+    }
 }
