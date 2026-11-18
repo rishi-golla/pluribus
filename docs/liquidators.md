@@ -176,7 +176,7 @@ On each pass, for every account past its limit, it takes one step at a time:
 2. It liquidates token positions, largest first.
 3. It buys liquidity positions.
 
-It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, harvests Orca fees and records volatility samples. On a demo deployment it re-sends prices when it holds the admin key.
+It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, harvests Orca fees, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. On a demo deployment it re-sends prices when it holds the admin key.
 
 ## Numbers on devnet
 
