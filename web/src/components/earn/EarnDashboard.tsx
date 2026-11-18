@@ -337,6 +337,8 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
   const shares = amount / sharePrice[source];
   // Junior money out only joins the exit queue, which needs no idle cash but allows one exit at a time
   const queueing = mode === "Withdraw" && tranche === "junior";
+  // Senior money beyond what the pool holds idle joins the senior withdrawal queue, paid in turn as cash comes back
+  const seniorQueueing = !!live && mode === "Withdraw" && tranche === "senior" && amount > poolCash;
   const rules = live?.juniorRules;
   // The wait for what is typed, since a bigger exit can wait longer when the queue is busy
   const wait = rules ? span(queueing && amount > 0 ? rules.waitFor(shares) : rules.waitSecs) : "6 days";
@@ -354,20 +356,24 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
             ? "Exit already queued"
             : queueing && rules?.pausedUntil
               ? "Junior exits paused"
-              : live && mode === "Withdraw" && !queueing && amount > poolCash
-                ? "Exceeds pool liquidity"
-                : null;
-  const verb = mode === "Convert" ? "Move" : queueing ? "Queue" : mode;
+              : null;
+  const verb = mode === "Convert" ? "Move" : queueing || seniorQueueing ? "Queue" : mode;
   const label =
     status === "signing"
       ? "Confirm in wallet..."
       : status === "confirming"
         ? "Confirming on Solana..."
-        : (error ?? `${verb} ${money(amount).replace(/\.00$/, "")} USDC${mode === "Convert" ? " to junior" : queueing ? " for exit" : ""}`);
+        : (error ??
+          `${verb} ${money(amount).replace(/\.00$/, "")} USDC${mode === "Convert" ? " to junior" : queueing ? " for exit" : seniorQueueing ? " for withdrawal" : ""}`);
 
   const submit = async () => {
     if (error || status !== "idle") return;
-    const ok = mode === "Convert" ? await (live ? live.convertToJunior(amount, setStatus) : mockConvert(setStatus)) : await adjustPosition(tranche, mode === "Supply" ? amount : -amount, setStatus);
+    const ok =
+      mode === "Convert"
+        ? await (live ? live.convertToJunior(amount, setStatus) : mockConvert(setStatus))
+        : seniorQueueing
+          ? await live!.queueSeniorExit(amount, setStatus)
+          : await adjustPosition(tranche, mode === "Supply" ? amount : -amount, setStatus);
     setStatus("idle");
     if (!ok) return;
     if (mode === "Supply") {
@@ -376,6 +382,8 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
       toast({ title: `Moved ${money(amount)} USDC to junior`, detail: `Swapped ${money(shares)} sUSDC for ${money(amount / sharePrice.junior)} jUSDC` });
     } else if (queueing) {
       toast({ title: `${money(amount)} USDC queued for exit`, detail: `Claimable in ${wait}`, tone: "info" });
+    } else if (seniorQueueing) {
+      toast({ title: `${money(amount)} USDC queued for withdrawal`, detail: "Paid in turn as borrowers repay, before anyone can draw that cash", tone: "info" });
     } else {
       toast({ title: `Withdrew ${money(amount)} USDC`, detail: `Burned ${money(shares)} ${t.token}` });
     }
@@ -461,7 +469,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           </div>
         </label>
         <div className="mt-3.5">
-          <KV k={mode === "Supply" ? "You receive" : queueing ? "You queue" : "You burn"}>
+          <KV k={mode === "Supply" ? "You receive" : queueing || seniorQueueing ? "You queue" : "You burn"}>
             <Num value={shares} decimals={2} /> {TRANCHES[source].token}
           </KV>
           {mode === "Convert" ? (
@@ -481,7 +489,9 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           )}
           <KV k="Exit">
             {target === "senior"
-              ? "Instant"
+              ? live
+                ? `Instant up to ${money(poolCash)} idle, then the withdrawal queue`
+                : "Instant"
               : `${wait} queue, ${rules ? span(rules.windowSecs) : "2 days"} to claim, ${rules?.feeBps ?? 5} bps fee`}
           </KV>
         </div>
@@ -498,7 +508,64 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           {label}
         </motion.button>
         {live?.juniorExit && <ExitQueue live={live} />}
+        {!!live?.seniorExits.length && <SeniorQueue live={live} />}
       </div>
+    </div>
+  );
+}
+
+/** The wallet's queued senior withdrawals, each paid in full when the queue reaches it and the pool's cash covers it */
+function SeniorQueue({ live }: { live: Live }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = async (name: string, go: () => Promise<boolean>, done: { title: string; detail: string }) => {
+    setBusy(name);
+    const ok = await go();
+    setBusy(null);
+    if (ok) toast(done);
+  };
+  const { cash, seniorQueue } = live.pool;
+  const chip = "h-9 flex-1 cursor-pointer rounded-lg border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-bg px-3.5 py-3">
+      <div className="flex items-center justify-between">
+        <Label>Withdrawal queue</Label>
+        <span className="text-[12px] text-t3">{money(seniorQueue.reserved)} USDC held for the queue</span>
+      </div>
+      {live.seniorExits.map((e) => {
+        // Anyone may pay the head once the pool holds its cash; the keeper normally does it within a pass
+        const payable = e.ahead === 0 && cash >= e.value;
+        return (
+          <div key={e.ticket} className="mt-2.5 border-t border-line pt-2.5 first-of-type:border-0 first-of-type:pt-0">
+            <KV k={`Ticket ${e.ticket}`} dense>
+              {money(e.shares)} sUSDC, up to {money(e.value)} USDC
+            </KV>
+            <KV k="Place" dense>
+              <Tag tone={payable ? "green" : "orange"}>{e.ahead === 0 ? (payable ? "Ready to pay" : "Next, waiting for cash") : `${e.ahead} ahead`}</Tag>
+            </KV>
+            <div className="mt-2 flex gap-2">
+              {payable && (
+                <button
+                  type="button"
+                  className={chip}
+                  disabled={!!busy}
+                  onClick={() => act(`pay-${e.ticket}`, () => live.settleSeniorHead(() => {}), { title: "Withdrawal paid", detail: `~${money(e.value)} USDC sent to wallet` })}
+                >
+                  {busy === `pay-${e.ticket}` ? "Paying..." : "Pay out now"}
+                </button>
+              )}
+              <button
+                type="button"
+                className={chip}
+                disabled={!!busy}
+                onClick={() => act(`cancel-${e.ticket}`, () => live.cancelSeniorExit(e.ticket, () => {}), { title: "Withdrawal cancelled", detail: "sUSDC returned" })}
+              >
+                {busy === `cancel-${e.ticket}` ? "Cancelling..." : "Cancel"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

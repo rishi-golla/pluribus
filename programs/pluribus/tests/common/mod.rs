@@ -784,6 +784,94 @@ impl Env {
         )
     }
 
+    pub fn senior_escrow(&self) -> Pubkey {
+        pda(&[SENIOR_ESCROW_SEED])
+    }
+
+    pub fn senior_exit_pda(&self, ticket: u64) -> Pubkey {
+        pda(&[SENIOR_EXIT_SEED, &ticket.to_le_bytes()])
+    }
+
+    /// Queues senior shares at the back of the withdrawal queue, under the next ticket
+    pub fn request_senior_exit_ix(&self, owner: &Pubkey, shares: u64) -> Instruction {
+        self.ix(
+            pluribus::instruction::RequestSeniorExit { shares }.data(),
+            pluribus::accounts::RequestSeniorExit {
+                owner: *owner,
+                pool: self.pool,
+                share_mint: self.share_mint,
+                owner_shares: ata(owner, &self.share_mint, &TOKEN),
+                senior_escrow: self.senior_escrow(),
+                exit: self.senior_exit_pda(self.pool_state().senior_next_ticket),
+                token_program: TOKEN,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    /// Settles `ticket`, which only the program lets through when it is the head of the queue
+    pub fn settle_senior_exit_ix(&self, caller: &Pubkey, ticket: u64) -> Instruction {
+        let exit: SeniorExit = self.load(&self.senior_exit_pda(ticket));
+        self.ix(
+            pluribus::instruction::SettleSeniorExit {}.data(),
+            pluribus::accounts::SettleSeniorExit {
+                caller: *caller,
+                pool: self.pool,
+                exit: self.senior_exit_pda(ticket),
+                owner: exit.owner,
+                share_mint: self.share_mint,
+                senior_escrow: self.senior_escrow(),
+                usdc_mint: self.usdc,
+                usdc_vault: self.usdc_vault,
+                owner_usdc: ata(&exit.owner, &self.usdc, &TOKEN),
+                token_program: TOKEN,
+                associated_token_program: ATA_PROGRAM,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn settle_head_ix(&self, caller: &Pubkey) -> Instruction {
+        self.settle_senior_exit_ix(caller, self.pool_state().senior_head)
+    }
+
+    pub fn cancel_senior_exit_ix(&self, owner: &Pubkey, ticket: u64) -> Instruction {
+        self.ix(
+            pluribus::instruction::CancelSeniorExit {}.data(),
+            pluribus::accounts::CancelSeniorExit {
+                owner: *owner,
+                pool: self.pool,
+                exit: self.senior_exit_pda(ticket),
+                share_mint: self.share_mint,
+                senior_escrow: self.senior_escrow(),
+                owner_shares: ata(owner, &self.share_mint, &TOKEN),
+                token_program: TOKEN,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn close_account_ix(&self, owner: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::CloseAccount {}.data(),
+            pluribus::accounts::CloseCredit { owner: *owner, credit: self.credit_pda(owner) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn migrate_pool_ix(&self, admin: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::MigratePool {}.data(),
+            pluribus::accounts::MigratePool { admin: *admin, pool: self.pool, system_program: system_program::ID }.to_account_metas(None),
+            None,
+        )
+    }
+
     pub fn pause_exits_ix(&self, admin: &Pubkey, duration_secs: u32) -> Instruction {
         self.ix(
             pluribus::instruction::PauseJuniorExits { duration_secs }.data(),

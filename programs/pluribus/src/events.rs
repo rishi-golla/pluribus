@@ -160,3 +160,38 @@ pub struct DemoPriceSet {
 pub struct ProtocolFeesCollected {
     pub amount: u64,
 }
+
+#[event]
+pub struct AccountClosed {
+    pub account: Pubkey,
+    pub owner: Pubkey,
+}
+
+/// Senior shares queued for withdrawal: `value` is the most they can pay, and `ticket` their place in the queue
+#[event]
+pub struct SeniorExitRequested {
+    pub owner: Pubkey,
+    pub ticket: u64,
+    pub shares: u64,
+    pub value: u64,
+}
+
+/// The queue reached `ticket`: `paid` USDC went to the owner, or nothing when the exit had been cancelled
+#[event]
+pub struct SeniorExitSettled {
+    pub owner: Pubkey,
+    pub ticket: u64,
+    pub shares: u64,
+    pub value: u64,
+    pub paid: u64,
+    pub cancelled: bool,
+}
+
+/// `returned` of the queued `shares` went back to the owner, the rest were burned with the yield earned while queued
+#[event]
+pub struct SeniorExitCancelled {
+    pub owner: Pubkey,
+    pub ticket: u64,
+    pub shares: u64,
+    pub returned: u64,
+}

@@ -2,30 +2,34 @@
 
 import { AnimatePresence, motion, useInView } from "motion/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EASE, Num } from "@/components/motion";
+import { CLUSTER } from "@/lib/cluster";
 import { ASSET_CLASSES, seeded, type AssetKey } from "./assets";
+import { EXAMPLE_USD, usePoolFacts, type Example } from "./PoolFacts";
 
-// An example $12,000 portfolio drawn as 96 blocks of $125 each
+// The example portfolio drawn as blocks of $125 each
 const BLOCK_USD = 125;
 const COLS = 12;
-const COUNTS: Record<AssetKey, number> = { sol: 30, lp: 30, stock: 24, usdc: 12 };
-// Blocks each class loses in the crypto crash from scripts/setup.ts: SOL and LSTs -30%, LPs repriced at the crash price, stocks -15%
-const LOST: Record<AssetKey, number> = { sol: 9, lp: 9, stock: 4, usdc: 0 };
-// $6,000 drawn, of which LP fees repay $1,000 in the last step
-const DRAWN = 48;
-const REPAID = 8;
-
+const COUNTS = Object.fromEntries(ASSET_CLASSES.map((c) => [c.key, Math.round(EXAMPLE_USD[c.key] / BLOCK_USD)])) as Record<AssetKey, number>;
 const TOTAL = Object.values(COUNTS).reduce((a, b) => a + b, 0);
-const LIMIT = TOTAL - Object.values(LOST).reduce((a, b) => a + b, 0);
+const NO_LOSS: Record<AssetKey, number> = { sol: 0, lp: 0, stock: 0, usdc: 0 };
+
+/** Blocks each class loses in the pool's worst crash for this portfolio, from what it still backs there */
+const lostOf = (ex: Example | null) =>
+  ex ? (Object.fromEntries(ASSET_CLASSES.map((c) => [c.key, Math.min(COUNTS[c.key], Math.max(0, Math.round((EXAMPLE_USD[c.key] - ex.survived[c.key]) / BLOCK_USD)))])) as Record<AssetKey, number>) : NO_LOSS;
+
 const usd = (blocks: number) => blocks * BLOCK_USD;
+const dollars = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
+const pct = (v: number, d = 0) => `${(v * 100).toFixed(d)}%`;
 // How long each slide stays up before the carousel moves on
 const SLIDE_MS = 4500;
+const STEP_COUNT = 4;
 const SNAP = { type: "spring", stiffness: 520, damping: 42, mass: 0.8 } as const;
 
 type Block = { id: number; kind: AssetKey; color: string; lost: boolean };
 
-function makeBlocks(): Block[] {
+function makeBlocks(lost: Record<AssetKey, number>): Block[] {
   const rand = seeded(42);
   const list = ASSET_CLASSES.flatMap((c) => Array.from({ length: COUNTS[c.key] }, () => ({ kind: c.key, color: c.color })));
   for (let i = list.length - 1; i > 0; i--) {
@@ -35,52 +39,68 @@ function makeBlocks(): Block[] {
   const seen: Partial<Record<AssetKey, number>> = {};
   return list.map((b, id) => {
     seen[b.kind] = (seen[b.kind] ?? 0) + 1;
-    return { ...b, id, lost: seen[b.kind]! <= LOST[b.kind] };
+    return { ...b, id, lost: seen[b.kind]! <= lost[b.kind] };
   });
 }
 
-const BLOCKS = makeBlocks();
-
-const STEPS: { title: string; body: ReactNode }[] = [
-  {
-    title: "Bring everything you hold",
-    body: (
-      <>
-        SOL, liquid staking tokens, Orca LP positions, tokenized stocks and USDC all go into one account. Here each block is $125 of a $12,000 portfolio.
-      </>
-    ),
-  },
-  {
-    title: "We crash-test it as a whole",
-    body: (
-      <>
-        Pluribus replays three market crashes on the whole portfolio and keeps the worst one. In a crypto crash SOL and LSTs fall 30%, LP positions are repriced at the
-        crash price, and stocks fall 15%. The faded blocks are value that might not survive.
-      </>
-    ),
-  },
-  {
-    title: "What survives is your credit line",
-    body: (
-      <>
-        The blocks still standing back a USDC credit line of {`$${usd(LIMIT).toLocaleString("en-US")}`}. Draw any part of it, with no maturity date. Blocks
-        marked orange back the {`$${usd(DRAWN).toLocaleString("en-US")}`} drawn here. It is one loan from the lending pool, so every deposit stays in place.
-      </>
-    ),
-  },
-  {
-    title: "Your LP fees pay it down",
-    body: (
-      <>
-        A keeper collects the fees your LP positions earn and repays your debt with the USDC part. Stay healthy and your rate drops too, by 0.4% after 7 days and
-        0.8% after 30.
-      </>
-    ),
-  },
-];
+/** The four slides, with every figure from the pool's own settings, or a note when the pool could not be read */
+function steps(ex: Example | null | undefined, drawn: number): { title: string; body: ReactNode }[] {
+  const unread = ex === null ? ` Could not read the ${CLUSTER} pool, so no figures are shown.` : "";
+  const tiers = ex?.tiers.filter((t) => t.discount > 0) ?? [];
+  return [
+    {
+      title: "Bring everything you hold",
+      body: (
+        <>
+          SOL, liquid staking tokens, Orca LP positions, tokenized stocks and USDC all go into one account. Here each block is ${BLOCK_USD} of an example{" "}
+          {dollars(usd(TOTAL))} portfolio.
+        </>
+      ),
+    },
+    {
+      title: "We crash-test it as a whole",
+      body: ex ? (
+        <>
+          Pluribus replays {ex.scenarios} market crashes on the whole portfolio and keeps the worst one, here the {ex.scenario.toLowerCase()}: SOL falls{" "}
+          {pct(ex.falls.sol)}, LP positions are repriced at the crash price, stocks fall {pct(ex.falls.stock)}, and each asset&apos;s liquidation cost comes off. The
+          faded blocks are value that might not survive.
+        </>
+      ) : (
+        <>Pluribus replays every crash scenario in the pool on the whole portfolio and keeps the worst one.{unread}</>
+      ),
+    },
+    {
+      title: "What survives is your credit line",
+      body: ex ? (
+        <>
+          The blocks still standing back a USDC credit line of {dollars(ex.creditLimit)}. Draw any part of it, with no maturity date. Blocks marked orange back the{" "}
+          {dollars(usd(drawn))} drawn here. It is one loan from the lending pool, so every deposit stays in place.
+        </>
+      ) : (
+        <>The blocks still standing back a USDC credit line. Draw any part of it, with no maturity date. It is one loan from the lending pool, so every deposit stays in place.{unread}</>
+      ),
+    },
+    {
+      title: "Your LP fees pay it down",
+      body: (
+        <>
+          A keeper collects the fees your LP positions earn and repays your debt with the USDC part.
+          {tiers.length > 0 && ` Stay healthy and your rate drops too, ${tiers.map((t) => `by ${pct(t.discount, 1)} after ${t.days} days`).join(" and ")}.`}
+        </>
+      ),
+    },
+  ];
+}
 
 export function HowItWorks() {
-  const blocks = BLOCKS;
+  const ex = usePoolFacts()?.example;
+  const lost = useMemo(() => lostOf(ex ?? null), [ex]);
+  const blocks = useMemo(() => makeBlocks(lost), [lost]);
+  const limitBlocks = TOTAL - Object.values(lost).reduce((a, b) => a + b, 0);
+  // Three quarters of the credit line drawn, and LP fees repaying a sixth of that in the last step
+  const DRAWN = ex ? Math.floor(limitBlocks * 0.75) : 0;
+  const REPAID = Math.round(DRAWN / 6);
+  const STEPS = steps(ex, DRAWN);
   const [step, setStep] = useState(0);
   // Which way the text slides: back for the previous arrow or an earlier tab, forward otherwise
   const [dir, setDir] = useState(1);
@@ -92,7 +112,7 @@ export function HowItWorks() {
 
   const go = (next: number) => {
     setDir(next >= step ? 1 : -1);
-    setStep((next + STEPS.length) % STEPS.length);
+    setStep((next + STEP_COUNT) % STEP_COUNT);
   };
 
   // Moves on by itself while on screen, and starts the slide's timer over after any jump
@@ -100,7 +120,7 @@ export function HowItWorks() {
     if (!playing) return;
     const timer = setTimeout(() => {
       setDir(1);
-      setStep((s) => (s + 1) % STEPS.length);
+      setStep((s) => (s + 1) % STEP_COUNT);
     }, SLIDE_MS);
     return () => clearTimeout(timer);
   }, [playing, step]);
@@ -113,7 +133,7 @@ export function HowItWorks() {
       clearInterval(timer);
       setRepaid(0);
     };
-  }, [step]);
+  }, [step, REPAID]);
   const drawn = DRAWN - (step === 3 ? repaid : 0);
 
   const crashed = step >= 1;
@@ -122,11 +142,13 @@ export function HowItWorks() {
   const survivorIndex = new Map(blocks.filter((b) => !b.lost).map((b, i) => [b.id, i]));
   const order = compact ? [...blocks.filter((b) => !b.lost), ...blocks.filter((b) => b.lost)] : blocks;
 
-  const summary = [
-    { label: "Portfolio value", value: usd(TOTAL) },
-    { label: "Value after a crypto crash", value: usd(LIMIT) },
-    { label: "Credit limit, drawn", value: usd(DRAWN), of: usd(LIMIT) },
-    { label: "Still owed after LP fees", value: usd(drawn), of: usd(LIMIT) },
+  // Undefined figures are ones the pool has not given yet, shown as a dash
+  const limit = ex?.creditLimit;
+  const summary: { label: string; value?: number; of?: number } = [
+    { label: "Example portfolio value", value: usd(TOTAL) },
+    { label: ex ? `Credit it backs after a ${ex.scenario.toLowerCase()}` : "Credit it backs after the worst crash", value: limit },
+    { label: "Credit limit, drawn", value: ex ? usd(DRAWN) : undefined, of: limit },
+    { label: "Still owed after LP fees", value: ex ? usd(drawn) : undefined, of: limit },
   ][step];
 
   return (
@@ -147,7 +169,7 @@ export function HowItWorks() {
                 <div>
                   <div className="text-[12.5px] text-t3">{summary.label}</div>
                   <div className="mt-1.5 text-[34px] font-medium tracking-[-0.04em]">
-                    <Num value={summary.value} prefix="$" />
+                    {summary.value === undefined ? "—" : <Num value={summary.value} prefix="$" />}
                     {summary.of !== undefined && (
                       <span className="text-[20px] text-t3">
                         {" "}
@@ -156,10 +178,10 @@ export function HowItWorks() {
                     )}
                   </div>
                 </div>
-                <div className="text-right text-[12.5px] text-t3">1 block = $125</div>
+                <div className="text-right text-[12.5px] text-t3">1 block = ${BLOCK_USD}</div>
               </div>
 
-              <div className="mt-6 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))` }} role="img" aria-label={`${STEPS[step].title}. ${summary.label}: $${summary.value.toLocaleString("en-US")}`}>
+              <div className="mt-6 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))` }} role="img" aria-label={`${STEPS[step].title}. ${summary.label}: ${summary.value === undefined ? "not read yet" : dollars(summary.value)}`}>
                 {order.map((b) => {
                   const rank = survivorIndex.get(b.id);
                   const isDrawn = compact && rank !== undefined && rank < drawn;
@@ -209,11 +231,17 @@ export function HowItWorks() {
                     USDC loan
                   </span>
                   <span className="tabular-nums text-t3">
-                    <Num value={usd(drawn)} prefix="$" className="text-t1" /> of ${usd(LIMIT).toLocaleString("en-US")} credit line
+                    {limit === undefined ? (
+                      "—"
+                    ) : (
+                      <>
+                        <Num value={usd(drawn)} prefix="$" className="text-t1" /> of {dollars(limit)} credit line
+                      </>
+                    )}
                   </span>
                 </div>
                 <div className="mt-2 h-3 bg-white/[0.06]">
-                  <motion.div className="h-full bg-orange/80" initial={false} animate={{ width: `${(drawn / LIMIT) * 100}%` }} transition={SNAP} />
+                  <motion.div className="h-full bg-orange/80" initial={false} animate={{ width: `${limit ? Math.min(100, (usd(drawn) / limit) * 100) : 0}%` }} transition={SNAP} />
                 </div>
               </motion.div>
 
@@ -224,7 +252,11 @@ export function HowItWorks() {
                       <span className="size-2.5" style={{ backgroundColor: c.color }} />
                       {c.label}
                     </span>
-                    <Num value={usd(COUNTS[c.key] - (crashed ? LOST[c.key] : 0))} prefix="$" className="tabular-nums text-t1" />
+                    {crashed && !ex ? (
+                      <span className="tabular-nums text-t1">—</span>
+                    ) : (
+                      <Num value={crashed && ex ? ex.survived[c.key] : EXAMPLE_USD[c.key]} prefix="$" className="tabular-nums text-t1" />
+                    )}
                   </div>
                 ))}
               </div>

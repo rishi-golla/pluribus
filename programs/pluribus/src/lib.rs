@@ -190,4 +190,24 @@ pub mod pluribus {
     pub fn guard_lp_market(ctx: Context<GuardLpMarket>) -> Result<()> {
         admin::handle_guard_lp_market(ctx)
     }
+
+    pub fn migrate_pool(ctx: Context<MigratePool>) -> Result<()> {
+        admin::handle_migrate_pool(ctx)
+    }
+
+    pub fn close_account(ctx: Context<CloseCredit>) -> Result<()> {
+        borrow::handle_close_account(ctx)
+    }
+
+    pub fn request_senior_exit(ctx: Context<RequestSeniorExit>, shares: u64) -> Result<()> {
+        senior::handle_request_senior_exit(ctx, shares)
+    }
+
+    pub fn settle_senior_exit(ctx: Context<SettleSeniorExit>) -> Result<()> {
+        senior::handle_settle_senior_exit(ctx)
+    }
+
+    pub fn cancel_senior_exit(ctx: Context<CancelSeniorExit>) -> Result<()> {
+        senior::handle_cancel_senior_exit(ctx)
+    }
 }

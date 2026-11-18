@@ -22,6 +22,10 @@ pub const DEMO_PRICE_SEED: &[u8] = b"demo_price";
 pub const JUNIOR_ESCROW_SEED: &[u8] = b"junior_escrow";
 #[constant]
 pub const JUNIOR_EXIT_SEED: &[u8] = b"junior_exit";
+#[constant]
+pub const SENIOR_ESCROW_SEED: &[u8] = b"senior_escrow";
+#[constant]
+pub const SENIOR_EXIT_SEED: &[u8] = b"senior_exit";
 
 pub const MAX_POSITIONS: usize = 5;
 pub const MAX_GROUPS: usize = 6;

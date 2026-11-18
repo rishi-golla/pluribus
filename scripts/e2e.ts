@@ -550,6 +550,44 @@ try {
     `${usd(back)} back for $5000.00, ${usd(n(outJunior.fee))} fee`,
   );
 
+  // Senior money the pool cannot pay at once waits in a queue that is paid strictly in order
+  const K = keeper.publicKey;
+  const seniorHeld = await balance(pda.shareMint(), lender.publicKey);
+  const quarter = Math.floor(seniorHeld / 4);
+  const reservedBefore = n((await fetchPool(program)).seniorReserved);
+  const [askedA] = await run("Senior lender queues a quarter of the shares for withdrawal", ix.requestSeniorExit(program, lender.publicKey, quarter), lender, ["seniorExitRequested"]);
+  const [askedB] = await run("Senior lender queues another quarter behind it", ix.requestSeniorExit(program, lender.publicKey, quarter), lender, ["seniorExitRequested"]);
+  check(
+    "The pool holds cash back for both queued exits, in ticket order",
+    n((await fetchPool(program)).seniorReserved) === reservedBefore + n(askedA.value) + n(askedB.value) && n(askedB.ticket) === n(askedA.ticket) + 1,
+    `${usd(n(askedA.value) + n(askedB.value))} reserved`,
+  );
+  const [undone] = await run("Senior lender cancels the second exit", ix.cancelSeniorExit(program, lender.publicKey, askedB.ticket), lender, ["seniorExitCancelled"]);
+  check(
+    "Cancelling hands the shares back and frees their cash",
+    n(undone.returned) > 0 && n(undone.returned) <= quarter && n((await fetchPool(program)).seniorReserved) === reservedBefore + n(askedA.value),
+    `${n(undone.returned) / USDC} of ${quarter / USDC} shares back`,
+  );
+  const usdcBeforeQueue = await balance(usdc, lender.publicKey);
+  const settled: any[] = [];
+  while ((await fetchPool(program)).seniorHead.lte(askedB.ticket)) {
+    const [s] = await run("Anyone settles the head of the senior queue", ix.settleSeniorExit(program, d, K), keeper, ["seniorExitSettled"]);
+    settled.push(s);
+  }
+  const [paidA, skippedB] = [settled.find((s) => s.ticket.eq(askedA.ticket)), settled.find((s) => s.ticket.eq(askedB.ticket))];
+  check(
+    "The queue paid the first exit its queued value and skipped the cancelled one",
+    !!paidA && !!skippedB && n(paidA.paid) === n(askedA.value) && skippedB.cancelled && n(skippedB.paid) === 0 &&
+      (await balance(usdc, lender.publicKey)) - usdcBeforeQueue === n(paidA.paid) && n((await fetchPool(program)).seniorReserved) === reservedBefore,
+    usd(n(paidA?.paid ?? 0)),
+  );
+
+  // An empty credit account can be closed for its rent and opened again
+  await run("A fresh wallet opens a credit account", ix.openAccount(program, K), keeper, ["accountOpened"]);
+  await run("It closes the empty account again", ix.closeAccount(program, K), keeper, ["accountClosed"]);
+  check("The closed account is gone", (await fetchCredit(program, K)) === null);
+  await fails("An account with debt cannot be closed", ix.closeAccount(program, C), control, "DebtOutstanding");
+
   // Custody round trip: the liquidator can use both seized NFTs with Orca directly
   await swapRound(3000);
   await send([createAssociatedTokenAccountIdempotentInstruction(Q, getAssociatedTokenAddressSync(sol, Q), Q, sol)], [liquidator]);

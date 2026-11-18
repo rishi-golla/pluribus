@@ -94,7 +94,46 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         epoch_end: Clock::get()?.unix_timestamp,
         epoch_budget: 0,
         epoch_paid: 0,
+        senior_queued: 0,
+        senior_reserved: 0,
+        senior_next_ticket: 0,
+        senior_head: 0,
     });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct MigratePool<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    /// CHECK: Read raw, since a pool from before the last layout change cannot be deserialized; owner, address and admin are checked in the handler
+    #[account(mut, seeds = [POOL_SEED], bump)]
+    pub pool: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Grows a pool created before fields were appended to `Pool` to the current size, the admin paying the extra rent
+/// The new bytes start at zero, which every appended field takes as its starting value, and a pool already at size is left alone
+pub fn handle_migrate_pool(ctx: Context<MigratePool>) -> Result<()> {
+    let a = ctx.accounts;
+    let pool = a.pool.to_account_info();
+    require_keys_eq!(*pool.owner, crate::ID, PluribusError::WrongOwner);
+    let size = 8 + Pool::INIT_SPACE;
+    {
+        let data = pool.try_borrow_data()?;
+        // Layout: discriminator, then the admin key
+        require!(data.len() >= 40 && data[..8] == *Pool::DISCRIMINATOR, PluribusError::AccountMismatch);
+        require!(data[8..40] == a.admin.key().to_bytes(), PluribusError::AccountMismatch);
+        if data.len() >= size {
+            return Ok(());
+        }
+    }
+    let rent = Rent::get()?.minimum_balance(size).saturating_sub(pool.lamports());
+    if rent > 0 {
+        let accounts = anchor_lang::system_program::Transfer { from: a.admin.to_account_info(), to: pool.clone() };
+        anchor_lang::system_program::transfer(CpiContext::new(a.system_program.key(), accounts), rent)?;
+    }
+    pool.resize(size)?;
     Ok(())
 }
 
@@ -589,12 +628,12 @@ pub struct CollectProtocolFees<'info> {
     pub token_program: Interface<'info, TokenInterface>,
 }
 
-/// Pays out accrued protocol revenue, up to what is idle in the pool
+/// Pays out accrued protocol revenue, up to what is idle in the pool and not held for queued senior exits
 /// The insurance reserve is never touched here
 pub fn handle_collect_protocol_fees(ctx: Context<CollectProtocolFees>, amount: u64) -> Result<()> {
     let a = ctx.accounts;
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
-    let amount = amount.min(a.pool.protocol_fees).min(a.pool.cash);
+    let amount = amount.min(a.pool.protocol_fees).min(a.pool.available_cash());
     require!(amount > 0, PluribusError::ZeroAmount);
     a.pool.protocol_fees -= amount;
     a.pool.cash -= amount;

@@ -34,6 +34,24 @@ pub fn handle_open_account(ctx: Context<OpenAccount>) -> Result<()> {
     Ok(())
 }
 
+#[derive(Accounts)]
+pub struct CloseCredit<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(mut, close = owner, seeds = [CREDIT_SEED, owner.key().as_ref()], bump = credit.bump)]
+    pub credit: Box<Account<'info, CreditAccount>>,
+}
+
+/// Closes an empty credit account and returns its rent to the owner, who can open a new one later
+/// Nothing may be owed and every position must be withdrawn first, so no debt or collateral is ever dropped
+pub fn handle_close_account(ctx: Context<CloseCredit>) -> Result<()> {
+    let credit = &ctx.accounts.credit;
+    require!(credit.debt_shares == 0, PluribusError::DebtOutstanding);
+    require!(!credit.has_collateral(), PluribusError::CollateralLeft);
+    emit!(AccountClosed { account: credit.key(), owner: ctx.accounts.owner.key() });
+    Ok(())
+}
+
 /// Deposit or withdraw a whitelisted token
 /// The credit PDA is seeded by the signer, so only the owner gets here
 #[derive(Accounts)]
