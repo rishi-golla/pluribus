@@ -80,4 +80,6 @@ pub enum PluribusError {
     VaultShort,
     #[msg("This token's price is unclear around a corporate action, so it can't be seized yet")]
     PriceUnclear,
+    #[msg("This senior exit was already cancelled")]
+    ExitCancelled,
 }
