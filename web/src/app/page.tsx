@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, MousePointerClick } from "lucide-react";
-import { BorrowPreview } from "@/components/landing/BorrowPreview";
+import { ArrowRight } from "lucide-react";
+import { DotField } from "@/components/landing/DotField";
+import { DotWave } from "@/components/landing/DotWave";
+import { HowItWorks } from "@/components/landing/HowItWorks";
+import { ProductTour } from "@/components/landing/ProductTour";
 import { Features } from "@/components/landing/Features";
 import { FadeUp, Num } from "@/components/motion";
 import { Brandmark, Button, Token } from "@/components/ui";
@@ -23,12 +26,11 @@ const stats = [
 
 export default function Home() {
   return (
-    <div className="relative">
-      <div className="landing-grid pointer-events-none absolute inset-x-0 top-0 h-[980px]" />
-      <FadeUp onMount y={0} delay={0.45} duration={1.6} className="pointer-events-none absolute left-1/2 top-[560px] h-[620px] w-[1300px] -translate-x-1/2">
-        <div className="landing-halo size-full" />
+    <div className="relative overflow-x-clip">
+      {/* A faint undertone behind the hero, cleared around the headline so the text stays crisp */}
+      <FadeUp onMount y={0} duration={1.2} className="pointer-events-none absolute inset-x-0 top-0 h-[760px]">
+        <DotField className="landing-dots-hero size-full" strength={0.4} blocks={0.015} clear={{ y: 380, rx: 560, ry: 250 }} />
       </FadeUp>
-
       <div className="relative z-[1]">
         <FadeUp onMount y={-8} duration={0.6}>
           <header className="flex h-[72px] items-center gap-10 px-10">
@@ -86,24 +88,7 @@ export default function Home() {
           </FadeUp>
         </section>
 
-        <FadeUp onMount delay={0.4} y={48} duration={1.1}>
-          <div className="shot-frame relative mx-auto mt-[72px] w-[1180px] rounded-[20px] p-2">
-            <div className="absolute -top-4 left-1/2 z-10 -translate-x-1/2">
-              <span className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full border border-line-2 bg-s2/90 px-3 text-[12.5px] text-t2 shadow-[0_8px_24px_rgb(0_0_0/0.5)] backdrop-blur">
-                <MousePointerClick size={14} strokeWidth={1.75} className="text-brand" />
-                Live preview. Pick an amount and draw, or hover the chart.
-              </span>
-            </div>
-            <div className="relative h-[804px] overflow-hidden rounded-[14px] border border-line-2 bg-bg">
-              <div className="w-[1440px] origin-top-left scale-[0.8083]">
-                <BorrowPreview />
-              </div>
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg" />
-            </div>
-          </div>
-        </FadeUp>
-
-        <FadeUp className="mt-10 flex items-center justify-center gap-11 text-sm text-t3">
+        <FadeUp onMount delay={0.36} className="mt-16 flex items-center justify-center gap-11 text-sm text-t3">
           <span>Built on</span>
           {partners.map((p) => (
             <span key={p.name} className="flex items-center gap-[9px] text-[15px] font-medium text-t2 transition-colors hover:text-t1">
@@ -114,27 +99,67 @@ export default function Home() {
         </FadeUp>
 
         <main className="mx-auto max-w-[1280px] px-10 pb-16">
-          <FadeUp className="mt-[104px] text-center" y={20}>
-            <h2 className="text-[44px] font-medium leading-[1.05] tracking-[-0.045em]">
-              Credit that understands
-              <br />
-              what you actually hold.
-            </h2>
-            <p className="mt-3.5 text-base text-t2">Built from the ground up for concentrated liquidity and multi-asset portfolios.</p>
-          </FadeUp>
+          {/* A quiet ribbon of dots in the gap above How it works */}
+          <div className="relative">
+            <div className="pointer-events-none absolute left-1/2 w-screen -translate-x-1/2 -top-[230px] h-[560px]">
+              <FadeUp y={0} duration={1.4} className="size-full">
+                <DotWave className="size-full" seed={1} />
+              </FadeUp>
+            </div>
+            <div className="relative">
+              <HowItWorks />
+            </div>
+          </div>
+
+          {/* Borrow, Earn and Statements, with a ribbon of dots flowing behind the card */}
+          <div className="relative mt-[136px]">
+            <div className="pointer-events-none absolute left-1/2 w-screen -translate-x-1/2 top-[58%] h-[600px] -translate-y-1/2">
+              <FadeUp y={0} duration={1.4} className="size-full">
+                <DotWave className="size-full" seed={2} dir={-1} amplitude={70} />
+              </FadeUp>
+            </div>
+            <div className="relative">
+              <ProductTour />
+            </div>
+          </div>
+
+          {/* Another ribbon, flowing the other way behind the features heading */}
+          <div className="relative mt-[120px]">
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-screen -translate-x-1/2 -translate-y-1/2">
+              <FadeUp y={0} duration={1.4} className="size-full">
+                <DotWave className="size-full" seed={4} dir={-1} amplitude={54} />
+              </FadeUp>
+            </div>
+            <FadeUp className="relative text-center" y={20}>
+              <h2 className="text-[44px] font-medium leading-[1.05] tracking-[-0.045em]">
+                Credit that understands
+                <br />
+                what you actually hold.
+              </h2>
+              <p className="mt-3.5 text-base text-t2">Built from the ground up for concentrated liquidity and multi-asset portfolios.</p>
+            </FadeUp>
+          </div>
 
           <Features />
 
-          <FadeUp className="mt-[72px] grid grid-cols-4 border-y border-line">
-            {stats.map((s, i) => (
-              <div key={s.label} className={i === 0 ? "py-7" : "border-l border-line py-7 pl-7"}>
-                <div className="text-[12.5px] text-t3">{s.label}</div>
-                <div className="mt-2 text-[40px] font-medium tracking-[-0.045em]">
-                  <Num value={s.value} decimals={s.decimals} prefix={s.prefix} suffix={s.suffix} countUp />
+          {/* One last ribbon behind the stats */}
+          <div className="relative mt-[72px]">
+            <div className="pointer-events-none absolute left-1/2 w-screen -translate-x-1/2 top-1/2 h-[520px] -translate-y-1/2">
+              <FadeUp y={0} duration={1.4} className="size-full">
+                <DotWave className="size-full" seed={3} amplitude={50} thickness={116} />
+              </FadeUp>
+            </div>
+            <FadeUp className="relative grid grid-cols-4 border-y border-line">
+              {stats.map((s, i) => (
+                <div key={s.label} className={i === 0 ? "py-7" : "border-l border-line py-7 pl-7"}>
+                  <div className="text-[12.5px] text-t3">{s.label}</div>
+                  <div className="mt-2 text-[40px] font-medium tracking-[-0.045em]">
+                    <Num value={s.value} decimals={s.decimals} prefix={s.prefix} suffix={s.suffix} countUp />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </FadeUp>
+              ))}
+            </FadeUp>
+          </div>
         </main>
       </div>
     </div>
