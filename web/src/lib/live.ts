@@ -1,9 +1,8 @@
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
 import {
   type Deployment,
   type OrcaPosition,
-  fetchAsset,
   fetchCredit,
   fetchHealth,
   fetchJuniorExit,
@@ -51,18 +50,20 @@ export type TrancheStats = { assets: number; apy: number | null; sharePrice: num
 
 export async function loadLive(connection: Connection, d: Deployment, owner: PublicKey) {
   const program = getProgram(connection);
-  const [sol, stock, whirlpool] = [d.solMint, d.stockMint, d.whirlpool].map((k) => new PublicKey(k));
-  const [pool, credit, viewed, prices, solAsset, stockAsset, lpMarket, lamports, tokens, supply, juniorSupply, walletLps, poolLps, queuedExit] = await Promise.all([
+  const whirlpool = new PublicKey(d.whirlpool);
+  const listed = Object.keys(d.assets);
+  const [pool, credit, viewed, prices, assetAccounts, lpMarket, lamports, tokens, tokens2022, supply, juniorSupply, walletLps, poolLps, queuedExit] = await Promise.all([
     fetchPool(program),
     fetchCredit(program, owner),
     // A stale price fails the view, and the page still has to load so the price can be set again
     fetchHealth(program, d, owner).catch((e: Error) => e),
     fetchPrices(program, d),
-    fetchAsset(program, sol),
-    fetchAsset(program, stock),
+    program.account.asset.fetchMultiple(listed.map((m) => pda.asset(new PublicKey(m)))),
     fetchLpMarket(program, whirlpool),
     connection.getBalance(owner),
     connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }),
+    // Token-2022 mints like the xStock keep their balances under the other token program
+    connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }),
     connection.getTokenSupply(pda.shareMint()),
     // The junior mint only exists once the admin has opened that tranche
     connection.getTokenSupply(pda.juniorMint()).catch(() => null),
@@ -70,6 +71,10 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     listOrcaPositions(connection, d, pda.pool()),
     fetchJuniorExit(program, owner),
   ]);
+  // Every token the deployment lists that the program has whitelisted, by mint
+  const assets = new Map(assetAccounts.flatMap((a, i) => (a ? [[listed[i], a] as const] : [])));
+  const [solAsset, stockAsset] = [assets.get(d.solMint), assets.get(d.stockMint)];
+  if (!solAsset || !stockAsset) throw new Error(`SOL or ${d.assets[d.stockMint]?.symbol ?? "the stock"} is not listed on ${d.cluster}`);
   const positions = credit ? await fetchPositions(program, d, credit) : [];
   const now = Date.now() / 1000;
 
@@ -132,10 +137,15 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const junior: TrancheStats | null = juniorSupply && { assets: stats.juniorAssets, apy: stats.juniorApyBps / 1e4, sharePrice: stats.juniorShareValue ?? 1 };
 
   const borrowRateBps = account.rateBps;
-  const balance = (mint: string) => tokens.value.filter((t) => t.account.data.parsed.info.mint === mint).reduce((sum, t) => sum + t.account.data.parsed.info.tokenAmount.uiAmount, 0);
+  const accounts = [...tokens.value, ...tokens2022.value];
+  // Base units over decimals rather than uiAmount, which a scaled Token-2022 mint multiplies, since deposits count base units
+  const balance = (mint: string) =>
+    accounts
+      .filter((t) => t.account.data.parsed.info.mint === mint)
+      .reduce((sum, t) => sum + Number(t.account.data.parsed.info.tokenAmount.amount) / 10 ** t.account.data.parsed.info.tokenAmount.decimals, 0);
   /** Shares of one tranche in the wallet, whole and in base units */
   const shares = (mint: PublicKey) => {
-    const raw: string = tokens.value.find((t) => t.account.data.parsed.info.mint === mint.toBase58())?.account.data.parsed.info.tokenAmount.amount ?? "0";
+    const raw: string = accounts.find((t) => t.account.data.parsed.info.mint === mint.toBase58())?.account.data.parsed.info.tokenAmount.amount ?? "0";
     return { amount: num(raw), raw };
   };
 
@@ -204,9 +214,12 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     /** Index of the scenario that sets the credit limit */
     binding,
     lpRisk,
-    /** The same for `amount` whole SOL or NVDAx */
+    /** Mints of every whitelisted token other than SOL, which is deposited from the wallet's native balance */
+    tokenMints: [...assets.keys()].filter((m) => m !== d.solMint),
+    /** The same for `amount` whole tokens of any whitelisted mint */
     tokenRisk: (mint: string, amount: number): Risk => {
-      const asset = mint === d.solMint ? solAsset : stockAsset;
+      const asset = assets.get(mint);
+      if (!asset) throw new Error(`${d.assets[mint]?.symbol ?? mint} is not listed on ${d.cluster}`);
       const { group, liqCostBps, paused } = asset.params;
       return { mint, group, liqCostBps, paused: paused || waiting(asset.activeAt), amount, shockBps: math.dynamicShocks(asset, params) };
     },
@@ -242,7 +255,15 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       nvdax: tokenMarket(d.stockMint, stockAsset),
       "orca-lp": { collateral: lpTotals.collateralValue, crashLtv: lpTotals.collateralValue > 0 ? lpTotals.creditLimit / lpTotals.collateralValue : null, liqCostBps: lpMarket.liqCostBps },
     } as Record<string, LiveMarket>,
-    wallet: { sol: lamports / 1e9, stock: balance(d.stockMint), usdc: balance(d.usdcMint), shares: { senior: shares(pda.shareMint()), junior: juniorWallet }, lps: walletLps },
+    wallet: {
+      sol: lamports / 1e9,
+      stock: balance(d.stockMint),
+      usdc: balance(d.usdcMint),
+      /** Whole tokens held of each listed mint */
+      tokens: Object.fromEntries(listed.map((m) => [m, balance(m)])) as Record<string, number>,
+      shares: { senior: shares(pda.shareMint()), junior: juniorWallet },
+      lps: walletLps,
+    },
       /** The wallet's queued junior exit, with its value at today's junior share price */
     juniorExit: exit,
     /** How junior money leaves: the wait a new exit of the wallet's shares would get, the claim window and the fee */
