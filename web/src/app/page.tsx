@@ -26,7 +26,7 @@ const stats = [
 
 export default function Home() {
   return (
-    <div className="relative overflow-x-clip">
+    <div className="landing-bg relative overflow-clip">
       {/* A faint undertone behind the hero, cleared around the headline so the text stays crisp */}
       <FadeUp onMount y={0} duration={1.2} className="pointer-events-none absolute inset-x-0 top-0 h-[760px]">
         <DotField className="landing-dots-hero size-full" strength={0.4} blocks={0.015} clear={{ y: 380, rx: 560, ry: 250 }} />
@@ -68,7 +68,7 @@ export default function Home() {
             <h1 className="mt-7 text-[84px] font-medium leading-[0.98] tracking-[-0.055em]">
               Borrow against
               <br />
-              <span className="text-fade">everything you hold.</span>
+              <span className="text-brand-fade">everything you hold.</span>
             </h1>
           </FadeUp>
           <FadeUp onMount delay={0.2}>
@@ -98,7 +98,7 @@ export default function Home() {
           ))}
         </FadeUp>
 
-        <main className="mx-auto max-w-[1280px] px-10 pb-16">
+        <main className="mx-auto max-w-[1280px] px-10 pb-32">
           {/* A quiet ribbon of dots in the gap above How it works */}
           <div className="relative">
             <div className="pointer-events-none absolute left-1/2 w-screen -translate-x-1/2 -top-[230px] h-[560px]">

@@ -1,9 +1,9 @@
-/** The asset classes the landing page draws as colored blocks, in the app's palette */
+/** The asset classes the landing page draws as blocks, in shades of the brand purple from light to deep */
 export const ASSET_CLASSES = [
   { key: "sol", label: "SOL and LSTs", color: "var(--color-brand)" },
-  { key: "lp", label: "LP positions", color: "var(--color-blue)" },
-  { key: "stock", label: "Tokenized stocks", color: "var(--color-green)" },
-  { key: "usdc", label: "USDC", color: "var(--color-t2)" },
+  { key: "lp", label: "LP positions", color: "#c8bdff" },
+  { key: "stock", label: "Tokenized stocks", color: "#6d58e0" },
+  { key: "usdc", label: "USDC", color: "#544c7a" },
 ] as const;
 
 export type AssetKey = (typeof ASSET_CLASSES)[number]["key"];

@@ -88,6 +88,15 @@
     opacity: 0.5;
   }
 
+  /* The landing page's background: the usual near-black with a faint purple cast, a touch stronger at the top and bottom */
+  .landing-bg {
+    background:
+      radial-gradient(1400px 800px at 50% -10%, rgb(158 140 255 / 0.06), transparent 70%),
+      radial-gradient(1200px 700px at 50% 105%, rgb(158 140 255 / 0.045), transparent 70%),
+      linear-gradient(rgb(158 140 255 / 0.02), rgb(158 140 255 / 0.02)),
+      var(--color-bg);
+  }
+
   /* The hero's quieter field, gone well before the next section */
   .landing-dots-hero {
     mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 40%, transparent 80%);
@@ -99,6 +108,13 @@
 
   .text-fade {
     background: linear-gradient(180deg, #ededef 0%, #7d828a 100%);
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* The hero's second line, in the brand purple: lavender at the top deepening to violet */
+  .text-brand-fade {
+    background: linear-gradient(180deg, #d9d1ff 0%, #9e8cff 55%, #6d58e0 100%);
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }

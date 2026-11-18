@@ -31,7 +31,7 @@ export function FeeBars() {
             width={barW}
             height={h}
             rx={2}
-            fill="#3ddc97"
+            fill="#9e8cff"
             fillOpacity={0.25 + (i / 29) * 0.6}
             style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
             variants={{ hidden: { scaleY: 0 }, shown: { scaleY: 1 } }}
