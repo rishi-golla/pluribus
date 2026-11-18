@@ -12,6 +12,7 @@ import { displayAmount, healthOf, healthPos, healthTone, money, shortKey, usd } 
 import { series } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { healthAfterDrop, type Collateral } from "@/lib/live";
+import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
 import { CollateralDialog } from "./CollateralDialog";
 import { PortfolioChart, RANGES, SERIES, type Range, type SeriesKey } from "./PortfolioChart";
 
@@ -401,7 +402,7 @@ const FILTERS: { label: "All" | Kind; icons: string[] }[] = [
   { label: "SOL", icons: ["sol.webp"] },
   { label: "LSTs", icons: ["jitosol.webp", "jupsol.webp", "msol.png"] },
   { label: "LP positions", icons: ["orca.png", "ray.webp", "met.webp"] },
-  { label: "Tokenized stocks", icons: ["nvdax.webp"] },
+  { label: "Tokenized stocks", icons: ["nvdax.webp", tokenIcon("AAPLx")] },
   { label: "Memes", icons: ["bonk.webp"] },
 ];
 
@@ -430,8 +431,8 @@ function RangeBar({ from, to, at }: { from: number; to: number; at: number }) {
 function TokenIcon({ src, badge }: { src: string; badge?: string }) {
   return (
     <span className="relative inline-block size-8 shrink-0">
-      <Token src={`/tokens/${src}`} size={32} />
-      {badge && <Token src={`/tokens/${badge}`} size={15} className="absolute -bottom-[3px] -right-[3px] shadow-[0_0_0_2px_var(--color-s1)]" />}
+      <Token src={iconSrc(src)} size={32} />
+      {badge && <Token src={iconSrc(badge)} size={15} className="absolute -bottom-[3px] -right-[3px] shadow-[0_0_0_2px_var(--color-s1)]" />}
     </span>
   );
 }
@@ -448,11 +449,10 @@ const Pair = ({ badge }: { badge: string }) => (
 );
 
 type Position = { kind: Kind | null; icon: ReactNode; name: string; sub: string; bal: string; val: string; vsub: string; ltv: number; naive?: string; power: string; liq: ReactNode; mint?: string };
-const TOKENS: Record<string, { kind: Kind | null; icon: string; sub: string }> = {
-  SOL: { kind: "SOL", icon: "sol.webp", sub: "Solana" },
-  NVDAx: { kind: "Tokenized stocks", icon: "nvdax.webp", sub: "NVIDIA xStock" },
-  USDC: { kind: null, icon: "usdc.webp", sub: "USD Coin" },
-};
+const KINDS: Record<string, Kind | null> = { SOL: "SOL", JitoSOL: "LSTs", JupSOL: "LSTs", NVDAx: "Tokenized stocks", AAPLx: "Tokenized stocks", USDC: null };
+const TOKENS: Record<string, { kind: Kind | null; icon: string; sub: string }> = Object.fromEntries(
+  Object.entries(TOKEN_INFO).map(([symbol, info]) => [symbol, { ...info, kind: KINDS[symbol] ?? null }]),
+);
 const rangePrice = (v: number) => money(v, v >= 100 ? 0 : 2);
 
 /** A table row for an on-chain position, in the same shape as the demo rows */
@@ -544,7 +544,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
             {!!f.icons.length && (
               <span className="flex">
                 {f.icons.map((i, k) => (
-                  <Token key={i} src={`/tokens/${i}`} size={16} className={`shadow-[0_0_0_2px_var(--color-s1)] ${k ? "-ml-1.5" : ""}`} />
+                  <Token key={i} src={iconSrc(i)} size={16} className={`shadow-[0_0_0_2px_var(--color-s1)] ${k ? "-ml-1.5" : ""}`} />
                 ))}
               </span>
             )}

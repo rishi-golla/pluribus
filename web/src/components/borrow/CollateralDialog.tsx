@@ -9,6 +9,7 @@ import { useToast, type Live } from "@/components/app/providers";
 import { displayAmount, healthOf, healthTone, money, usd } from "@/lib/account";
 import { deployment } from "@/lib/cluster";
 import { math } from "@/lib/pluribus/sdk";
+import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
 
 const QUICK = [
   { label: "25%", pct: 0.25 },
@@ -20,6 +21,9 @@ const SOL_BUFFER = 0.02;
 const MAX_POSITIONS = 5;
 const rangePrice = (v: number) => money(v, v >= 100 ? 0 : 2);
 const health = (h: number) => (Number.isFinite(h) ? h.toFixed(2) : "No debt");
+// SOL first, then staked SOL, stocks and USDC, with anything not in TOKEN_INFO after them
+const ORDER = Object.keys(TOKEN_INFO);
+const rank = (symbol: string) => (ORDER.includes(symbol) ? ORDER.indexOf(symbol) : ORDER.length);
 
 type Mode = "Deposit" | "Withdraw";
 type Option = { id: string; icon: string; name: string; sub: string; right: string; symbol: string; max?: number };
@@ -44,13 +48,16 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
   const options: Option[] = deposit
     ? [
         { id: d.solMint, icon: "sol.webp", name: "SOL", sub: `${money(live.wallet.sol, 4)} in wallet`, right: usd(live.wallet.sol * live.prices[d.solMint]), symbol: "SOL", max: Math.max(0, live.wallet.sol - SOL_BUFFER) },
-        { id: d.stockMint, icon: "nvdax.webp", name: "NVDAx", sub: `${money(live.wallet.stock, 4)} in wallet`, right: usd(live.wallet.stock * live.prices[d.stockMint]), symbol: "NVDAx", max: live.wallet.stock },
+        ...live.tokenMints
+          .map((mint) => ({ mint, symbol: d.assets[mint].symbol, held: live.wallet.tokens[mint] ?? 0 }))
+          .sort((a, b) => rank(a.symbol) - rank(b.symbol))
+          .map(({ mint, symbol, held }) => ({ id: mint, icon: tokenIcon(symbol), name: symbol, sub: `${money(held, 4)} in wallet`, right: usd(held * (live.prices[mint] ?? 0)), symbol, max: held })),
         ...live.wallet.lps.map((lp) => lpOption(lp.positionMint.toBase58(), lp.priceLower, lp.priceUpper, math.lpValue(lp.liquidity, lp.tickLower, lp.tickUpper, live.prices[d.solMint]))),
       ]
     : live.collateral.map((c) =>
         c.lp
           ? lpOption(c.mint, c.lp.lower, c.lp.upper, c.value)
-          : { id: c.mint, icon: c.symbol === "SOL" ? "sol.webp" : c.symbol === "NVDAx" ? "nvdax.webp" : "usdc.webp", name: c.symbol, sub: `${money(c.amount, 4)} deposited`, right: usd(c.value), symbol: c.symbol, max: c.amount },
+          : { id: c.mint, icon: tokenIcon(c.symbol), name: c.symbol, sub: `${money(c.amount, 4)} deposited`, right: usd(c.value), symbol: c.symbol, max: c.amount },
       );
   const option = options.find((o) => o.id === picked) ?? options[0];
   const isLp = option?.max === undefined;
@@ -128,7 +135,7 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
               }}
               className={`flex w-full cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${on ? "border-brand/45 bg-brand/5" : "border-line bg-bg hover:border-line-2"}`}
             >
-              <Token src={`/tokens/${o.icon}`} size={20} />
+              <Token src={iconSrc(o.icon)} size={20} />
               <div>
                 <div className="font-medium">{o.name}</div>
                 <div className="text-xs text-t3">{o.sub}</div>
@@ -162,7 +169,7 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
                 className="w-full min-w-0 bg-transparent text-[32px] font-medium tracking-[-0.035em] text-t1 outline-none placeholder:text-t3"
               />
               <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
-                <Token src={`/tokens/${option.icon}`} size={20} />
+                <Token src={iconSrc(option.icon)} size={20} />
                 {option.symbol}
               </span>
             </div>
