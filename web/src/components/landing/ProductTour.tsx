@@ -6,6 +6,7 @@ import { ArrowRight, Check, Download, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { FadeUp, Num } from "@/components/motion";
 import { Tag, Token } from "@/components/ui";
+import { ExampleNote, usePoolFacts } from "./PoolFacts";
 
 const SNAP = { type: "spring", stiffness: 560, damping: 44, mass: 0.7 } as const;
 const QUICK = { duration: 0.16 } as const;
@@ -235,8 +236,8 @@ function BorrowCard({ debt, onCommit }: { debt: number; onCommit: (kind: "draw" 
 /* ---------- Earn ---------- */
 
 const TRANCHES = {
-  senior: { name: "Senior", token: "sUSDC", apy: 6.9, color: "var(--color-green)", tone: "green" as const },
-  junior: { name: "Junior", token: "jUSDC", apy: 24.2, color: "var(--color-orange)", tone: "orange" as const },
+  senior: { name: "Senior", token: "sUSDC", color: "var(--color-green)", tone: "green" as const },
+  junior: { name: "Junior", token: "jUSDC", color: "var(--color-orange)", tone: "orange" as const },
 };
 type Tranche = keyof typeof TRANCHES;
 const HORIZONS = [
@@ -263,15 +264,18 @@ function EarnCard() {
   }, [position]);
 
   const t = TRANCHES[pick];
+  // the example yields come from the pool's own rate curve, and nothing is drawn until it has been read
+  const facts = usePoolFacts();
+  const apy = { senior: facts?.apy.senior ?? 0, junior: facts?.apy.junior ?? 0 };
   const days = HORIZONS.find((h) => h.key === horizon)!.days;
-  const earned = grown(amount, t.apy, days) - amount;
+  const earned = grown(amount, apy[pick], days) - amount;
   // Both tranches on one scale, so the gap between them shows
-  const top = grown(Math.max(amount, 1), TRANCHES.junior.apy, days) - amount;
-  const line = (apy: number) =>
-    Array.from({ length: 25 }, (_, i) => `${i ? "L" : "M"}${(i / 24) * 400},${108 - ((grown(amount, apy, (i / 24) * days) - amount) / (top || 1)) * 96}`).join(" ");
-  const path = line(t.apy);
-  const other = line(TRANCHES[pick === "senior" ? "junior" : "senior"].apy);
-  const live = position ? (position.amount * (TRANCHES[position.tranche].apy / 100) * Math.max(0, now - position.at)) / 1000 / SECONDS_PER_YEAR : 0;
+  const top = grown(Math.max(amount, 1), apy.junior, days) - amount;
+  const line = (rate: number) =>
+    Array.from({ length: 25 }, (_, i) => `${i ? "L" : "M"}${(i / 24) * 400},${108 - ((grown(amount, rate, (i / 24) * days) - amount) / (top || 1)) * 96}`).join(" ");
+  const path = line(apy[pick]);
+  const other = line(apy[pick === "senior" ? "junior" : "senior"]);
+  const live = position ? (position.amount * (apy[position.tranche] / 100) * Math.max(0, now - position.at)) / 1000 / SECONDS_PER_YEAR : 0;
 
   return (
     <>
@@ -290,13 +294,14 @@ function EarnCard() {
               {TRANCHES[k].name}
             </span>
             <span className="relative mt-1.5 block text-[22px] font-medium tracking-[-0.03em]" style={{ color: TRANCHES[k].color }}>
-              {TRANCHES[k].apy}% <span className="text-[12px] font-normal text-t3">APY</span>
+              {facts ? `${apy[k].toFixed(1)}%` : "—"} <span className="text-[12px] font-normal text-t3">APY</span>
             </span>
           </motion.button>
         ))}
       </div>
+      <ExampleNote className="mt-2 text-[11.5px] text-t3" />
 
-      <div className="mt-5 flex items-center justify-between text-[13px]">
+      <div className="mt-4 flex items-center justify-between text-[13px]">
         <span className="text-t2">Deposit</span>
         <span className="font-medium tabular-nums">${money(amount, 0)}</span>
       </div>

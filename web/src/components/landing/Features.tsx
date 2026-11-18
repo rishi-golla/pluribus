@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FadeUp, Num } from "@/components/motion";
 import { FeeBars } from "./FeeBars";
+import { ExampleApy, ExampleNote } from "./PoolFacts";
 
 /**
  * One column of the section: no card and no icon, just a number, a rule and the content,
@@ -74,13 +75,14 @@ export function Features() {
         <div className="grid grid-cols-2 border-t border-line">
           <div className="pr-4 pt-4">
             <div className="font-mono text-[12px] text-t3">Senior · sUSDC</div>
-            <Num value={6.9} decimals={2} suffix="%" countUp className="mt-1.5 block font-mono text-[30px] leading-none tracking-[-0.04em] text-green" />
+            <ExampleApy tranche="senior" className="mt-1.5 block font-mono text-[30px] leading-none tracking-[-0.04em] text-green" />
           </div>
           <div className="border-l border-line pl-4 pt-4">
             <div className="font-mono text-[12px] text-t3">Junior · jUSDC</div>
-            <Num value={24.2} decimals={2} suffix="%" countUp className="mt-1.5 block font-mono text-[30px] leading-none tracking-[-0.04em] text-orange" />
+            <ExampleApy tranche="junior" className="mt-1.5 block font-mono text-[30px] leading-none tracking-[-0.04em] text-orange" />
           </div>
         </div>
+        <ExampleNote className="mt-3 font-mono text-[11.5px] text-t3" />
       </Column>
     </div>
   );

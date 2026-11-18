@@ -3,9 +3,10 @@ import { ArrowRight } from "lucide-react";
 import { DotField } from "@/components/landing/DotField";
 import { DotWave } from "@/components/landing/DotWave";
 import { HowItWorks } from "@/components/landing/HowItWorks";
+import { PoolStats } from "@/components/landing/PoolFacts";
 import { ProductTour } from "@/components/landing/ProductTour";
 import { Features } from "@/components/landing/Features";
-import { FadeUp, Num } from "@/components/motion";
+import { FadeUp } from "@/components/motion";
 import { Brandmark, Button, Token } from "@/components/ui";
 
 const partners = [
@@ -15,13 +16,6 @@ const partners = [
   { name: "Raydium", icon: "/tokens/ray.webp" },
   { name: "Meteora", icon: "/tokens/met.webp" },
   { name: "Jupiter", icon: "/tokens/jup.webp" },
-];
-
-const stats = [
-  { label: "Total supplied", value: 10, decimals: 1, prefix: "$", suffix: "M" },
-  { label: "Credit drawn", value: 8, decimals: 1, prefix: "$", suffix: "M" },
-  { label: "Collateral types", value: 4 },
-  { label: "Bad debt", value: 0, prefix: "$" },
 ];
 
 export default function Home() {
@@ -82,7 +76,7 @@ export default function Home() {
               Open a credit line
             </Button>
             <Button size="lg" href="/earn">
-              Earn up to 24.2% APY
+              Earn on your USDC
               <ArrowRight size={15} strokeWidth={1.75} />
             </Button>
           </FadeUp>
@@ -150,14 +144,7 @@ export default function Home() {
               </FadeUp>
             </div>
             <FadeUp className="relative grid grid-cols-4 border-y border-line">
-              {stats.map((s, i) => (
-                <div key={s.label} className={i === 0 ? "py-7" : "border-l border-line py-7 pl-7"}>
-                  <div className="text-[12.5px] text-t3">{s.label}</div>
-                  <div className="mt-2 text-[40px] font-medium tracking-[-0.045em]">
-                    <Num value={s.value} decimals={s.decimals} prefix={s.prefix} suffix={s.suffix} countUp />
-                  </div>
-                </div>
-              ))}
+              <PoolStats />
             </FadeUp>
           </div>
         </main>
