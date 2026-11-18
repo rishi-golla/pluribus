@@ -76,6 +76,7 @@ export type LpMarket = IdlAccounts<Pluribus>["lpMarket"];
 export type HealthView = IdlTypes<Pluribus>["healthView"];
 export type PoolParams = IdlTypes<Pluribus>["poolParams"];
 export type JuniorExit = IdlAccounts<Pluribus>["juniorExit"];
+export type SeniorExit = IdlAccounts<Pluribus>["seniorExit"];
 export type AssetParams = IdlTypes<Pluribus>["assetParams"];
 export type Wallet = ConstructorParameters<typeof AnchorProvider>[1];
 
@@ -96,11 +97,13 @@ export function getProgram(connection: Connection, wallet?: Wallet): PluribusPro
   return new Program<Pluribus>(idl as unknown as Pluribus, provider);
 }
 
-const find = (program: PublicKey, ...seeds: (string | PublicKey)[]) =>
+const find = (program: PublicKey, ...seeds: (string | PublicKey | Buffer)[]) =>
   PublicKey.findProgramAddressSync(
-    seeds.map((s) => (typeof s === "string" ? Buffer.from(s) : s.toBuffer())),
+    seeds.map((s) => (typeof s === "string" ? Buffer.from(s) : Buffer.isBuffer(s) ? s : s.toBuffer())),
     program,
   )[0];
+// A ticket number as the program seeds it: eight bytes, little-endian
+const ticketSeed = (ticket: BN | number) => new BN(ticket.toString()).toArrayLike(Buffer, "le", 8);
 
 export const pda = {
   pool: () => find(PROGRAM_ID, "pool"),
@@ -110,6 +113,9 @@ export const pda = {
   // Holds junior shares while they wait in the exit queue
   juniorEscrow: () => find(PROGRAM_ID, "junior_escrow"),
   juniorExit: (owner: PublicKey) => find(PROGRAM_ID, "junior_exit", owner),
+  // Holds senior shares while they wait in the withdrawal queue, one exit account per ticket
+  seniorEscrow: () => find(PROGRAM_ID, "senior_escrow"),
+  seniorExit: (ticket: BN | number) => find(PROGRAM_ID, "senior_exit", ticketSeed(ticket)),
   asset: (mint: PublicKey) => find(PROGRAM_ID, "asset", mint),
   vault: (mint: PublicKey) => find(PROGRAM_ID, "vault", mint),
   lpMarket: (whirlpool: PublicKey) => find(PROGRAM_ID, "lp_market", whirlpool),
@@ -137,6 +143,18 @@ export const fetchAllCredits = (program: PluribusProgram) => program.account.cre
 // The owner's queued junior exit, or null when there is none
 export const fetchJuniorExit = (program: PluribusProgram, owner: PublicKey) =>
   program.account.juniorExit.fetchNullable(pda.juniorExit(owner));
+// The owner's queued senior exits, oldest ticket first, cancelled ones included until the queue skips them
+export async function fetchSeniorExits(program: PluribusProgram, owner: PublicKey) {
+  // The owner key sits right after the discriminator
+  const all = await program.account.seniorExit.all([{ memcmp: { offset: 8, bytes: owner.toBase58() } }]);
+  return all.map((e) => e.account).sort((a, b) => a.ticket.cmp(b.ticket));
+}
+// The exit at the head of the senior queue, or null when nothing waits
+export async function fetchSeniorHead(program: PluribusProgram) {
+  const pool = await fetchPool(program);
+  if (pool.seniorHead.gte(pool.seniorNextTicket)) return null;
+  return program.account.seniorExit.fetchNullable(pda.seniorExit(pool.seniorHead));
+}
 
 // Dollar price per whole token for every asset, as the program reads it
 // Shortcut: demo price accounts only, add a Pyth decoder when a deployment leaves demo mode
@@ -270,6 +288,7 @@ export function lookupAddresses(d: Deployment): PublicKey[] {
     pda.shareMint(),
     pda.juniorMint(),
     pda.juniorEscrow(),
+    pda.seniorEscrow(),
     k(d.whirlpool),
     pda.lpMarket(k(d.whirlpool)),
     k(d.whirlpoolVaultA),

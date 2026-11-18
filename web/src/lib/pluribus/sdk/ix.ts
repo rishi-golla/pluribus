@@ -321,6 +321,84 @@ export async function convertToJunior(program: PluribusProgram, lender: PublicKe
   ];
 }
 
+// Puts senior shares at the back of the withdrawal queue, for when the pool's idle cash cannot pay them at once
+// The ticket is read from the pool now, so a request racing another for the same ticket fails and can be sent again
+export async function requestSeniorExit(program: PluribusProgram, owner: PublicKey, shares: Amount): Ixs {
+  const pool = await program.account.pool.fetch(pda.pool());
+  return [
+    await program.methods
+      .requestSeniorExit(bn(shares))
+      .accountsStrict({
+        owner,
+        pool: pda.pool(),
+        shareMint: pda.shareMint(),
+        ownerShares: ata(pda.shareMint(), owner),
+        seniorEscrow: pda.seniorEscrow(),
+        exit: pda.seniorExit(pool.seniorNextTicket),
+        tokenProgram,
+        systemProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// Permissionless: pays the head of the senior queue into its owner's USDC account, or skips it when cancelled
+// Returns nothing when the queue is empty
+export async function settleSeniorExit(program: PluribusProgram, d: Deployment, caller: PublicKey): Ixs {
+  const pool = await program.account.pool.fetch(pda.pool());
+  if (pool.seniorHead.gte(pool.seniorNextTicket)) return [];
+  const exit = pda.seniorExit(pool.seniorHead);
+  const { owner } = await program.account.seniorExit.fetch(exit);
+  const usdcMint = key(d.usdcMint);
+  return [
+    await program.methods
+      .settleSeniorExit()
+      .accountsStrict({
+        caller,
+        pool: pda.pool(),
+        exit,
+        owner,
+        shareMint: pda.shareMint(),
+        seniorEscrow: pda.seniorEscrow(),
+        usdcMint,
+        usdcVault: pda.usdcVault(),
+        ownerUsdc: ata(usdcMint, owner),
+        tokenProgram,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// Owner only, at any time: shares worth what was queued come back and the cash held for them is freed
+export async function cancelSeniorExit(program: PluribusProgram, owner: PublicKey, ticket: BN | number): Ixs {
+  return [
+    await program.methods
+      .cancelSeniorExit()
+      .accountsStrict({
+        owner,
+        pool: pda.pool(),
+        exit: pda.seniorExit(ticket),
+        shareMint: pda.shareMint(),
+        seniorEscrow: pda.seniorEscrow(),
+        ownerShares: ata(pda.shareMint(), owner),
+        tokenProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// Closes a credit account with no debt and no positions, returning its rent to the owner
+export async function closeAccount(program: PluribusProgram, owner: PublicKey): Ixs {
+  return [await program.methods.closeAccount().accountsStrict({ owner, credit: pda.credit(owner) }).instruction()];
+}
+
+// Admin: grows a pool from before the last layout change, right after a program upgrade
+export async function migratePool(program: PluribusProgram, admin: PublicKey): Ixs {
+  return [await program.methods.migratePool().accountsStrict({ admin, pool: pda.pool(), systemProgram }).instruction()];
+}
+
 // Moves junior shares into the exit queue, one exit per owner at a time
 export async function requestJuniorExit(program: PluribusProgram, owner: PublicKey, shares: Amount): Ixs {
   return [

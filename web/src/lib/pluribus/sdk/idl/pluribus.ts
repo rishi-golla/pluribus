@@ -588,6 +588,115 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "cancelSeniorExit",
+      "discriminator": [
+        170,
+        91,
+        87,
+        151,
+        104,
+        201,
+        12,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "exit"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  120,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "exit.ticket",
+                "account": "seniorExit"
+              }
+            ]
+          }
+        },
+        {
+          "name": "shareMint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "seniorEscrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerShares",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claimJuniorExit",
       "discriminator": [
         239,
@@ -712,6 +821,50 @@ export type Pluribus = {
         },
         {
           "name": "tokenProgram"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "closeAccount",
+      "discriminator": [
+        125,
+        255,
+        149,
+        14,
+        110,
+        34,
+        72,
+        24
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -2285,6 +2438,48 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "migratePool",
+      "discriminator": [
+        55,
+        170,
+        171,
+        123,
+        210,
+        69,
+        39,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "openAccount",
       "discriminator": [
         101,
@@ -2723,6 +2918,124 @@ export type Pluribus = {
               {
                 "kind": "account",
                 "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "requestSeniorExit",
+      "discriminator": [
+        99,
+        87,
+        12,
+        188,
+        116,
+        195,
+        150,
+        66
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "shareMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "ownerShares",
+          "writable": true
+        },
+        {
+          "name": "seniorEscrow",
+          "docs": [
+            "Holds senior shares while they wait in the withdrawal queue, made by the first exit"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  120,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool.seniorNextTicket",
+                "account": "pool"
               }
             ]
           }
@@ -3182,6 +3495,200 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "settleSeniorExit",
+      "discriminator": [
+        22,
+        137,
+        99,
+        91,
+        163,
+        191,
+        101,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone, usually the keeper, who also pays for the owner's USDC account if it is missing"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exit",
+          "docs": [
+            "Only the exit at the head of the queue can be settled"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  120,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool.seniorHead",
+                "account": "pool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "shareMint",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "seniorEscrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  110,
+                  105,
+                  111,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdcVault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "ownerUsdc",
+          "docs": [
+            "The owner's associated USDC account, made here if it is missing, so no owner can stall the queue by closing it"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "tokenProgram"
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "syncMint",
       "discriminator": [
         232,
@@ -3632,9 +4139,35 @@ export type Pluribus = {
         109,
         188
       ]
+    },
+    {
+      "name": "seniorExit",
+      "discriminator": [
+        254,
+        138,
+        128,
+        225,
+        144,
+        206,
+        15,
+        69
+      ]
     }
   ],
   "events": [
+    {
+      "name": "accountClosed",
+      "discriminator": [
+        19,
+        250,
+        79,
+        236,
+        91,
+        80,
+        148,
+        48
+      ]
+    },
     {
       "name": "accountOpened",
       "discriminator": [
@@ -3854,6 +4387,45 @@ export type Pluribus = {
         164,
         172,
         23
+      ]
+    },
+    {
+      "name": "seniorExitCancelled",
+      "discriminator": [
+        183,
+        218,
+        181,
+        57,
+        223,
+        59,
+        22,
+        195
+      ]
+    },
+    {
+      "name": "seniorExitRequested",
+      "discriminator": [
+        18,
+        107,
+        143,
+        89,
+        129,
+        2,
+        171,
+        61
+      ]
+    },
+    {
+      "name": "seniorExitSettled",
+      "discriminator": [
+        230,
+        15,
+        14,
+        105,
+        167,
+        29,
+        89,
+        3
       ]
     },
     {
@@ -4091,9 +4663,40 @@ export type Pluribus = {
       "code": 6038,
       "name": "priceUnclear",
       "msg": "This token's price is unclear around a corporate action, so it can't be seized yet"
+    },
+    {
+      "code": 6039,
+      "name": "debtOutstanding",
+      "msg": "The account still owes debt"
+    },
+    {
+      "code": 6040,
+      "name": "collateralLeft",
+      "msg": "Withdraw every position before closing the account"
+    },
+    {
+      "code": 6041,
+      "name": "exitCancelled",
+      "msg": "This senior exit was already cancelled"
     }
   ],
   "types": [
+    {
+      "name": "accountClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
     {
       "name": "accountOpened",
       "type": {
@@ -5176,6 +5779,32 @@ export type Pluribus = {
           {
             "name": "epochPaid",
             "type": "u64"
+          },
+          {
+            "name": "seniorQueued",
+            "docs": [
+              "Senior shares waiting in the withdrawal queue, held in the senior escrow",
+              "Added after launch: `migrate_pool` grows a pool created before them, and the new bytes start at zero"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seniorReserved",
+            "docs": [
+              "The most the queued senior exits can be owed, held back from idle cash so nothing else spends it first"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seniorNextTicket",
+            "docs": [
+              "Ticket the next queued senior exit gets, and the ticket the queue pays next"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seniorHead",
+            "type": "u64"
           }
         ]
       }
@@ -5490,6 +6119,137 @@ export type Pluribus = {
       }
     },
     {
+      "name": "seniorExit",
+      "docs": [
+        "A senior lender's shares in the withdrawal queue, one account per ticket, held in the senior escrow until settled",
+        "Queued shares earn nothing but still take losses, and the queue pays tickets strictly in order"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "ticket",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "docs": [
+              "What the shares were worth when queued, the most the exit can pay"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "cancelled",
+            "docs": [
+              "Cancelled exits keep their ticket until the queue reaches it, so the head can always move on"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "seniorExitCancelled",
+      "docs": [
+        "`returned` of the queued `shares` went back to the owner, the rest were burned with the yield earned while queued"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "ticket",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "returned",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "seniorExitRequested",
+      "docs": [
+        "Senior shares queued for withdrawal: `value` is the most they can pay, and `ticket` their place in the queue"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "ticket",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "seniorExitSettled",
+      "docs": [
+        "The queue reached `ticket`: `paid` USDC went to the owner, or nothing when the exit had been cancelled"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "ticket",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          },
+          {
+            "name": "cancelled",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
       "name": "tierChanged",
       "type": {
         "kind": "struct",
@@ -5604,6 +6364,16 @@ export type Pluribus = {
       "name": "poolSeed",
       "type": "bytes",
       "value": "[112, 111, 111, 108]"
+    },
+    {
+      "name": "seniorEscrowSeed",
+      "type": "bytes",
+      "value": "[115, 101, 110, 105, 111, 114, 95, 101, 115, 99, 114, 111, 119]"
+    },
+    {
+      "name": "seniorExitSeed",
+      "type": "bytes",
+      "value": "[115, 101, 110, 105, 111, 114, 95, 101, 120, 105, 116]"
     },
     {
       "name": "shareMintSeed",
