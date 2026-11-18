@@ -45,9 +45,9 @@ export function AppNav({ active }: { active?: string }) {
               {l.label}
             </Link>
           ))}
-          <a href="#" className="rounded-[9px] px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
+          <Link href="/docs" className="rounded-[9px] px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
             Docs
-          </a>
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-2">
           {!active && mode === "preview" && !loading && !error && <Tag>Preview data</Tag>}

@@ -28,7 +28,7 @@ export default function Home() {
           <header className="flex h-[72px] items-center gap-10 px-10">
             <Brandmark />
             <nav className="flex gap-0.5">
-              {[["Borrow", "/borrow"], ["Earn", "/earn"], ["Risk", "#"], ["Docs", "#"]].map(([l, href]) => (
+              {[["Borrow", "/borrow"], ["Earn", "/earn"], ["Risk", "#"], ["Docs", "/docs"]].map(([l, href]) => (
                 <Link key={l} href={href} className="rounded-[9px] px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
                   {l}
                 </Link>
