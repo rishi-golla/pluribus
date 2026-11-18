@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import { ChevronDown, Flame, Shield, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
 import { useState } from "react";
-import { Chip, KV, Label, StatusDot, Swatch, Tag, Token } from "@/components/ui";
+import { Chip, KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel, type ChartLine } from "@/components/charts/LineChart";
@@ -747,7 +747,7 @@ export function EarnDashboard() {
         <SupplyPanel tranche={tranche} onTranche={setTranche} />
       </section>
 
-      <section className="mt-4 grid grid-cols-[1.15fr_1fr_1fr] gap-4">
+      <section className="mt-4 grid grid-cols-2 gap-4">
         <div className="panel">
           <div className="flex items-center justify-between px-[22px] pt-[18px]">
             <h3 className="text-[15px] font-medium tracking-[-0.01em]">Loss waterfall</h3>
@@ -776,41 +776,6 @@ export function EarnDashboard() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-        <div className="panel">
-          <div className="flex items-center justify-between px-[22px] pt-[18px]">
-            <h3 className="text-[15px] font-medium tracking-[-0.01em]">Coverage gate</h3>
-            {live ? (
-              <Tag>Coming soon</Tag>
-            ) : (
-              <Tag tone="green">
-                <StatusDot />
-                Open
-              </Tag>
-            )}
-          </div>
-          <div className="px-[22px] pb-[22px] pt-[18px]">
-            <div className="flex items-baseline gap-2">
-              {live ? <span className="text-[30px] font-medium tracking-[-0.03em] text-t3">-</span> : <Num value={16.1} decimals={1} suffix="%" countUp className="text-[30px] font-medium tracking-[-0.03em]" />}
-              <span className="text-t3">junior / risky debt</span>
-            </div>
-            <div className="relative mt-[18px] h-2 rounded-full bg-s3">
-              <motion.span
-                className="absolute inset-y-0 left-0 rounded-full bg-green"
-                initial={{ width: 0 }}
-                whileInView={{ width: live ? "0%" : "53.7%" }}
-                viewport={{ once: true }}
-                transition={{ duration: 1, delay: 0.2, ease: EASE }}
-              />
-              <span className="absolute -top-1.5 left-[33.3%] h-5 w-0.5 rounded-[1px] bg-t1" />
-            </div>
-            <div className="mt-2 flex justify-between text-[11.5px] text-t3">
-              <span>0%</span>
-              <span className="ml-[18%]">Min 10%</span>
-              <span>30%</span>
-            </div>
-            
           </div>
         </div>
         <div className="panel">
