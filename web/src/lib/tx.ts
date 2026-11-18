@@ -18,6 +18,16 @@ const NEXT_STEP: Record<string, string> = {
   InsufficientLiquidity: "Try a smaller amount, or wait for repayments",
 };
 
+/** Whether a legacy transaction stays within Solana's 1232-byte packet once signed */
+function fits(tx: Transaction) {
+  try {
+    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length <= 1232;
+  } catch {
+    // web3.js throws instead of returning an oversized transaction
+    return false;
+  }
+}
+
 /** Sends the instructions through the wallet as one transaction and waits until it is confirmed */
 export async function sendInstructions(
   connection: Connection,
@@ -27,10 +37,14 @@ export async function sendInstructions(
 ) {
   const latest = await connection.getLatestBlockhash();
   if (!wallet.publicKey) throw new Error("Connect a wallet first");
-  // A v0 transaction through the deployment's lookup table keeps health checks over many positions within the size limit
-  const tx = deployment
-    ? await buildTransaction(connection, deployment, wallet.publicKey, instructions, latest.blockhash)
-    : new Transaction({ feePayer: wallet.publicKey, ...latest }).add(...instructions);
+  const legacy = new Transaction({ feePayer: wallet.publicKey, ...latest }).add(...instructions);
+  // A v0 transaction through the deployment's lookup table keeps health checks over many positions within the size limit.
+  // Extension wallets such as Phantom read the table from their own network before signing, and a local chain's table
+  // exists nowhere else, so they refuse. On the local chain a plain transaction goes out whenever it fits
+  const tx =
+    deployment && !(CLUSTER === "localnet" && fits(legacy))
+      ? await buildTransaction(connection, deployment, wallet.publicKey, instructions, latest.blockhash)
+      : legacy;
   onStage("signing");
   // Extension wallets such as Phantom do not list a local chain among their networks, so asking them to send fails before
   // anything is signed. On the local chain the wallet only signs and the app sends the transaction itself
