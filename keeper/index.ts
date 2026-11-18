@@ -1,4 +1,4 @@
-// One loop that liquidates, refreshes loyalty tiers, collects LP fees and keeps the demo feed fresh
+// One loop that liquidates, refreshes loyalty tiers, collects LP fees, pays the senior withdrawal queue and keeps the demo feed fresh
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -249,6 +249,23 @@ async function volatility(pool: Pool, now: number) {
   }
 }
 
+// Pays the senior withdrawal queue from the head while the pool's cash covers it, and skips cancelled tickets
+// A few per pass, so a long queue never holds up liquidations
+async function seniorQueue(start: Pool) {
+  let pool = start;
+  for (let i = 0; i < 10 && pool.seniorHead.lt(pool.seniorNextTicket); i++) {
+    const exit = await program.account.seniorExit.fetchNullable(pda.seniorExit(pool.seniorHead));
+    if (!exit) return;
+    // The program pays at most the queued value, and less after a loss, so the queued value is enough cash to try
+    if (!exit.cancelled && pool.cash.lt(exit.value)) return;
+    const what = exit.cancelled
+      ? `Senior queue: skipped cancelled ticket ${exit.ticket}`
+      : `Senior queue: paid ticket ${exit.ticket} of ${exit.owner}, up to ${usd(exit.value)} USDC`;
+    if (!(await send(what, await ix.settleSeniorExit(program, d, me)))) return;
+    pool = await fetchPool(program);
+  }
+}
+
 let stopping = false;
 let wake = () => {};
 
@@ -274,6 +291,8 @@ async function pass() {
     }
     if (!account.debtShares.isZero()) await attempt(`Debt check of ${owner}`, () => watchDebt(pool, owner, now));
   }
+  // Last, after repayments and liquidations this pass have brought cash back
+  if (!stopping) await attempt("Senior queue", async () => seniorQueue(await fetchPool(program)));
 }
 
 const stop = () => {
