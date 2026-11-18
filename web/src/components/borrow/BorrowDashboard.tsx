@@ -618,6 +618,16 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
               Get test tokens
             </button>
           )}
+          {/* An account with nothing in it and nothing owed can be closed for its rent, and opened again on the next deposit */}
+          {!all.length && live?.hasAccount && live.debt === 0 && (
+            <button
+              type="button"
+              onClick={async () => (await live.closeAccount(() => {})) && toast({ title: "Credit account closed", detail: "Its rent went back to your wallet", tone: "info" })}
+              className="ml-3 cursor-pointer text-t2 hover:text-t1 hover:underline"
+            >
+              Close account
+            </button>
+          )}
         </div>
       )}
     </section>
