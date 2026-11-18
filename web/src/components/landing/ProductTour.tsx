@@ -6,6 +6,7 @@ import { ArrowRight, Check, Download, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { FadeUp, Num } from "@/components/motion";
 import { Tag, Token } from "@/components/ui";
+import { CLUSTER } from "@/lib/cluster";
 import { ExampleNote, usePoolFacts } from "./PoolFacts";
 
 const SNAP = { type: "spring", stiffness: 560, damping: 44, mass: 0.7 } as const;
@@ -56,9 +57,9 @@ const total = (rows: Row[]) => rows.reduce((s, r) => s + r.amount, 0);
 const OPENINGS = MONTHS.map((_, i) => total(MONTHS.slice(0, i).flatMap((m) => m.rows)));
 const START_DEBT = total(MONTHS.flatMap((m) => m.rows));
 
-const LIMIT = 9_250;
-const LIQUIDATION = 10_400;
-const health = (debt: number) => (debt > 0 ? LIQUIDATION / debt : Infinity);
+// The example account's limits: the How it works portfolio valued with the pool's own crash tables
+type Limits = { credit: number; liquidation: number };
+const health = (debt: number, liquidation: number) => (debt > 0 ? liquidation / debt : Infinity);
 // 1 at the left edge of the bar, 3 or more at the right
 const barPos = (h: number) => (Number.isFinite(h) ? Math.min(1, Math.max(0, (h - 1) / 2)) : 1);
 const healthColor = (h: number) => (h < 1.3 ? "var(--color-red)" : h < 1.8 ? "var(--color-orange)" : "var(--color-green)");
@@ -150,15 +151,18 @@ function ActionButton({ stage, disabled, onClick, children, done }: { stage: Sta
 
 /* ---------- Borrow ---------- */
 
-function BorrowCard({ debt, onCommit }: { debt: number; onCommit: (kind: "draw" | "repay", amount: number) => void }) {
+/** `limits` is undefined while the pool is read and null when it could not be */
+function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits | null | undefined; onCommit: (kind: "draw" | "repay", amount: number) => void }) {
   const [mode, setMode] = useState<"draw" | "repay">("draw");
-  const max = Math.floor(mode === "draw" ? Math.max(0, LIMIT - debt) : debt);
+  // nothing can be drawn or repaid until the pool's limits are known
+  const LIMIT = limits?.credit ?? 0;
+  const max = limits ? Math.floor(mode === "draw" ? Math.max(0, LIMIT - debt) : debt) : 0;
   const [raw, setRaw] = useState(2_500);
   const amount = Math.min(raw, max);
   const after = mode === "draw" ? debt + amount : debt - amount;
-  const [now, next] = [health(debt), health(after)];
+  const [now, next] = limits ? [health(debt, limits.liquidation), health(after, limits.liquidation)] : [NaN, NaN];
   const tx = useFakeTx();
-  const fmtH = (h: number) => (Number.isFinite(h) ? h.toFixed(2) : "No debt");
+  const fmtH = (h: number) => (Number.isNaN(h) ? "—" : Number.isFinite(h) ? h.toFixed(2) : "No debt");
 
   return (
     <>
@@ -201,12 +205,18 @@ function BorrowCard({ debt, onCommit }: { debt: number; onCommit: (kind: "draw" 
         <div className="flex items-center justify-between">
           <span className="text-t2">Credit used</span>
           <span className="font-medium tabular-nums">
-            {Math.round((debt / LIMIT) * 100)}% <span className="text-t3">→</span> {Math.round((after / LIMIT) * 100)}%
+            {limits ? (
+              <>
+                {Math.round((debt / LIMIT) * 100)}% <span className="text-t3">→</span> {Math.round((after / LIMIT) * 100)}%
+              </>
+            ) : (
+              "—"
+            )}
           </span>
         </div>
         <div className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
-          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-brand/40" animate={{ width: `${(Math.max(debt, after) / LIMIT) * 100}%` }} transition={SNAP} />
-          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-brand" animate={{ width: `${(Math.min(debt, after) / LIMIT) * 100}%` }} transition={SNAP} />
+          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-brand/40" animate={{ width: `${limits ? Math.min(100, (Math.max(debt, after) / LIMIT) * 100) : 0}%` }} transition={SNAP} />
+          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-brand" animate={{ width: `${limits ? Math.min(100, (Math.min(debt, after) / LIMIT) * 100) : 0}%` }} transition={SNAP} />
         </div>
         <div className="flex items-center justify-between pt-1">
           <span className="text-t2">Health factor</span>
@@ -224,6 +234,9 @@ function BorrowCard({ debt, onCommit }: { debt: number; onCommit: (kind: "draw" 
             transition={SNAP}
           />
         </div>
+      </div>
+      <div className="mt-2 text-[11.5px] text-t3">
+        {limits ? "Example account: the How it works portfolio, limits from the on-chain crash tables" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
       </div>
 
       <ActionButton stage={tx.stage} disabled={amount <= 0} onClick={() => tx.run(() => onCommit(mode, amount))} done={`${mode === "draw" ? "Drawn" : "Repaid"}, added to your statement`}>
@@ -506,6 +519,9 @@ export function ProductTour() {
     setTab(next);
   };
   const t = TABS[index];
+  const facts = usePoolFacts();
+  const ex = facts === undefined ? undefined : facts?.example;
+  const limits = ex && { credit: ex.creditLimit, liquidation: ex.liquidationLimit };
 
   const commit = (kind: "draw" | "repay", amount: number) =>
     setToday((rows) => [...rows, { id: `t${rows.length}`, date: "Today", kind, amount: kind === "draw" ? amount : -amount }]);
@@ -564,7 +580,7 @@ export function ProductTour() {
               transition={{ x: SNAP, opacity: QUICK }}
               className="absolute inset-0 p-7"
             >
-              {tab === "borrow" && <BorrowCard debt={debt} onCommit={commit} />}
+              {tab === "borrow" && <BorrowCard debt={debt} limits={limits} onCommit={commit} />}
               {tab === "earn" && <EarnCard />}
               {tab === "statements" && <StatementCard today={today} />}
             </motion.div>
