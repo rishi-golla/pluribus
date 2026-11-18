@@ -334,7 +334,8 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
             toast({ title: body.error ?? "No test tokens sent", detail: "Try again in a moment", tone: "error" });
             return false;
           }
-          toast({ title: "Test tokens are in your wallet", detail: `${body.sol} SOL, ${body.stock} NVDAx, ${body.usdc.toLocaleString("en-US")} USDC${body.lp ? " and an Orca position" : ""}`, tone: "success" });
+          const extras = Object.entries((body.tokens ?? {}) as Record<string, number>).map(([symbol, whole]) => `, ${whole} ${symbol}`);
+          toast({ title: "Test tokens are in your wallet", detail: `${body.sol} SOL, ${body.stock} NVDAx, ${body.usdc.toLocaleString("en-US")} USDC${extras.join("")}${body.lp ? " and an Orca position" : ""}`, tone: "success" });
           await refresh().catch(() => {});
           return true;
         },
