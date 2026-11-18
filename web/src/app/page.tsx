@@ -14,8 +14,6 @@ const partners = [
   { name: "Pyth", icon: "/tokens/pyth.webp" },
   { name: "Orca", icon: "/tokens/orca.png" },
   { name: "Raydium", icon: "/tokens/ray.webp" },
-  { name: "Meteora", icon: "/tokens/met.webp" },
-  { name: "Jupiter", icon: "/tokens/jup.webp" },
 ];
 
 export default function Home() {
