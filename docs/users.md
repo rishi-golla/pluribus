@@ -23,9 +23,9 @@ A credit account holds up to 5 positions. You borrow USDC against all of them to
 | SOL | yes |
 | NVDAx, a mock tokenized stock | yes |
 | Orca SOL/USDC liquidity position | yes |
-| USDC | SDK only |
-| JitoSOL and JupSOL, mock staked SOL | SDK only |
-| AAPLx, a mock Token-2022 stock | SDK only |
+| USDC | yes |
+| JitoSOL and JupSOL, mock staked SOL | yes |
+| AAPLx, a mock Token-2022 stock | yes |
 | Raydium liquidity position | no market is listed on devnet |
 
 ### Credit limit
@@ -198,7 +198,7 @@ npm run dev        # in a second terminal, then open http://localhost:3000
 ```
 
 1. Open **Borrow** and connect a wallet. "Demo wallet" needs no browser extension.
-2. Press **Get test tokens**. It sends 10 SOL, 50 NVDAx, 5,000 USDC and one Orca position.
+2. Press **Get test tokens**. It sends 10 SOL, 50 NVDAx, 5,000 USDC, 10 JitoSOL, 10 JupSOL, 20 AAPLx and one Orca position. A faucet wallet last stocked before JitoSOL, JupSOL and AAPLx were added skips them until `npm run faucet:stock` runs again.
 3. Deposit collateral, then draw USDC.
 4. Open **Earn** to lend into either tranche.
 
