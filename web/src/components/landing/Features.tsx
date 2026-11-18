@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { FadeUp, Num } from "@/components/motion";
-import { FeeBars } from "./FeeBars";
-import { ExampleApy, ExampleNote } from "./PoolFacts";
+import { FadeUp } from "@/components/motion";
+import { AutopayRepaid, ExampleApy, ExampleNote } from "./PoolFacts";
 
 /**
  * One column of the section: no card and no icon, just a number, a rule and the content,
@@ -57,13 +56,7 @@ export function Features() {
         title="Autopay from LP fees"
         body="Keepers harvest your concentrated-liquidity fees on a schedule and repay debt with the USDC part. Stay healthy and your rate keeps dropping."
       >
-        <div className="flex items-baseline justify-between">
-          <Num value={212.4} decimals={2} prefix="$" countUp className="font-mono text-[30px] leading-none tracking-[-0.04em] text-brand" />
-          <span className="font-mono text-[12px] text-t3">repaid, 30D</span>
-        </div>
-        <div className="mt-4">
-          <FeeBars />
-        </div>
+        <AutopayRepaid />
       </Column>
 
       <Column

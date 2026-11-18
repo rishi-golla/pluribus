@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { Num } from "@/components/motion";
+import { FeeBars } from "./FeeBars";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
-import { SCENARIO_NAMES } from "@/lib/live";
+import { SCENARIO_NAMES, fetchStats } from "@/lib/live";
 import { type Asset, type Pool, type PluribusProgram, fetchAsset, fetchLpMarket, fetchPool, fetchPrices, getProgram, math } from "@/lib/pluribus/sdk";
 
 /** The example portfolio How it works draws and the product tour borrows against, in dollars */
@@ -148,6 +149,46 @@ export function usePoolFacts() {
     };
   }, []);
   return facts;
+}
+
+/** USDC repaid by autopay on each of the last 30 days, oldest first, from the indexer */
+export type AutopayDays = number[];
+let autopayCached: Promise<AutopayDays | null> | undefined;
+
+/** Undefined while loading, null when no indexer is configured or it did not answer */
+export function useAutopayDays() {
+  const [days, setDays] = useState<AutopayDays | null | undefined>(undefined);
+  useEffect(() => {
+    let on = true;
+    // fetchStats returns nothing at all when NEXT_PUBLIC_INDEXER_URL is unset
+    (autopayCached ??= fetchStats().then((s) => (s.length ? s.slice(-30).map((d) => d.autopay) : null), () => null)).then((d) => on && setDays(d));
+    return () => {
+      on = false;
+    };
+  }, []);
+  return days;
+}
+
+/** USDC repaid by autopay across the protocol over the last 30 days, with a bar per day */
+export function AutopayRepaid() {
+  const days = useAutopayDays();
+  const total = days?.reduce((s, v) => s + v, 0);
+  return (
+    <>
+      <div className="flex items-baseline justify-between">
+        {total === undefined ? (
+          <span className="font-mono text-[30px] leading-none tracking-[-0.04em] text-brand">—</span>
+        ) : (
+          <Num value={total} decimals={2} prefix="$" countUp className="font-mono text-[30px] leading-none tracking-[-0.04em] text-brand" />
+        )}
+        <span className="font-mono text-[12px] text-t3">repaid on {CLUSTER}, 30D</span>
+      </div>
+      <div className="mt-4">
+        <FeeBars days={days ?? null} />
+      </div>
+      <div className="mt-3 font-mono text-[11.5px] text-t3">{days === null ? "Shown once an indexer is connected" : "\u00a0"}</div>
+    </>
+  );
 }
 
 export function ExampleApy({ tranche, className }: { tranche: "senior" | "junior"; className?: string }) {

@@ -1,28 +1,31 @@
 "use client";
 
 import { motion } from "motion/react";
-import { series } from "@/lib/chart";
 import { EASE } from "@/components/motion";
 
 const W = 335;
-const fees = series(30, 6, 8, 5, 3).map((v) => Math.max(2.2, v));
-const barW = (W - 29 * 3) / 30;
+const DAYS = 30;
+const barW = (W - (DAYS - 1) * 3) / DAYS;
+// A sliver of every bar shows even on a day with nothing repaid, so the 30 days still read as a chart
+const MIN_H = 2.2;
 
-/** Daily autopay bars that grow in left to right when scrolled into view. */
-export function FeeBars() {
+/** Daily autopay bars that grow in left to right when scrolled into view, flat placeholders while `days` is null */
+export function FeeBars({ days }: { days: number[] | null }) {
+  const top = Math.max(0, ...(days ?? []));
   return (
     <motion.svg
       viewBox={`0 0 ${W} 96`}
       width="100%"
       height="96"
       className="inline align-baseline"
-      aria-label="Fees repaid per day over the last 30 days"
+      aria-label={days ? "USDC repaid by autopay per day over the last 30 days" : "No autopay history to show"}
       initial="hidden"
       whileInView="shown"
       viewport={{ once: true, amount: 0.6 }}
     >
-      {fees.map((v, i) => {
-        const h = (v / 14) * 90;
+      {Array.from({ length: DAYS }, (_, i) => {
+        const v = days?.[i] ?? 0;
+        const h = top > 0 ? Math.max(MIN_H, (v / top) * 90) : MIN_H;
         return (
           <motion.rect
             key={i}
@@ -32,7 +35,7 @@ export function FeeBars() {
             height={h}
             rx={2}
             fill="#9e8cff"
-            fillOpacity={0.25 + (i / 29) * 0.6}
+            fillOpacity={days ? 0.25 + (i / (DAYS - 1)) * 0.6 : 0.15}
             style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
             variants={{ hidden: { scaleY: 0 }, shown: { scaleY: 1 } }}
             transition={{ duration: 0.6, delay: i * 0.025, ease: EASE }}
