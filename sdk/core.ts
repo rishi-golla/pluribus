@@ -53,15 +53,22 @@ export type Deployment = {
   // An address lookup table of the accounts transactions keep reusing, see `buildTransaction`
   lookupTable?: string;
   // Indexed by mint, and USDC has no price account because it is fixed at $1
-  // A liquid staking token also names the SOL price account its backing is valued with, its stake pool or fixed rate
+  // A liquid staking token also names the SOL price accounts its backing is valued with, its stake pool or fixed rate
+  // Each asset has two price accounts and the program reads one by on-chain state, see `priceAccountFor`:
+  // its demo account while the pool is in demo mode and the asset is not live, its Pyth push feed otherwise
   assets: Record<
     string,
     {
       symbol: string;
       name: string;
       decimals: number;
+      // The demo price account, a PDA of the program
       priceAccount: string | null;
-      backing?: { solPriceAccount: string; stakePool?: string; fixedRate?: number };
+      // The asset's Pyth feed id in hex and the push oracle's price account for it, derived from the feed id when left out
+      feedId?: string;
+      pythAccount?: string;
+      // `solPriceAccount` is the demo SOL account and `solPythAccount` SOL's Pyth push feed, for a token that is live
+      backing?: { solPriceAccount: string; solPythAccount?: string; stakePool?: string; fixedRate?: number };
       // Token-2022 assets, like xStocks: their mint is read in every health check
       tokenProgram?: string;
     }
@@ -90,6 +97,18 @@ export const KIND_TOKEN = 1;
 export const KIND_LP = 2;
 export const MAX_U64 = new BN("18446744073709551615");
 const TICK_ARRAY_SIZE = 88;
+// Pyth's receiver owns every price update account, and its push oracle keeps one long-lived account per feed id and shard
+export const PYTH_RECEIVER_PROGRAM_ID = new PublicKey("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
+export const PYTH_PUSH_ORACLE_PROGRAM_ID = new PublicKey("pythWSnswVUd12oZpeFP8e9CVaEqJg25g1Vtc2biRsT");
+// The shard of push feeds the keeper updates and the program is pointed at
+export const PYTH_SHARD = 0;
+const feedBytes = (feedId: string | Uint8Array | number[]) =>
+  typeof feedId === "string" ? Buffer.from(feedId.replace(/^0x/, ""), "hex") : Buffer.from(feedId);
+const shardSeed = (shard: number) => {
+  const seed = Buffer.alloc(2);
+  seed.writeUInt16LE(shard);
+  return seed;
+};
 
 // Reads need no wallet, and instruction builders never sign
 export function getProgram(connection: Connection, wallet?: Wallet): PluribusProgram {
@@ -120,7 +139,10 @@ export const pda = {
   vault: (mint: PublicKey) => find(PROGRAM_ID, "vault", mint),
   lpMarket: (whirlpool: PublicKey) => find(PROGRAM_ID, "lp_market", whirlpool),
   credit: (owner: PublicKey) => find(PROGRAM_ID, "credit", owner),
-  demoPrice: (mint: PublicKey) => find(PROGRAM_ID, "demo_price", mint),
+      demoPrice: (mint: PublicKey) => find(PROGRAM_ID, "demo_price", mint),
+    // The push oracle's price account for a Pyth feed id, as 64 hex characters or 32 bytes
+    pythFeed: (feedId: string | Uint8Array | number[], shard = PYTH_SHARD) =>
+      find(PYTH_PUSH_ORACLE_PROGRAM_ID, shardSeed(shard), feedBytes(feedId)),
   orcaPosition: (positionMint: PublicKey) => find(WHIRLPOOL_PROGRAM_ID, "position", positionMint),
   // Where Orca or Raydium keeps the position an NFT controls
   lpPosition: (dexProgram: PublicKey, positionMint: PublicKey) => find(dexProgram, "position", positionMint),
@@ -158,28 +180,115 @@ export async function fetchSeniorHead(program: PluribusProgram) {
 
 // Dollar price per whole token for every asset, as the program reads it
 // Shortcut: demo price accounts only, add a Pyth decoder when a deployment leaves demo mode
+// What the program reads from a Pyth receiver price update, scaled like `oracle.rs` does:
+// dollars per whole token with 6 decimals, the price rounded down and its confidence band up
+export type PythQuote = { feedId: string; price: BN; conf: BN; publishTime: number };
+
+const PRICE_UPDATE_DISCRIMINATOR = Buffer.from("22f123639d7ef4cd", "hex");
+const E6 = new BN(1_000_000);
+
+// A fully verified PriceUpdateV2 account, or null when the program would not accept the data
+export function decodePriceUpdate(data: Uint8Array): PythQuote | null {
+  const d = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  // Layout: disc 8 | write authority 32 | verification 1 (1 is full) | feed id 32 | price i64 | conf u64 | expo i32 | publish time i64
+  if (d.length < 101 || !d.subarray(0, 8).equals(PRICE_UPDATE_DISCRIMINATOR) || d[40] !== 1) return null;
+  const price = new BN(d.subarray(73, 81), 10, "le").fromTwos(64);
+  const conf = new BN(d.subarray(81, 89), 10, "le");
+  const expo = d.readInt32LE(89);
+  if (!price.gtn(0) || expo > 0 || expo < -18) return null;
+  const scale = new BN(10).pow(new BN(-expo));
+  return {
+    feedId: d.subarray(41, 73).toString("hex"),
+    price: price.mul(E6).div(scale),
+    conf: conf.mul(E6).add(scale).subn(1).div(scale),
+    publishTime: new BN(d.subarray(93, 101), 10, "le").fromTwos(64).toNumber(),
+  };
+}
+
+// The price the program values collateral at: the low end of the quote's band, in dollars per whole token
+export const quoteLow = (q: { price: BN; conf: BN }) => Math.max(0, q.price.sub(q.conf).toNumber()) / 1e6;
+
+// Which of an asset's two price accounts the program reads: with the pool in demo mode an asset reads its demo account
+// until the admin switches it to its live feed, and with demo mode off every asset reads Pyth
+export type PriceSources = { demoMode: boolean; assets: Record<string, Asset | null> };
+
+export async function fetchPriceSources(program: PluribusProgram, d: Deployment, pool?: Pool): Promise<PriceSources> {
+  const mints = Object.keys(d.assets).filter((m) => m !== d.usdcMint);
+  const [p, assets] = await Promise.all([
+    pool ?? fetchPool(program),
+    program.account.asset.fetchMultiple(mints.map((m) => pda.asset(new PublicKey(m)))),
+  ]);
+  return { demoMode: p.demoMode, assets: Object.fromEntries(mints.map((m, i) => [m, assets[i]])) };
+}
+
+export const isLive = (s: PriceSources, mint: string) => !s.demoMode || !!s.assets[mint]?.livePrice;
+
+// The account the program reads `mint`'s own price from, or undefined when the deployment lists none for that source
+// The push oracle account of an asset's Pyth feed, taken from the deployment or derived from the feed id
+function pythAccountOf(d: Deployment, mint: string): string | undefined {
+  const a = d.assets[mint];
+  return a?.pythAccount ?? (a?.feedId ? pda.pythFeed(a.feedId).toBase58() : undefined);
+}
+
+// The account the program reads `mint`'s own price from, or undefined when the deployment lists none for that source
+function ownAccount(d: Deployment, mint: string, s: PriceSources): string | undefined {
+  return isLive(s, mint) ? pythAccountOf(d, mint) : (d.assets[mint]?.priceAccount ?? undefined);
+}
+
+// The SOL account a staking token's backing is valued with: it follows the token's own source, so a live token never
+// reads a demo SOL price
+function backingAccount(d: Deployment, mint: string, s: PriceSources): string | undefined {
+  const b = d.assets[mint]?.backing;
+  if (!b) return undefined;
+  return isLive(s, mint) ? (b.solPythAccount ?? pythAccountOf(d, d.solMint)) : b.solPriceAccount;
+}
+
+export function priceAccountFor(d: Deployment, mint: string, s: PriceSources): PublicKey {
+  const key = ownAccount(d, mint, s);
+  if (!key) throw new Error(`No ${isLive(s, mint) ? "Pyth" : "demo"} price account for ${mint} in the ${d.cluster} deployment`);
+  return new PublicKey(key);
+}
+
+export function backingAccountFor(d: Deployment, mint: string, s: PriceSources): PublicKey | null {
+  const key = backingAccount(d, mint, s);
+  return key ? new PublicKey(key) : null;
+}
+
+// Dollar price per whole token for every asset, as the program reads it
+// Shortcut: a staking token's backing is fixed rates only, a stake pool's rate would need its account read too
 export async function fetchPrices(program: PluribusProgram, d: Deployment): Promise<Record<string, number>> {
-  const mints = Object.keys(d.assets).filter((m) => d.assets[m].priceAccount);
-  const accounts = await program.account.demoPrice.fetchMultiple(mints.map((m) => d.assets[m].priceAccount!));
+  const sources = await fetchPriceSources(program, d);
+  const mints = Object.keys(d.assets).filter((m) => ownAccount(d, m, sources));
+  const keys = [...new Set(mints.flatMap((m) => [ownAccount(d, m, sources)!, backingAccount(d, m, sources) ?? ""]).filter(Boolean))];
+  const infos = await program.provider.connection.getMultipleAccountsInfo(keys.map((k) => new PublicKey(k)));
+  const info = new Map(keys.map((k, i) => [k, infos[i]]));
+
+  // A demo account holds the price as written, a Pyth one as the program rescales it
+  const low = (key: string | undefined, live: boolean): number | undefined => {
+    const data = key ? info.get(key)?.data : undefined;
+    if (!data) return undefined;
+    try {
+      const q = live ? decodePriceUpdate(data) : program.coder.accounts.decode("demoPrice", data);
+      return q ? quoteLow(q) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const prices: Record<string, number> = { [d.usdcMint]: 1 };
-  mints.forEach((m, i) => {
-    const a = accounts[i];
-    if (a) prices[m] = a.price.sub(a.conf).toNumber() / 1e6;
-  });
-  // A staking token is worth no more than its SOL backing, as the program values it
-  // Shortcut: fixed rates only, a stake pool's rate would need its account read too
   for (const m of mints) {
+    let price = low(ownAccount(d, m, sources), isLive(sources, m));
+    if (price === undefined) continue;
+    const asset = sources.assets[m];
+    // A per-share feed on a scaled token is multiplied by the mint's corporate-action multiplier, in tokens per share scaled by 1e9
+    if (asset?.params.uiMultiplier) price = (price * asset.mult.toNumber()) / 1e9;
+    // A staking token is worth no more than its SOL backing, as the program values it
     const fixed = d.assets[m].backing?.fixedRate;
-    if (fixed && prices[m] !== undefined && prices[d.solMint] !== undefined) prices[m] = Math.min(prices[m], fixed * prices[d.solMint]);
+    const sol = low(backingAccount(d, m, sources), isLive(sources, m));
+    if (fixed && sol !== undefined) price = Math.min(price, fixed * sol);
+    prices[m] = price;
   }
   return prices;
 }
-
-const priceAccount = (d: Deployment, mint: string) => {
-  const key = d.assets[mint]?.priceAccount;
-  if (!key) throw new Error(`No price account for ${mint} in the ${d.cluster} deployment`);
-  return new PublicKey(key);
-};
 
 // The accounts a health check reads, in slot order
 // `skip` is the mint of a position that the same instruction empties, since its accounts must not be listed
@@ -187,7 +296,7 @@ export function healthAccounts(
   _program: PluribusProgram,
   d: Deployment,
   credit: CreditAccount,
-  opts: { skip?: PublicKey; lps?: Map<string, LpLocation> } = {},
+  opts: { skip?: PublicKey; lps?: Map<string, LpLocation>; sources: PriceSources },
 ): AccountMeta[] {
   const keys: PublicKey[] = [];
   for (const p of credit.positions) {
@@ -196,11 +305,12 @@ export function healthAccounts(
       keys.push(pda.asset(p.mint));
       // A Token-2022 asset's mint and vault: its issuer can pause it, scale balances, or move tokens out of the vault
       if (d.assets[p.mint.toBase58()]?.tokenProgram === TOKEN_2022) keys.push(p.mint, pda.vault(p.mint));
-      if (p.mint.toBase58() !== d.usdcMint) keys.push(priceAccount(d, p.mint.toBase58()));
-      // A staking token's backing: the SOL price, then its stake pool when it has one
-      const backing = d.assets[p.mint.toBase58()]?.backing;
-      if (backing) keys.push(new PublicKey(backing.solPriceAccount));
-      if (backing?.stakePool) keys.push(new PublicKey(backing.stakePool));
+      if (p.mint.toBase58() !== d.usdcMint) keys.push(priceAccountFor(d, p.mint.toBase58(), opts.sources));
+      // A staking token's backing: the SOL price its own source calls for, then its stake pool when it has one
+      const backing = backingAccountFor(d, p.mint.toBase58(), opts.sources);
+      if (backing) keys.push(backing);
+      const stakePool = d.assets[p.mint.toBase58()]?.backing?.stakePool;
+      if (stakePool) keys.push(new PublicKey(stakePool));
     } else if (p.kind === KIND_LP) {
       // Without `lps` from `locateLps` every LP is taken to be an Orca position in the main whirlpool
       const at = opts.lps?.get(p.mint.toBase58());
@@ -209,7 +319,7 @@ export function healthAccounts(
         at?.market ?? pda.lpMarket(new PublicKey(d.whirlpool)),
         at?.position ?? pda.orcaPosition(p.mint),
         pda.asset(new PublicKey(base)),
-        priceAccount(d, base),
+        priceAccountFor(d, base, opts.sources),
       );
     }
   }
@@ -296,8 +406,15 @@ export function lookupAddresses(d: Deployment): PublicKey[] {
   ];
   for (const [mint, a] of Object.entries(d.assets)) {
     keys.push(k(mint), pda.asset(k(mint)), pda.vault(k(mint)));
+    // Both price accounts, since the admin can switch an asset between its demo price and its feed
     if (a.priceAccount) keys.push(k(a.priceAccount));
-    if (a.backing) keys.push(k(a.backing.solPriceAccount));
+    const feed = pythAccountOf(d, mint);
+    if (feed) keys.push(k(feed));
+    if (a.backing) {
+      keys.push(k(a.backing.solPriceAccount));
+      const sol = a.backing.solPythAccount ?? pythAccountOf(d, d.solMint);
+      if (sol) keys.push(k(sol));
+    }
     if (a.backing?.stakePool) keys.push(k(a.backing.stakePool));
   }
   for (const m of d.lpMarkets ?? []) keys.push(k(m.pool), pda.lpMarket(k(m.pool)), k(m.dexProgram));
@@ -311,7 +428,12 @@ export async function fetchHealth(program: PluribusProgram, d: Deployment, owner
   const view = await program.methods
     .health()
     .accountsStrict({ credit: pda.credit(owner), pool: pda.pool() })
-    .remainingAccounts(healthAccounts(program, d, credit, { lps: await locateLps(program.provider.connection, d, credit) }))
+    .remainingAccounts(
+      healthAccounts(program, d, credit, {
+        lps: await locateLps(program.provider.connection, d, credit),
+        sources: await fetchPriceSources(program, d),
+      }),
+    )
     .instruction();
   // Nothing is signed: any funded account can stand in as the fee payer
   const message = new TransactionMessage({

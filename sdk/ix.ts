@@ -22,8 +22,7 @@ import {
   type CreditAccount,
   healthAccounts,
   locateLps,
-  pda,
-} from "./core";
+  pda, fetchPriceSources, priceAccountFor, backingAccountFor } from "./core";
 
 // Token amounts are always base units
 export type Amount = BN | bigint | number;
@@ -147,8 +146,10 @@ export async function withdrawToken(
 }
 
 // The accounts a health check reads, with each LP position found on its own dex
-const health = async (program: PluribusProgram, d: Deployment, credit: CreditAccount, opts: { skip?: PublicKey } = {}) =>
-  healthAccounts(program, d, credit, { ...opts, lps: await locateLps(program.provider.connection, d, credit) });
+const health = async (program: PluribusProgram, d: Deployment, credit: CreditAccount, opts: { skip?: PublicKey } = {}) => {
+  const [lps, sources] = await Promise.all([locateLps(program.provider.connection, d, credit), fetchPriceSources(program, d)]);
+  return healthAccounts(program, d, credit, { ...opts, lps, sources });
+};
 
 // A listed LP market's dex and base token: the main whirlpool, or one of the deployment's `lpMarkets`
 const lpMarketOf = (d: Deployment, pool: PublicKey) => {
@@ -732,17 +733,53 @@ export async function syncMint(program: PluribusProgram, mint: PublicKey): Ixs {
 // and a Token-2022 token its mint, whose multiplier scales its price
 export async function updateVol(program: PluribusProgram, d: Deployment, mint: PublicKey): Ixs {
   const a = d.assets[mint.toBase58()];
-  if (!a?.priceAccount) throw new Error(`${mint.toBase58()} has no price account in the ${d.cluster} deployment`);
+  // The accounts follow the asset's price source on chain: its demo account or its Pyth feed, and the same for its SOL backing
+  const sources = await fetchPriceSources(program, d);
+  const price = priceAccountFor(d, mint.toBase58(), sources);
   // The same order as a health check: a Token-2022 asset's mint for its multiplier, then a staking token's backing
-  const t22 = a.tokenProgram && a.tokenProgram !== TOKEN_PROGRAM_ID.toBase58() ? mint.toBase58() : undefined;
-  const backing = [t22, a.backing?.solPriceAccount, a.backing?.stakePool].filter((k): k is string => !!k);
+  const t22 = a.tokenProgram && a.tokenProgram !== TOKEN_PROGRAM_ID.toBase58() ? mint : null;
+  const backing = [t22, backingAccountFor(d, mint.toBase58(), sources), a.backing?.stakePool ? key(a.backing.stakePool) : null].filter(
+    (k): k is PublicKey => !!k,
+  );
   return [
     await program.methods
       .updateVol()
-      .accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price: key(a.priceAccount) })
-      .remainingAccounts(backing.map((k) => ({ pubkey: key(k), isSigner: false, isWritable: false })))
+      .accountsStrict({ pool: pda.pool(), asset: pda.asset(mint), price })
+      .remainingAccounts(backing.map((pubkey) => ({ pubkey, isSigner: false, isWritable: false })))
       .instruction(),
   ];
+}
+
+// Demo mode only: prices an asset from its Pyth feed instead of its demo account, or back again
+// The feed has to be fresh before this goes live, since every health check reads it from then on
+export async function demoSetLivePrice(program: PluribusProgram, admin: PublicKey, mint: PublicKey, live: boolean): Ixs {
+  return [
+    await program.methods.demoSetLivePrice(live).accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) }).instruction(),
+  ];
+}
+
+// Demo mode only: puts every waiting change into effect now, for the pool and for each of `accounts`, the assets and LP
+// markets that wait on something, and ends their listings' activation delay
+export async function demoActivate(program: PluribusProgram, admin: PublicKey, accounts: PublicKey[]): Ixs {
+  return [
+    await program.methods
+      .demoActivate()
+      .accountsStrict({ admin, pool: pda.pool() })
+      .remainingAccounts(accounts.map((pubkey) => ({ pubkey, isSigner: false, isWritable: true })))
+      .instruction(),
+  ];
+}
+
+// The extra yearly rate in bps charged on debt an asset backs: a cut applies at once, a raise waits out the activation delay
+export async function setAssetPremium(program: PluribusProgram, admin: PublicKey, mint: PublicKey, premiumBps: number): Ixs {
+  return [
+    await program.methods.setAssetPremium(premiumBps).accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) }).instruction(),
+  ];
+}
+
+// The share of each asset's premium charged per loyalty tier in bps, never rising with loyalty
+export async function setPremiumTiers(program: PluribusProgram, admin: PublicKey, tierBps: number[]): Ixs {
+  return [await program.methods.setPremiumTiers(tierBps).accountsStrict({ admin, pool: pda.pool() }).instruction()];
 }
 
 export async function initLpMarket(
