@@ -88,6 +88,13 @@ export type Live = LiveData & {
   claimExit: (inUsdc: boolean, onStage: OnStage) => Promise<boolean>;
   /** Puts the queued junior shares back to work */
   cancelExit: (onStage: OnStage) => Promise<boolean>;
+  /** Queues senior money, in USDC terms, behind every exit already waiting, for when the pool's idle cash cannot pay it now */
+  queueSeniorExit: (usdcAmount: number, onStage: OnStage) => Promise<boolean>;
+  cancelSeniorExit: (ticket: number, onStage: OnStage) => Promise<boolean>;
+  /** Pays the head of the senior queue, whoever it belongs to, once the pool's cash covers it */
+  settleSeniorHead: (onStage: OnStage) => Promise<boolean>;
+  /** Closes the credit account once it has no debt and no collateral, returning its rent */
+  closeAccount: (onStage: OnStage) => Promise<boolean>;
 };
 
 type Account = {
@@ -286,7 +293,8 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       borrowApr: data.borrowApr,
       tier,
       autopayPerMonth: events.filter((e) => e.kind === "autopay" && e.date.startsWith(data.today.slice(0, 7))).reduce((s, e) => s + e.amount, 0),
-      poolCash: data.pool.cash,
+      // Cash held back for queued senior exits cannot be drawn or withdrawn by anyone else
+      poolCash: data.pool.available,
       walletUsdc: data.wallet.usdc,
       months: monthsOf(events, data.today, data.borrowApr, tier),
       // Interest accrues between this reading and the transaction, so a full repayment asks for everything owed
@@ -373,6 +381,14 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
           }, onStage),
         claimExit: (inUsdc, onStage) => run(() => ix.claimJuniorExit(program, d, me, { inUsdc }), onStage),
         cancelExit: (onStage) => run(() => ix.cancelJuniorExit(program, me, me), onStage),
+        queueSeniorExit: (amount, onStage) =>
+          run(() => {
+            const all = amount >= lent.senior - 0.005;
+            return ix.requestSeniorExit(program, me, all ? BigInt(data.wallet.shares.senior.raw) : usdc(amount / sharePrice.senior));
+          }, onStage),
+        cancelSeniorExit: (ticket, onStage) => run(() => ix.cancelSeniorExit(program, me, ticket), onStage),
+        settleSeniorHead: (onStage) => run(() => ix.settleSeniorExit(program, d, me), onStage),
+        closeAccount: (onStage) => run(() => ix.closeAccount(program, me), onStage),
       },
     };
   }, [current, wallet, loading, error, retry, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);

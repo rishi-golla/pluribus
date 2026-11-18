@@ -10,6 +10,7 @@ import {
   fetchPool,
   fetchPositions,
   fetchPrices,
+  fetchSeniorExits,
   getProgram,
   listOrcaPositions,
   math,
@@ -52,7 +53,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const program = getProgram(connection);
   const whirlpool = new PublicKey(d.whirlpool);
   const listed = Object.keys(d.assets);
-  const [pool, credit, viewed, prices, assetAccounts, lpMarket, lamports, tokens, tokens2022, supply, juniorSupply, walletLps, poolLps, queuedExit] = await Promise.all([
+  const [pool, credit, viewed, prices, assetAccounts, lpMarket, lamports, tokens, tokens2022, supply, juniorSupply, walletLps, poolLps, queuedExit, seniorExits] = await Promise.all([
     fetchPool(program),
     fetchCredit(program, owner),
     // A stale price fails the view, and the page still has to load so the price can be set again
@@ -70,6 +71,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     listOrcaPositions(connection, d, owner),
     listOrcaPositions(connection, d, pda.pool()),
     fetchJuniorExit(program, owner),
+    // A program from before the senior queue has no such accounts, and the page still loads
+    fetchSeniorExits(program, owner).catch(() => []),
   ]);
   // Every token the deployment lists that the program has whitelisted, by mint
   const assets = new Map(assetAccounts.flatMap((a, i) => (a ? [[listed[i], a] as const] : [])));
@@ -226,6 +229,10 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     pool: {
       supplied: stats.cash + stats.debt,
       cash: stats.cash,
+      /** Idle USDC not held back for queued senior exits: what draws and instant withdrawals can use */
+      available: Math.max(0, stats.cash - num(pool.seniorReserved ?? 0)),
+      /** The senior withdrawal queue: USDC held back for it, the ticket it pays next and the one a new exit gets */
+      seniorQueue: { reserved: num(pool.seniorReserved ?? 0), head: Number(pool.seniorHead ?? 0), next: Number(pool.seniorNextTicket ?? 0) },
       debt: stats.debt,
       reserves: stats.reserves,
       protocolFees: stats.protocolFees,
@@ -266,6 +273,13 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     },
       /** The wallet's queued junior exit, with its value at today's junior share price */
     juniorExit: exit,
+    /** The wallet's queued senior exits, oldest first, with how many tickets wait ahead of each */
+    seniorExits: seniorExits
+      .filter((e) => !e.cancelled)
+      .map((e) => {
+        const ticket = Number(e.ticket);
+        return { ticket, shares: num(e.shares), value: num(e.value), ahead: Math.max(0, ticket - Number(pool.seniorHead ?? 0)) };
+      }),
     /** How junior money leaves: the wait a new exit of the wallet's shares would get, the claim window and the fee */
     juniorRules: {
       waitSecs: math.juniorExitDelay(params, pool.juniorQueued, juniorWallet.raw, juniorSupply?.value.amount ?? 0),
