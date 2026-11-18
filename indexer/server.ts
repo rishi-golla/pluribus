@@ -6,7 +6,7 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { PublicKey } from "@solana/web3.js";
 import { pda } from "../sdk/index.ts";
-import { type StoredEvent, type Tx, dailyStats, statement, toStored } from "./events.ts";
+import { type StoredEvent, type Tx, dailyStats, lenderOf, lenderStatement, statement, toStored } from "./events.ts";
 import { sign } from "./sign.ts";
 
 const port = Number(process.env.PORT ?? 8787);
@@ -118,17 +118,22 @@ function route(req: http.IncomingMessage): [number, unknown] | Promise<[number, 
   if (req.method !== "GET") return [405, { error: "Method not allowed" }];
   if (pathname === "/health") return [200, { ok: true, lastSlot, events: events.length }];
   if (pathname === "/stats") return [200, dailyStats(events)];
-  const owner = /^\/accounts\/([^/]+)\/events$/.exec(pathname)?.[1];
+  const [, kind, owner] = /^\/(accounts|lenders)\/([^/]+)\/events$/.exec(pathname) ?? [];
   if (!owner) return [404, { error: "Not found" }];
-  let credit: string;
+  let key: PublicKey;
   try {
-    credit = pda.credit(new PublicKey(owner)).toBase58();
+    key = new PublicKey(owner);
   } catch {
     return [400, { error: `Not a valid address: "${owner}"` }];
   }
   // Slot order, with arrival order deciding inside a slot
-  const own = events.filter((e) => e.data.account === credit).sort((a, b) => a.slot - b.slot);
-  return [200, statement(own, owner)];
+  const history = (belongs: (e: StoredEvent) => boolean) => events.filter(belongs).sort((a, b) => a.slot - b.slot);
+  if (kind === "lenders") {
+    const lender = key.toBase58();
+    return [200, lenderStatement(history((e) => lenderOf(e) === lender), lender)];
+  }
+  const credit = pda.credit(key).toBase58();
+  return [200, statement(history((e) => e.data.account === credit), owner)];
 }
 
 const server = http.createServer(async (req, res) => {
