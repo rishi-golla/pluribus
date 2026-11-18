@@ -195,6 +195,10 @@ pub mod pluribus {
         admin::handle_migrate_pool(ctx)
     }
 
+    pub fn close_account(ctx: Context<CloseCredit>) -> Result<()> {
+        borrow::handle_close_account(ctx)
+    }
+
     pub fn request_senior_exit(ctx: Context<RequestSeniorExit>, shares: u64) -> Result<()> {
         senior::handle_request_senior_exit(ctx, shares)
     }

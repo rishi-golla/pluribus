@@ -161,6 +161,12 @@ pub struct ProtocolFeesCollected {
     pub amount: u64,
 }
 
+#[event]
+pub struct AccountClosed {
+    pub account: Pubkey,
+    pub owner: Pubkey,
+}
+
 /// Senior shares queued for withdrawal: `value` is the most they can pay, and `ticket` their place in the queue
 #[event]
 pub struct SeniorExitRequested {
