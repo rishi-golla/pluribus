@@ -61,5 +61,12 @@
       }
     }
   },
-  "lookupTable": "A9KAGTcNirqiHQePpGe1pgvjdJrKAS62PemxoZeiiENS"
+  "lookupTable": "A9KAGTcNirqiHQePpGe1pgvjdJrKAS62PemxoZeiiENS",
+  "lpMarkets": [
+    {
+      "pool": "5ZnKViaNwjT2iCZsgAchihmUurnaKTau4MWPUj1MQSnP",
+      "dexProgram": "DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH",
+      "baseMint": "So11111111111111111111111111111111111111112"
+    }
+  ]
 }

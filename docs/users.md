@@ -26,7 +26,7 @@ A credit account holds up to 5 positions. You borrow USDC against all of them to
 | USDC | yes |
 | JitoSOL and JupSOL, mock staked SOL | yes |
 | AAPLx, a mock Token-2022 stock | yes |
-| Raydium liquidity position | no market is listed on devnet |
+| Raydium SOL/USDC liquidity position | SDK only; backs debt from 26 Nov 2026, once its activation delay has passed |
 
 ### Credit limit
 
