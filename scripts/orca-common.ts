@@ -39,7 +39,16 @@ export const { values: args } = parseArgs({
   },
 });
 export const url = args.url;
-export const cluster = /devnet|testnet|mainnet/.exec(url)?.[0] ?? "localnet";
+const local = ["127.0.0.1", "localhost", "[::1]", "0.0.0.0"].includes(new URL(url).hostname);
+export const cluster = process.env.CLUSTER ?? /devnet|testnet|mainnet/.exec(url)?.[0] ?? "localnet";
+// a private rpc url names no cluster, and guessing localnet there gives a live pool delays of seconds.
+// the other way round, a stray CLUSTER on a local run would overwrite that cluster's deployment file
+if (local !== (cluster === "localnet")) {
+  throw new Error(
+    `${url} is ${local ? "a" : "not a"} local validator but the cluster is ${cluster}: ` +
+      "set CLUSTER to devnet, testnet or mainnet for a remote rpc, and leave it unset for a local one",
+  );
+}
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 export const readKey = (file: string) =>
