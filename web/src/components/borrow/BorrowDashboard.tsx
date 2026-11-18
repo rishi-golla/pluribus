@@ -819,7 +819,7 @@ function AutopayPanel() {
   const bw = (AW - 29 * 4) / 30;
   const toggle = () => {
     setOn(!on);
-    toast(on ? { title: "Autopay paused", detail: "LP fees stay in positions", tone: "info" } : { title: "Autopay resumed", detail: "Next harvest in 3h 12m" });
+    toast(on ? { title: "Autopay paused", detail: "LP fees stay in positions", tone: "info" } : { title: "Autopay resumed", detail: "Next harvest in 7m" });
   };
   const paid = months.flatMap((m) => m.events).filter((e) => e.kind === "autopay");
   const dayOf = (iso: string) => Math.round(Date.parse(iso) / DAY_MS);
@@ -862,7 +862,7 @@ function AutopayPanel() {
         <div className="text-[13px] text-t2">
           {fast.running || fast.total.runs > 0
             ? `Test harvest: ${fast.total.runs} runs, ${usd(fast.total.usd)} collected`
-            : "LP fees repay debt every 6 hours"}
+            : "The keeper harvests LP fees and repays debt every 10 minutes by default"}
         </div>
         <div className="mt-[18px] flex items-center justify-between">
           <Label>Daily fees repaid, 30D</Label>
@@ -912,7 +912,7 @@ function AutopayPanel() {
           {[
             ["This month", <Num key="m" value={autopayPerMonth} decimals={2} prefix="$" countUp className="text-green" />],
             ["Lifetime", <Num key="l" value={live ? paid.reduce((s, e) => s + e.amount, 0) : 1847.2} decimals={2} prefix="$" countUp />],
-            ["Next harvest", fast.running ? "Every 1s" : live ? (on ? "By keeper" : "-") : on ? "3h 12m" : "Paused"],
+            ["Next harvest", fast.running ? "Every 1s" : live ? (on ? "By keeper" : "-") : on ? "7m" : "Paused"],
           ].map(([k, v]) => (
             <div key={k as string} className="bg-s1 px-3.5 py-3">
               <Label>{k}</Label>
