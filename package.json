@@ -33,6 +33,7 @@
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {
+    "@raydium-io/raydium-sdk-v2": "0.2.83-alpha",
     "@types/bn.js": "~5.1.6",
     "@types/node": "^22.20.5",
     "tsx": "^4.23.15",
