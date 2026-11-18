@@ -27,7 +27,7 @@ const TOAST_TONES = {
 function Toaster({ toast }: { toast: Toast | null }) {
   const tone = TOAST_TONES[toast?.tone ?? "success"];
   return (
-    <div className="pointer-events-none fixed right-7 top-[80px] z-50">
+    <div className="pointer-events-none fixed right-7 top-[108px] z-50">
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -95,6 +95,9 @@ type Account = {
   mode: "preview" | "live";
   /** A wallet is connecting or its account is being read for the first time */
   loading: boolean;
+  /** set when a connected wallet's account could not be read, so no page shows the demo figures in its place */
+  error: { title: string; detail: string; retry: boolean } | null;
+  retry: () => void;
   /** ISO date, yyyy-mm-dd */
   today: string;
   debt: number;
@@ -147,6 +150,17 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   const owner = wallet?.publicKey?.toBase58();
   const current = loaded?.owner === owner ? loaded : null;
   const loading = !!wallet?.connecting || (!!owner && !!deployment && !current && failed !== owner);
+  // a connected wallet that could not be read used to fall through to the demo figures, whose buttons report success
+  const error = useMemo(() => {
+    if (!owner || current) return null;
+    if (!deployment) return { title: `No ${CLUSTER} deployment found`, detail: "Run npm run localnet, then reload", retry: false };
+    if (failed !== owner) return null;
+    return {
+      title: "Could not load on-chain data",
+      detail: `Nothing is shown until the ${CLUSTER} RPC answers. Trying again every ${POLL_MS / 1000} seconds`,
+      retry: true,
+    };
+  }, [owner, current, failed]);
 
   const refresh = useCallback(async () => {
     if (!owner || !deployment) return;
@@ -182,6 +196,11 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     return () => clearInterval(id);
   }, [owner, refresh, toast]);
 
+  const retry = useCallback(() => {
+    setFailed(undefined);
+    refresh().catch(() => setFailed(owner));
+  }, [owner, refresh]);
+
   useEffect(() => {
     if (!owner) return;
     fetch("/api/demo/price").then((r) => setCanSetPrice(r.ok));
@@ -195,6 +214,8 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       return {
         mode: "preview",
         loading,
+        error,
+        retry,
         today: TODAY,
         debt: CURRENT_DEBT + session.reduce((s, e) => s + debtDelta(e), 0),
         creditLimit: CREDIT_LIMIT,
@@ -255,6 +276,8 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     return {
       mode: "live",
       loading,
+      error: null,
+      retry,
       today: data.today,
       debt: data.debt,
       creditLimit: data.creditLimit,
@@ -351,14 +374,36 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         cancelExit: (onStage) => run(() => ix.cancelJuniorExit(program, me, me), onStage),
       },
     };
-  }, [current, wallet, loading, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);
+  }, [current, wallet, loading, error, retry, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);
 
   return <AccountCtx.Provider value={account}>{children}</AccountCtx.Provider>;
 }
 
 /** Holds a page back while the wallet's account loads, so it mounts once with on-chain figures */
 export function LiveGate({ children }: { children: ReactNode }) {
-  const { loading } = useAccount();
+  const { loading, error, retry } = useAccount();
+  if (error) {
+    return (
+      <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+        <div className="panel flex h-[320px] flex-col items-center justify-center gap-2 text-center" role="alert">
+          <span className="grid size-10 place-items-center rounded-xl bg-red/12 text-red">
+            <TriangleAlert size={18} strokeWidth={2} />
+          </span>
+          <div className="mt-2 text-[15px] font-medium">{error.title}</div>
+          <div className="text-[13.5px] text-t2">{error.detail}</div>
+          {error.retry && (
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-3 h-9 cursor-pointer rounded-[10px] border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium text-t1 transition-colors hover:bg-s3"
+            >
+              Try again now
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
   if (!loading) return children;
   return (
     <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
