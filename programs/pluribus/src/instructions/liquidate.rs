@@ -79,14 +79,17 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     let bonus = BPS + a.pool.params.liq_bonus_bps as u128;
     let unit = pow10(a.asset.decimals)?;
     let max_repay = mul_div_floor(debt, a.pool.params.close_factor_bps as u128, BPS)?;
-    let mut repay = (repay_amount as u128).min(max_repay);
-    let mut seize = mul_div_floor(repay * bonus, unit, h.price[i] * BPS)?;
+    // a position priced at nothing, as when the issuer emptied its vault, goes whole for no payment:
+    // left in place it blocks the write-off and the debt stays behind lender shares for good
+    let worthless = h.price[i] == 0;
+    let mut repay = if worthless { 0 } else { (repay_amount as u128).min(max_repay) };
+    let mut seize = if worthless { held } else { mul_div_floor(repay * bonus, unit, h.price[i] * BPS)? };
     if seize > held {
         // Not enough of this collateral: take all of it and charge only what it is worth
         seize = held;
         repay = mul_div_ceil(seize, h.price[i] * BPS, unit * bonus)?.min(max_repay);
     }
-    require!(repay > 0 && seize > 0, PluribusError::ZeroAmount);
+    require!(seize > 0 && (repay > 0 || worthless), PluribusError::ZeroAmount);
 
     let mut after = h.maint;
     for s in 0..h.scenarios() {
@@ -100,8 +103,13 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     a.pool.repay(&mut a.credit, repay)?;
     a.credit.remove_token(&mint, seize)?;
     a.asset.total_deposited = a.asset.total_deposited.saturating_sub(seize);
-    pull(&a.token_program, &a.usdc_mint, &a.liquidator_usdc, &a.usdc_vault, &a.liquidator, repay)?;
-    push(&a.collateral_token_program, &a.collateral_mint, &a.vault, &a.liquidator_collateral, &a.pool, sent)?;
+    if repay > 0 {
+        pull(&a.token_program, &a.usdc_mint, &a.liquidator_usdc, &a.usdc_vault, &a.liquidator, repay)?;
+    }
+    // even a transfer of zero fails on a paused mint or a frozen vault
+    if sent > 0 {
+        push(&a.collateral_token_program, &a.collateral_mint, &a.vault, &a.liquidator_collateral, &a.pool, sent)?;
+    }
     emit!(Liquidated {
         account: a.credit.key(),
         liquidator: a.liquidator.key(),

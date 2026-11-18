@@ -406,6 +406,41 @@ fn a_vault_short_of_its_books_pays_out_pro_rata_and_takes_no_deposits() {
 }
 
 #[test]
+fn a_position_in_an_emptied_vault_is_cleared_for_nothing_and_its_debt_written_off() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let mint = list(&mut env, &Xstock::default(), 100);
+    let (a, b) = (env.user(), env.user());
+    env.deposit(&a, &mint, 10 * SHARE);
+    env.deposit(&b, &mint, 10 * SHARE);
+    let sol = env.sol;
+    env.deposit(&b, &sol, 10 * SOL);
+    expect_ok(env.draw(&a, 300 * USDC));
+    expect_ok(env.draw(&b, 300 * USDC));
+    let liquidator = env.wallet();
+    let usdc = env.usdc;
+    env.fund(&usdc, &liquidator.pubkey(), 1_000 * USDC);
+    env.fund(&mint, &liquidator.pubkey(), 0);
+    // the issuer's delegate takes everything, then pauses the mint and freezes the vault
+    set_vault(&mut env, &mint, 0, true);
+    rewrite(&mut env, &mint, &Xstock { paused: true, ..Default::default() });
+    let h = env.health(&a.pubkey());
+    assert_eq!((h.position_value[0], h.liquidation_limit), (0, 0));
+    // b's sol still covers its debt, so its worthless position is nobody's to take
+    expect_err(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &b.pubkey(), &mint, u64::MAX)], &[&liquidator]), PluribusError::NotLiquidatable);
+    // a has nothing else: the position goes for no payment, and no transfer is tried on the paused mint
+    expect_ok(env.send(&[env.liquidate_ix(&liquidator.pubkey(), &a.pubkey(), &mint, u64::MAX)], &[&liquidator]));
+    assert_eq!(env.balance(&usdc, &liquidator.pubkey()), 1_000 * USDC);
+    assert_eq!(env.balance(&mint, &liquidator.pubkey()), 0);
+    // with no collateral left the debt is a booked loss, not an asset lender shares are priced on
+    let credit = env.credit(&a.pubkey());
+    assert!(!credit.has_collateral() && credit.debt_shares == 0);
+    assert!(env.pool_state().bad_debt >= 300 * USDC);
+    let asset: Asset = env.load(&env.asset_pda(&mint));
+    assert_eq!(asset.total_deposited, 10 * SHARE);
+}
+
+#[test]
 fn an_after_hours_price_blocks_nothing_the_other_collateral_covers() {
     let mut env = Env::new();
     env.lender(100_000 * USDC);
