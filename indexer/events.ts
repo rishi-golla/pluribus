@@ -23,7 +23,7 @@ export type Row = {
   id: string;
   date: string;
   time: number;
-  kind: "draw" | "repay" | "autopay" | "interest" | "tier";
+  kind: "draw" | "repay" | "autopay" | "interest" | "premium" | "tier" | "closed";
   amount: number;
   detail: string;
   tx: string;
@@ -48,6 +48,87 @@ export function toStored(tx: Tx): StoredEvent[] {
 
 const usdc = (units: bigint) => Number(units) / 1e6;
 const short = (address: string) => `${address.slice(0, 4)}...${address.slice(-4)}`;
+
+// A lender's `amount` is USDC and `shares` is the tranche's share token, which has USDC's decimals
+export type LenderRow = {
+  id: string;
+  date: string;
+  time: number;
+  kind: "deposit" | "withdraw" | "convert" | "exit-requested" | "exit-claimed" | "exit-cancelled" | "queued" | "settled";
+  tranche: "senior" | "junior";
+  amount: number;
+  shares: number;
+  detail: string;
+  tx: string;
+};
+
+const LENDER_EVENTS = new Set([
+  "lendermoved",
+  "trancheconverted",
+  "juniorexitrequested",
+  "juniorexitclaimed",
+  "juniorexitcancelled",
+  "seniorexitrequested",
+  "seniorexitsettled",
+  "seniorexitcancelled",
+]);
+
+// The lender a lending event is about, which the program names `lender` in two events and `owner` in the rest
+export function lenderOf(e: StoredEvent): string | undefined {
+  return LENDER_EVENTS.has(e.name.toLowerCase()) ? (e.data.lender ?? e.data.owner) : undefined;
+}
+
+// Lending rows for one address, given its events oldest first
+export function lenderStatement(events: StoredEvent[], owner: string): LenderRow[] {
+  const rows: LenderRow[] = [];
+  for (const e of events) {
+    if (lenderOf(e) !== owner) continue;
+    const d = e.data;
+    const row = (kind: LenderRow["kind"], tranche: LenderRow["tranche"], amount: bigint, shares: bigint, detail: string) =>
+      rows.push({
+        id: `${e.signature}-${e.index}`,
+        date: day(e.time),
+        time: e.time,
+        kind,
+        tranche,
+        amount: usdc(amount),
+        shares: usdc(shares),
+        detail,
+        tx: e.signature,
+      });
+    switch (e.name.toLowerCase()) {
+      case "lendermoved":
+        row(d.deposit ? "deposit" : "withdraw", d.junior ? "junior" : "senior", BigInt(d.usdc), BigInt(d.shares), d.deposit ? "USDC supplied" : "USDC withdrawn");
+        break;
+      case "trancheconverted":
+        // The money lands in the junior tranche, so the shares shown are the junior ones it minted
+        row("convert", "junior", BigInt(d.value), BigInt(d.minted), `From ${usdc(BigInt(d.shares))} sUSDC`);
+        break;
+      case "juniorexitrequested":
+        row("exit-requested", "junior", BigInt(d.value), BigInt(d.shares), `Claimable ${day(Number(d.unlockAt))} to ${day(Number(d.deadline))}`);
+        break;
+      case "juniorexitclaimed":
+        row("exit-claimed", "junior", BigInt(d.paid), BigInt(d.shares), `${d.inUsdc ? "Paid in USDC" : "Paid in sUSDC"}, fee ${usdc(BigInt(d.fee))}`);
+        break;
+      case "juniorexitcancelled":
+        // The USDC worth of the returned shares is not in the event
+        row("exit-cancelled", "junior", 0n, BigInt(d.returned), d.lapsed ? "Claim window lapsed" : "Cancelled");
+        break;
+      case "seniorexitrequested":
+        row("queued", "senior", BigInt(d.value), BigInt(d.shares), `Ticket ${d.ticket}`);
+        break;
+      case "seniorexitsettled":
+        // The queue passing a cancelled ticket pays nothing, and the cancellation already has its own row
+        if (!d.cancelled) row("settled", "senior", BigInt(d.paid), BigInt(d.shares), `Ticket ${d.ticket}`);
+        break;
+      case "seniorexitcancelled":
+        row("exit-cancelled", "senior", 0n, BigInt(d.returned), `Ticket ${d.ticket}`);
+        break;
+    }
+  }
+  return rows;
+}
+
 const day = (time: number) => new Date(time * 1000).toISOString().slice(0, 10);
 
 // Statement rows for one credit account, given its events oldest first
@@ -95,16 +176,26 @@ export function statement(events: StoredEvent[], owner: string): Row[] {
         settle(0n, -BigInt(d.loss));
         row("repay", BigInt(d.loss), "Written off as bad debt");
         break;
-      case "tierchanged":
-        // The app counts tiers from 1
-        row("tier", 0n, `Tier ${d.from + 1} to Tier ${d.to + 1}`);
-        break;
+        case "premiumbooked":
+          // Booked as debt like interest, so it moves the balance the same way
+          settle(BigInt(d.debt), BigInt(d.amount));
+          row("premium", BigInt(d.amount), `Rate ${(d.rateBps / 100).toFixed(2)}%`);
+          break;
+        case "tierchanged":
+          // The app counts tiers from 1
+          row("tier", 0n, `Tier ${d.from + 1} to Tier ${d.to + 1}`);
+          break;
+        case "accountclosed":
+          // Only an account with no debt can close
+          debt = 0n;
+          row("closed", 0n, "Account closed");
+          break;
     }
   }
   return rows;
 }
 
-export type DayStats = { date: string; draws: number; repays: number; autopay: number; liquidations: number };
+export type DayStats = { date: string; draws: number; repays: number; autopay: number; premium: number; liquidations: number };
 
 // One entry per day for the 90 days ending at `now`, oldest first
 export function dailyStats(events: StoredEvent[], now = Date.now() / 1000): DayStats[] {
@@ -113,6 +204,7 @@ export function dailyStats(events: StoredEvent[], now = Date.now() / 1000): DayS
     draws: 0n,
     repays: 0n,
     autopay: 0n,
+    premium: 0n,
     liquidations: 0,
   }));
   const byDate = new Map(days.map((d) => [d.date, d]));
@@ -122,10 +214,11 @@ export function dailyStats(events: StoredEvent[], now = Date.now() / 1000): DayS
     const name = e.name.toLowerCase();
     if (name === "drawn") d.draws += BigInt(e.data.amount);
     else if (name === "repaid") d[e.data.source === 1 ? "autopay" : "repays"] += BigInt(e.data.amount);
+    else if (name === "premiumbooked") d.premium += BigInt(e.data.amount);
     else if (name === "liquidated") {
       d.repays += BigInt(e.data.repaid);
       d.liquidations += 1;
     }
   }
-  return days.map((d) => ({ ...d, draws: usdc(d.draws), repays: usdc(d.repays), autopay: usdc(d.autopay) }));
+  return days.map((d) => ({ ...d, draws: usdc(d.draws), repays: usdc(d.repays), autopay: usdc(d.autopay), premium: usdc(d.premium) }));
 }
