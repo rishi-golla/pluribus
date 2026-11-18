@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowDownLeft, ArrowUpRight, Award, Calendar, Check, ChevronDown, Download, FileSpreadsheet, Percent, Repeat, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Award, Calendar, Check, ChevronDown, Download, FileSpreadsheet, Lock, Percent, Repeat, ShieldAlert, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
@@ -9,27 +9,27 @@ import { Segmented } from "@/components/Segmented";
 import { useAccount, useToast } from "@/components/app/providers";
 import { shortKey, summarize, usd, type EventKind, type MonthSummary } from "@/lib/account";
 import { niceMax } from "@/lib/chart";
-import { CLUSTER, RPC_URL } from "@/lib/cluster";
+import { explorer, isSignature } from "@/lib/explorer";
 
 const KIND: Record<EventKind, { label: string; icon: LucideIcon; color: string }> = {
   draw: { label: "Draw", icon: ArrowDownLeft, color: "var(--color-brand)" },
   repay: { label: "Repayment", icon: ArrowUpRight, color: "var(--color-green)" },
   autopay: { label: "Autopay", icon: Repeat, color: "var(--color-green)" },
   interest: { label: "Interest accrued", icon: Percent, color: "var(--color-orange)" },
+  premium: { label: "Risk premium", icon: ShieldAlert, color: "var(--color-orange)" },
   tier: { label: "Tier upgrade", icon: Award, color: "var(--color-brand)" },
+  closed: { label: "Account closed", icon: Lock, color: "var(--color-brand)" },
 };
 const FILTERS = ["All", "Draws", "Repayments", "Autopay", "Interest"] as const;
 type Filter = (typeof FILTERS)[number];
-const FILTER_KIND: Record<Exclude<Filter, "All">, EventKind> = { Draws: "draw", Repayments: "repay", Autopay: "autopay", Interest: "interest" };
+// The risk premium is booked as debt like interest, and the month's interest total counts it
+const FILTER_KIND: Record<Exclude<Filter, "All">, EventKind[]> = { Draws: ["draw"], Repayments: ["repay"], Autopay: ["autopay"], Interest: ["interest", "premium"] };
 const SOURCE_ICON = { orca: "orca.png", raydium: "ray.webp" } as const;
 
 const shortDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
-const signed = (kind: EventKind, amount: number) => (kind === "tier" ? "-" : `${kind === "draw" || kind === "interest" ? "+" : "-"}${usd(amount)}`);
+const signed = (kind: EventKind, amount: number) => (kind === "tier" || kind === "closed" ? "-" : `${kind === "draw" || kind === "interest" || kind === "premium" ? "+" : "-"}${usd(amount)}`);
 
 const peakOf = (s: MonthSummary) => Math.max(s.opening, s.closing, s.opening + s.draws + s.interest);
-const explorer = (tx: string) => `https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER === "devnet" ? "devnet" : `custom&customUrl=${encodeURIComponent(RPC_URL)}`}`;
-// Indexed events carry the whole signature, the demo ones a shortened one that links nowhere
-const isSignature = (tx: string) => tx.length > 40;
 
 function Waterfall({ s, step = 6000 }: { s: MonthSummary; step?: number }) {
   const W = 805;
@@ -196,7 +196,7 @@ export function StatementsDashboard() {
   const change = prev ? s.closing - prev.closing : 0;
   // Every transaction accrues a sliver of interest, which the totals keep and the list leaves out once it rounds to nothing
   const listed = s.rows.filter((r) => r.kind !== "interest" || r.amount >= 0.005);
-  const rows = filter === "All" ? listed : listed.filter((r) => r.kind === FILTER_KIND[filter]);
+  const rows = filter === "All" ? listed : listed.filter((r) => FILTER_KIND[filter].includes(r.kind));
   const [y, mo] = monthKey.split("-").map(Number);
   const lastDay = month.inProgress ? Number(today.slice(8)) : new Date(Date.UTC(y, mo, 0)).getUTCDate();
   const short = month.short;
@@ -222,7 +222,7 @@ export function StatementsDashboard() {
 
   const exportCsv = () => {
     const header = "date,type,detail,amount_usdc,balance_usdc,transaction";
-    const lines = [...s.rows].reverse().map((r) => [r.date, KIND[r.kind].label, `"${r.detail}"`, r.kind === "tier" ? 0 : r.amount, r.balance.toFixed(2), r.tx].join(","));
+    const lines = [...s.rows].reverse().map((r) => [r.date, KIND[r.kind].label, `"${r.detail}"`, r.kind === "tier" || r.kind === "closed" ? 0 : r.amount, r.balance.toFixed(2), r.tx].join(","));
     const url = URL.createObjectURL(new Blob([[header, ...lines].join("\n")], { type: "text/csv" }));
     const a = Object.assign(document.createElement("a"), { href: url, download: `pluribus-statement-${monthKey}.csv` });
     a.click();
@@ -342,7 +342,7 @@ export function StatementsDashboard() {
                         </div>
                       </td>
                       <td className="text-t2">{shortDate(r.date)}</td>
-                      <td className={`text-right font-medium ${r.kind === "repay" || r.kind === "autopay" ? "text-green" : r.kind === "tier" ? "text-t3" : ""}`}>{signed(r.kind, r.amount)}</td>
+                      <td className={`text-right font-medium ${r.kind === "repay" || r.kind === "autopay" ? "text-green" : r.kind === "tier" || r.kind === "closed" ? "text-t3" : ""}`}>{signed(r.kind, r.amount)}</td>
                       <td className="text-right text-t2">{usd(r.balance)}</td>
                       <td className="pr-[22px] text-right">
                         <a

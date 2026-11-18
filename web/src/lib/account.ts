@@ -22,7 +22,7 @@ export const displayAmount = (raw: string) => {
   return dec !== undefined ? `${grouped}.${dec}` : grouped;
 };
 
-export type EventKind = "draw" | "repay" | "autopay" | "interest" | "tier";
+export type EventKind = "draw" | "repay" | "autopay" | "interest" | "premium" | "tier" | "closed";
 export type AccountEvent = {
   id: string;
   /** ISO date, yyyy-mm-dd */
@@ -36,7 +36,8 @@ export type AccountEvent = {
 };
 
 /** Signed effect on debt. */
-export const debtDelta = (e: AccountEvent) => (e.kind === "draw" || e.kind === "interest" ? e.amount : e.kind === "tier" ? 0 : -e.amount);
+export const debtDelta = (e: AccountEvent) =>
+  e.kind === "draw" || e.kind === "interest" || e.kind === "premium" ? e.amount : e.kind === "tier" || e.kind === "closed" ? 0 : -e.amount;
 
 const ev = (date: string, kind: EventKind, amount: number, detail: string, tx: string, source?: AccountEvent["source"]): AccountEvent => ({
   id: `${date}-${kind}-${tx}`,
@@ -137,7 +138,7 @@ export type MonthSummary = {
   rows: (AccountEvent & { balance: number })[];
 };
 
-/** Openings are derived backwards from today's debt so every month chains exactly. */
+/** Openings are derived backwards from today's debt so every month chains exactly. The risk premium is booked as debt like interest, so it counts in the interest total. */
 export function summarize(months: Month[], currentDebt: number): Record<string, MonthSummary> {
   const out: Record<string, MonthSummary> = {};
   let closing = currentDebt;
@@ -147,7 +148,7 @@ export function summarize(months: Month[], currentDebt: number): Record<string, 
     const opening = closing - events.reduce((s, e) => s + debtDelta(e), 0);
     let bal = opening;
     const rows = events.map((e) => ({ ...e, balance: (bal += debtDelta(e)) }));
-    out[months[m].key] = { opening, draws: sum("draw"), interest: sum("interest"), repayments: sum("repay"), autopay: sum("autopay"), closing, rows: rows.reverse() };
+    out[months[m].key] = { opening, draws: sum("draw"), interest: sum("interest") + sum("premium"), repayments: sum("repay"), autopay: sum("autopay"), closing, rows: rows.reverse() };
     closing = opening;
   }
   return out;
