@@ -23,7 +23,7 @@ export type Risk = math.RiskPosition;
 const GROUPS = math.MAX_GROUPS;
 const DAY = 86_400;
 // The pool stores scenarios by number only, so these follow the order scripts/setup.ts creates them in
-const SCENARIO_NAMES = ["Crypto crash", "Equity crash", "Broad selloff"];
+export const SCENARIO_NAMES = ["Crypto crash", "Equity crash", "Broad selloff"];
 
 const num = (x: { toString(): string }, decimals = 6) => Number(x.toString()) / 10 ** decimals;
 // The full tables valued in one scenario only, since a dynamic shock is scaled against every scenario of its group
