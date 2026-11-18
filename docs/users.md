@@ -67,7 +67,7 @@ Anyone can collect the trading fees of a deposited Orca position in the main SOL
 - You can repay any amount at any time. Anyone can repay any account.
 - `repay_from_collateral` pays debt with USDC already in the account.
 - A withdrawal goes through when the debt is still within the credit limit afterwards.
-- There is no instruction to close a credit account.
+- `close_account` closes an account with no debt and no positions and returns its rent. The Borrow page offers **Close account** once the account is empty. A new deposit opens a fresh one.
 
 ### Liquidation
 
@@ -89,7 +89,7 @@ An account can be liquidated when its debt is above its liquidation limit. That 
 |---|---|---|
 | Takes losses | last | first |
 | Rate | the senior rate | senior rate × (1 + premium × senior ÷ junior) |
-| Exit | at once, up to the idle USDC in the pool | through the exit queue |
+| Exit | at once from idle USDC, otherwise the withdrawal queue | through the exit queue |
 
 Lenders receive the borrower interest left after the reserve factor and the protocol fee. The junior premium is paid in full once juniors hold the target share of the pool and scales down below it.
 
@@ -107,7 +107,15 @@ A loss is booked when a borrower's account has debt and no collateral left. It i
 
 ### Leaving
 
-**Senior.** `lend_withdraw` pays at once from idle USDC. When the pool is lent out it fails with `InsufficientLiquidity`, and there is no queue. The steep rate above the kink is what brings repayments in.
+**Senior.** `lend_withdraw` pays at once from idle USDC. When the pool is lent out it fails with `InsufficientLiquidity`, and the withdrawal queue takes over:
+
+1. `request_senior_exit` moves your shares into escrow, fixes their value and gives the exit the next ticket.
+2. Idle USDC up to what every queued exit is owed is held back. Draws, instant senior withdrawals, junior claims in USDC and fee collection can only use cash above it.
+3. `settle_senior_exit` pays the ticket at the head of the queue in full once the pool's cash covers it, into your USDC account. Anyone can send it, and the keeper does on every pass. Tickets are paid strictly in order.
+4. `cancel_senior_exit` hands back shares worth what you queued and frees the held cash. The empty ticket is skipped when the queue reaches it.
+
+- Queued shares earn nothing and still take losses, so an exit pays the lower of its queued value and what the shares are worth when settled.
+- The steep rate above the kink is what brings repayments in to fill the queue.
 
 **Junior.**
 
