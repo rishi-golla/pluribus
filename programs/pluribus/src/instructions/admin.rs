@@ -94,6 +94,10 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         epoch_end: Clock::get()?.unix_timestamp,
         epoch_budget: 0,
         epoch_paid: 0,
+        senior_queued: 0,
+        senior_reserved: 0,
+        senior_next_ticket: 0,
+        senior_head: 0,
     });
     Ok(())
 }
@@ -589,12 +593,12 @@ pub struct CollectProtocolFees<'info> {
     pub token_program: Interface<'info, TokenInterface>,
 }
 
-/// Pays out accrued protocol revenue, up to what is idle in the pool
+/// Pays out accrued protocol revenue, up to what is idle in the pool and not held for queued senior exits
 /// The insurance reserve is never touched here
 pub fn handle_collect_protocol_fees(ctx: Context<CollectProtocolFees>, amount: u64) -> Result<()> {
     let a = ctx.accounts;
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
-    let amount = amount.min(a.pool.protocol_fees).min(a.pool.cash);
+    let amount = amount.min(a.pool.protocol_fees).min(a.pool.available_cash());
     require!(amount > 0, PluribusError::ZeroAmount);
     a.pool.protocol_fees -= amount;
     a.pool.cash -= amount;

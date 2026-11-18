@@ -147,7 +147,7 @@ pub fn handle_claim_junior_exit(ctx: Context<ClaimJuniorExit>) -> Result<()> {
     // Priced before the junior side shrinks, since the senior tranche grows by exactly what is paid
     let senior_minted = if in_usdc { 0 } else { a.pool.shares_for(false, a.share_mint.supply, paid)? };
     if in_usdc {
-        require!(paid <= a.pool.cash, PluribusError::InsufficientLiquidity);
+        require!(paid <= a.pool.available_cash(), PluribusError::InsufficientLiquidity);
         a.pool.cash -= paid;
     } else {
         require!(senior_minted > 0, PluribusError::ZeroAmount);

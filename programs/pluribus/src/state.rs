@@ -244,11 +244,25 @@ pub struct Pool {
     pub epoch_end: i64,
     pub epoch_budget: u64,
     pub epoch_paid: u64,
+    /// Senior shares waiting in the withdrawal queue, held in the senior escrow
+    /// Added after launch: `migrate_pool` grows a pool created before them, and the new bytes start at zero
+    pub senior_queued: u64,
+    /// The most the queued senior exits can be owed, held back from idle cash so nothing else spends it first
+    pub senior_reserved: u64,
+    /// Ticket the next queued senior exit gets, and the ticket the queue pays next
+    pub senior_next_ticket: u64,
+    pub senior_head: u64,
 }
 
 impl Pool {
     pub fn signer_seeds(&self) -> [&[u8]; 2] {
         [POOL_SEED, std::slice::from_ref(&self.bump)]
+    }
+
+    /// Idle USDC that draws, instant withdrawals, junior cash claims and fee collection may use:
+    /// cash held back for queued senior exits is spent on the queue first
+    pub fn available_cash(&self) -> u64 {
+        self.cash.saturating_sub(self.senior_reserved)
     }
 
     pub fn total_debt(&self) -> Result<u128> {
@@ -311,8 +325,8 @@ impl Pool {
     pub fn redeem(&mut self, junior: bool, supply: u64, shares: u64) -> Result<u64> {
         let amount = self.value_of(junior, supply, shares)?;
         require!(amount > 0, PluribusError::ZeroAmount);
-        // Lent-out USDC cannot leave, and the rate kink is what pulls it back
-        require!(amount <= self.cash, PluribusError::InsufficientLiquidity);
+        // Lent-out USDC cannot leave, and the rate kink is what pulls it back; cash held for the queue is not idle
+        require!(amount <= self.available_cash(), PluribusError::InsufficientLiquidity);
         self.cash -= amount;
         if junior {
             self.junior_assets = self.junior_assets.saturating_sub(amount);
@@ -549,7 +563,7 @@ impl Pool {
     }
 
     pub fn borrow(&mut self, credit: &mut CreditAccount, amount: u64) -> Result<()> {
-        require!(self.cash >= amount, PluribusError::InsufficientLiquidity);
+        require!(self.available_cash() >= amount, PluribusError::InsufficientLiquidity);
         let t = credit.tier as usize;
         let shares = mul_div_ceil(amount as u128, INDEX_ONE, self.borrow_index[t])?;
         credit.debt_shares += shares;
@@ -815,6 +829,21 @@ pub struct JuniorExit {
     /// Terms fixed when the exit was queued, so later parameter changes can only improve them
     pub window_secs: u32,
     pub fee_bps: u16,
+    pub bump: u8,
+}
+
+/// A senior lender's shares in the withdrawal queue, one account per ticket, held in the senior escrow until settled
+/// Queued shares earn nothing but still take losses, and the queue pays tickets strictly in order
+#[account]
+#[derive(InitSpace)]
+pub struct SeniorExit {
+    pub owner: Pubkey,
+    pub ticket: u64,
+    pub shares: u64,
+    /// What the shares were worth when queued, the most the exit can pay
+    pub value: u64,
+    /// Cancelled exits keep their ticket until the queue reaches it, so the head can always move on
+    pub cancelled: bool,
     pub bump: u8,
 }
 
