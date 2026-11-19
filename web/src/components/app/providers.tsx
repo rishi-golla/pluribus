@@ -83,8 +83,8 @@ export type Live = LiveData & {
   moveLp: (positionMint: string, deposit: boolean, onStage: OnStage) => Promise<boolean>;
   /**
    * Opens a new Meteora position of `width` bins from `lowerBin` in a listed pair and puts `base` whole base tokens and `usdc`
-   * USDC into it, in two transactions since adding reads the new position from the chain. "opened" means the position exists but
-   * the liquidity did not go in, and it can be added to from the collateral list
+   * USDC into it, in one transaction. "opened" means a position was opened with nothing to add, and it can be added to from
+   * the collateral list
    */
   openDlmm: (pair: string, lowerBin: number, width: number, base: number, usdc: number, onStage: OnStage) => Promise<"funded" | "opened" | "failed">;
   /** Adds whole tokens to a Meteora position the account holds, spread over its range */
@@ -395,17 +395,20 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
             toast({ title: "This Meteora pair is not listed", detail: "Pick another pair", tone: "error" });
             return "failed";
           }
-          // A position is a fresh account that signs its own creation. Adding to it reads it from the chain, so that waits
-          // for the first transaction to confirm
+          // A position is a fresh account that signs its own creation, and it is opened and funded in one transaction:
+          // 70 bins and a first credit account fit in about 700 bytes and 430k compute units
           const position = Keypair.generate();
-          const opened = await run(async () => [...(await open()), ...(await ix.dlmmOpen(program, d, me, pair, position.publicKey, lowerBin, width))], onStage, [position]);
-          if (!opened) return "failed";
-          if (base <= 0 && quote <= 0) return "opened";
+          if (base <= 0 && quote <= 0) {
+            const opened = await run(async () => [...(await open()), ...(await ix.dlmmOpen(program, d, me, pair, position.publicKey, lowerBin, width))], onStage, [position]);
+            return opened ? "opened" : "failed";
+          }
           const [x, y] = dlmmAmounts(market, base, quote);
-          const funded = await run(() => ix.dlmmAdd(program, d, me, position.publicKey, x, y), onStage, [], (e) =>
-            toast({ title: "Position opened, liquidity not added", detail: `${explain(e).title}. Add liquidity from its row`, tone: "error" }),
+          const funded = await run(
+            async () => [...(await open()), ...(await ix.dlmmOpenAndAdd(program, d, me, pair, position.publicKey, lowerBin, width, x, y))],
+            onStage,
+            [position],
           );
-          return funded ? "funded" : "opened";
+          return funded ? "funded" : "failed";
         },
         addDlmm: (position, base, quote, onStage) =>
           run(async () => {
