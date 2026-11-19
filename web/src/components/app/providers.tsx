@@ -4,11 +4,11 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check, Info, TriangleAlert } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { WalletProvider, useWallet, type WalletContextState } from "@solana/wallet-adapter-react";
-import { PublicKey, type TransactionInstruction } from "@solana/web3.js";
+import { Keypair, PublicKey, type Signer, type TransactionInstruction } from "@solana/web3.js";
 import { AUTOPAY_PER_MONTH, BORROW_APR, COLLATERAL_VALUE, CREDIT_LIMIT, CURRENT_DEBT, MONTHS, debtDelta, sleep, type AccountEvent, type Month } from "@/lib/account";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
 import { DemoWalletAdapter } from "@/lib/demo-wallet";
-import { fetchEvents, loadLive, monthsOf, type LiveData } from "@/lib/live";
+import { fetchEvents, loadLive, monthsOf, type LiveData, type DlmmMarket } from "@/lib/live";
 import { MAX_U64, getProgram, ix } from "@/lib/pluribus/sdk";
 import { explain, sendInstructions, type Stage } from "@/lib/tx";
 
@@ -81,6 +81,18 @@ export type Live = LiveData & {
   /** Deposits or withdraws a token, in whole tokens, opening the credit account on the first deposit */
   moveToken: (mint: string, amount: number, deposit: boolean, onStage: OnStage) => Promise<boolean>;
   moveLp: (positionMint: string, deposit: boolean, onStage: OnStage) => Promise<boolean>;
+  /**
+   * Opens a new Meteora position of `width` bins from `lowerBin` in a listed pair and puts `base` whole base tokens and `usdc`
+   * USDC into it, in two transactions since adding reads the new position from the chain. "opened" means the position exists but
+   * the liquidity did not go in, and it can be added to from the collateral list
+   */
+  openDlmm: (pair: string, lowerBin: number, width: number, base: number, usdc: number, onStage: OnStage) => Promise<"funded" | "opened" | "failed">;
+  /** Adds whole tokens to a Meteora position the account holds, spread over its range */
+  addDlmm: (position: string, base: number, usdc: number, onStage: OnStage) => Promise<boolean>;
+  /** Takes `bps` of a Meteora position's liquidity back to the wallet, 10000 being all of it */
+  removeDlmm: (position: string, bps: number, onStage: OnStage) => Promise<boolean>;
+  /** Closes an emptied Meteora position, returning its fees and rent and freeing its slot */
+  closeDlmm: (position: string, onStage: OnStage) => Promise<boolean>;
   setPrice: (mint: string, price: number) => Promise<boolean>;
   /** Turns senior money into junior money, in USDC terms, with no USDC moving */
   convertToJunior: (usdcAmount: number, onStage: OnStage) => Promise<boolean>;
@@ -142,6 +154,12 @@ const mockWait = async (onStage: OnStage) => {
   await sleep(900);
   return true;
 };
+
+/** Whole base tokens and USDC as the pair's token X and token Y amounts in base units, whichever way round the pair has them */
+function dlmmAmounts(market: DlmmMarket, base: number, quote: number): [bigint, bigint] {
+  const [b, q] = [BigInt(Math.round(base * 10 ** market.baseDecimals)), BigInt(Math.round(quote * 1e6))];
+  return market.baseIsX ? [b, q] : [q, b];
+}
 
 type Loaded = { owner: string; data: LiveData; events: AccountEvent[]; samples: Sample[] };
 
@@ -265,11 +283,17 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     const me = wallet.publicKey;
     const program = getProgram(getConnection());
     const usdc = (amount: number) => BigInt(Math.round(amount * 1e6));
-    const run = async (build: () => Promise<TransactionInstruction[]>, onStage: OnStage) => {
+    const run = async (
+      build: () => Promise<TransactionInstruction[]>,
+      onStage: OnStage,
+      // Keys the app holds, such as a position being opened, which sign next to the wallet
+      signers: Signer[] = [],
+      fail: (e: unknown) => void = (e) => toast({ ...explain(e), tone: "error" }),
+    ) => {
       try {
-        await sendInstructions(getConnection(), wallet, await build(), onStage);
+        await sendInstructions(getConnection(), wallet, await build(), onStage, signers);
       } catch (e) {
-        toast({ ...explain(e), tone: "error" });
+        fail(e);
         return false;
       }
       await refresh().catch(() => {});
@@ -364,6 +388,34 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
             const key = new PublicKey(positionMint);
             return deposit ? [...(await open()), ...(await ix.depositLp(program, d, me, key))] : ix.withdrawLp(program, d, me, key);
           }, onStage),
+        openDlmm: async (pairKey, lowerBin, width, base, quote, onStage) => {
+          const pair = new PublicKey(pairKey);
+          const market = data.dlmm.find((m) => m.pair === pairKey);
+          if (!market) {
+            toast({ title: "This Meteora pair is not listed", detail: "Pick another pair", tone: "error" });
+            return "failed";
+          }
+          // A position is a fresh account that signs its own creation. Adding to it reads it from the chain, so that waits
+          // for the first transaction to confirm
+          const position = Keypair.generate();
+          const opened = await run(async () => [...(await open()), ...(await ix.dlmmOpen(program, d, me, pair, position.publicKey, lowerBin, width))], onStage, [position]);
+          if (!opened) return "failed";
+          if (base <= 0 && quote <= 0) return "opened";
+          const [x, y] = dlmmAmounts(market, base, quote);
+          const funded = await run(() => ix.dlmmAdd(program, d, me, position.publicKey, x, y), onStage, [], (e) =>
+            toast({ title: "Position opened, liquidity not added", detail: `${explain(e).title}. Add liquidity from its row`, tone: "error" }),
+          );
+          return funded ? "funded" : "opened";
+        },
+        addDlmm: (position, base, quote, onStage) =>
+          run(async () => {
+            const market = data.dlmm.find((m) => m.pair === data.collateral.find((c) => c.mint === position)?.dlmm?.pair);
+            if (!market) throw new Error("This position's pair is not listed");
+            const [x, y] = dlmmAmounts(market, base, quote);
+            return ix.dlmmAdd(program, d, me, new PublicKey(position), x, y);
+          }, onStage),
+        removeDlmm: (position, bps, onStage) => run(() => ix.dlmmRemove(program, d, me, new PublicKey(position), bps), onStage),
+        closeDlmm: (position, onStage) => run(() => ix.dlmmClose(program, d, me, new PublicKey(position)), onStage),
         setPrice: async (mint, price) => {
           const res = await fetch("/api/demo/price", { method: "POST", body: JSON.stringify({ mint, price }) });
           if (!res.ok) {
