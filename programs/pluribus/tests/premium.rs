@@ -165,7 +165,7 @@ fn accounts_from_before_the_premium_grow_with_its_fields_at_zero() {
     };
     let (credit, asset) = (env.credit_pda(&user.pubkey()), env.asset_pda(&stock));
     let draw = env.draw_ix(&user.pubkey(), USDC);
-    shrink(&mut env, credit, 2 + 8);
+    shrink(&mut env, credit, 2 + 8 + 2 * MAX_POSITIONS);
     shrink(&mut env, asset, 2 + 2 + 8);
     assert!(env.send(&[draw], &[&user]).is_err(), "an old account can't be read until it grows");
 
@@ -175,6 +175,7 @@ fn accounts_from_before_the_premium_grow_with_its_fields_at_zero() {
     assert_eq!(env.svm.get_account(&asset).unwrap().data.len(), 8 + Asset::INIT_SPACE);
     let (c, a): (CreditAccount, Asset) = (env.load(&credit), env.load(&asset));
     assert_eq!((c.premium_bps, c.premium_since, a.premium_bps, a.premium_pending_at), (0, 0, 0, 0));
+    assert!(c.compound_slippage_bps.iter().all(|s| *s == 0));
     // Rent exempt at the new size, and a second run changes nothing
     let lamports = env.svm.get_account(&credit).unwrap().lamports;
     assert_eq!(lamports, env.svm.minimum_balance_for_rent_exemption(8 + CreditAccount::INIT_SPACE));
