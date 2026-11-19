@@ -1,13 +1,13 @@
 # Using Pluribus
 
-Pluribus lends USDC against one account that can hold SOL, staked SOL, tokenized stocks and concentrated-liquidity positions together. Lenders supply the USDC through a senior or a junior tranche.
+Pluribus lends USDC against one account that can hold SOL, staked SOL, tokenized stocks, a memecoin and concentrated-liquidity positions together. Lenders supply the USDC through a senior or a junior tranche.
 
 Every figure the rules below depend on is a setting. The values in force are in [Numbers on devnet](#numbers-on-devnet).
 
 ## Status
 
 - The only deployment is on Solana devnet. Its tokens are mocks with no value.
-- Devnet prices are written by the admin key, not read from a market.
+- Devnet prices for SOL, NVDAx, AAPLx and BONK are written by the admin key, not read from a market. Only JitoSOL and JupSOL read live Pyth feeds.
 - The program has not been audited.
 - One key is both the admin and the program's upgrade authority.
 - There is no hosted app. You run the web app yourself, see [Try it](#try-it).
@@ -36,7 +36,7 @@ JitoSOL and JupSOL are priced from their live Pyth feeds. SOL, NVDAx, AAPLx and 
 
 A Meteora position can never change owner, so one your wallet already holds cannot be deposited. The pool has to own it from the start, so you open a new position through Pluribus and put liquidity into it.
 
-- **Opening:** on the Borrow page press **Deposit**, pick **Meteora DLMM**, enter SOL and USDC, and choose a width of 1 to 70 bins. The range is centred on the pair's active bin and the form shows its price range. The app opens the position in one transaction and adds the tokens in a second, so your wallet asks twice. If the second fails the empty position stays in your account and you can add to it from its row. Opening costs about 0.06 SOL of rent, returned when you close the position, plus about 0.07 SOL for each bin array nobody has created yet.
+- **Opening:** on the Borrow page press **Deposit**, pick **Meteora DLMM**, enter SOL and USDC, and choose a width of 1 to 70 bins. The range is centred on the pair's active bin and the form shows its price range. The app opens the position and adds the tokens in one transaction, so your wallet asks once. If it fails nothing is opened. Opening costs about 0.06 SOL of rent, returned when you close the position, plus about 0.07 SOL for each bin array nobody has created yet.
 - **Adding:** **Add** on the position's row puts more SOL and USDC into the same range. A range entirely above or below the active price takes only one of the two.
 - **Withdrawing:** **Withdraw** takes back any share of the liquidity, to your wallet, as long as the debt stays within the credit limit. A withdrawal does not need the market to be live.
 - **Closing:** once a position is empty, **Close** pays out its unclaimed fees and its rent and frees the slot.
@@ -84,7 +84,7 @@ Some collateral backs no new debt while still protecting debt already drawn:
 
 ### Autopay
 
-Anyone can collect the trading fees of a deposited Orca position in the main SOL/USDC pool. The USDC part repays your debt. The SOL part, and any USDC beyond the debt, stays in the account as collateral. The keeper does this every 10 minutes by default. It cannot be switched off. Raydium positions are harvested the same way; any pool rewards Raydium pays out at the same time go to your own wallet.
+Anyone can collect the trading fees of a deposited liquidity position: an Orca position in the main SOL/USDC pool, a Raydium position or a Meteora position. The USDC part repays your debt. The SOL part, and any USDC beyond the debt, stays in the account as collateral. The keeper does this every 10 minutes by default. It cannot be switched off. Any pool rewards Raydium pays out at the same time go to your own wallet.
 
 ### Repaying and withdrawing
 
@@ -92,6 +92,10 @@ Anyone can collect the trading fees of a deposited Orca position in the main SOL
 - `repay_from_collateral` pays debt with USDC already in the account.
 - A withdrawal goes through when the debt is still within the credit limit afterwards.
 - `close_account` closes an account with no debt and no positions and returns its rent. The Borrow page offers **Close account** once the account is empty. A new deposit opens a fresh one.
+
+### Statements
+
+The Statements page lists each month's draws, repayments, autopay, interest and risk premium, with the opening and closing debt. The **Interest** filter shows interest and risk premium together, and the month's interest total counts both.
 
 ### Liquidation
 
@@ -118,6 +122,8 @@ An account can be liquidated when its debt is above its liquidation limit. That 
 Lenders receive the borrower interest left after the reserve factor and the protocol fee. The junior premium is paid in full once juniors hold the target share of the pool and scales down below it.
 
 Interest is not paid as it arrives. It collects in a buffer, and each epoch pays out the buffer it opened with, less a margin, evenly over its length. The yield you see this week comes from last week's interest.
+
+The Earn page also lists your own deposits, conversions, withdrawals and exit queue moves, when an indexer is connected.
 
 ### Loss order
 
@@ -233,8 +239,8 @@ npm run dev        # in a second terminal, then open http://localhost:3000
 ```
 
 1. Open **Borrow** and connect a wallet. "Demo wallet" needs no browser extension.
-2. Press **Get test tokens**. It sends 10 SOL, 50 NVDAx, 5,000 USDC, 10 JitoSOL, 10 JupSOL, 20 AAPLx and one Orca position. A faucet wallet last stocked before JitoSOL, JupSOL and AAPLx were added skips them until `npm run faucet:stock` runs again.
-3. Deposit collateral, then draw USDC.
+2. Press **Get test tokens**. It sends 10 SOL, 50 NVDAx, 5,000 USDC, 10 JitoSOL, 10 JupSOL, 20 AAPLx, 100,000,000 BONK and one Orca position. A faucet wallet last stocked before JitoSOL, JupSOL, AAPLx and BONK were added skips them until `npm run faucet:stock` runs again. On devnet it sends 0.05 SOL instead of 10.
+3. Deposit collateral, then draw USDC. To use a Meteora position, open one from **Deposit** as described in [Meteora DLMM](#meteora-dlmm).
 4. Open **Earn** to lend into either tranche.
 
 With no local chain running, `npm run dev` points at devnet. **Get test tokens** shows there only when the server holds the faucet key in `FAUCET_SECRET`.
