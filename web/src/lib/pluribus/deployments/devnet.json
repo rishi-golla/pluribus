@@ -71,6 +71,15 @@
       },
       "feedId": "67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb",
       "pythAccount": "AxaxyeDT8JnWERSaTKvFXvPKkEdxnamKSqpWbsSjYg1g"
+    },
+    "CSAKKN1szfgwzr8KohREVtTB7GGdc9NdG4YCMU6KYZPM": {
+      "symbol": "BONK",
+      "name": "Bonk (mock)",
+      "decimals": 5,
+      "priceAccount": "2HTbY53W3tjc9N39N2QDDp8ZbVKDH18pmtpTThpxaDWB",
+      "priceExponent": 6,
+      "feedId": "72b021217ca3fe68922a19aaf990109cb9d84e9ad004b4d2025ad6f529314419",
+      "pythAccount": "DBE3N8uNjhKPRHfANdwGvCZghWXyLPdqdSbEW2XFwBiX"
     }
   },
   "lookupTable": "A9KAGTcNirqiHQePpGe1pgvjdJrKAS62PemxoZeiiENS",
