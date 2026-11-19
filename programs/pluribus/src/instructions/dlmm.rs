@@ -788,6 +788,8 @@ macro_rules! compounder {
             bounty_base: &$a.bounty_base,
             bounty_usdc: &$a.bounty_usdc,
             token_program: &$a.token_program,
+            // Both of a listed pair's tokens are classic tokens
+            base_token_program: &$a.token_program,
         }
     };
 }
