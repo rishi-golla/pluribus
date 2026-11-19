@@ -8,8 +8,10 @@ import { Segmented } from "@/components/Segmented";
 import { useToast, type Live } from "@/components/app/providers";
 import { displayAmount, healthOf, healthTone, money, usd } from "@/lib/account";
 import { deployment } from "@/lib/cluster";
+import type { Collateral, DlmmMarket } from "@/lib/live";
 import { math } from "@/lib/pluribus/sdk";
 import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
+import { DLMM_ICON, DlmmDepositForm, DlmmExitForm, MAX_POSITIONS, health, rangePrice } from "./DlmmForms";
 
 const QUICK = [
   { label: "25%", pct: 0.25 },
@@ -18,21 +20,30 @@ const QUICK = [
 ] as const;
 // Left in the wallet for fees and the credit account's rent
 const SOL_BUFFER = 0.02;
-const MAX_POSITIONS = 5;
-const rangePrice = (v: number) => money(v, v >= 100 ? 0 : 2);
-const health = (h: number) => (Number.isFinite(h) ? h.toFixed(2) : "No debt");
 // SOL first, then staked SOL, stocks and USDC, with anything not in TOKEN_INFO after them
 const ORDER = Object.keys(TOKEN_INFO);
 const rank = (symbol: string) => (ORDER.includes(symbol) ? ORDER.indexOf(symbol) : ORDER.length);
 
 type Mode = "Deposit" | "Withdraw";
-type Option = { id: string; icon: string; name: string; sub: string; right: string; symbol: string; max?: number };
+type Option = {
+  id: string;
+  icon: string;
+  name: string;
+  sub: string;
+  right: string;
+  symbol: string;
+  max?: number;
+  /** A Meteora option: the pair to open a position in, or the position the account holds */
+  dlmm?: { market?: DlmmMarket; row?: Collateral };
+  /** Why it cannot be picked right now */
+  off?: boolean;
+};
 
-function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onClose: () => void }) {
+function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string; add?: string; onClose: () => void }) {
   const toast = useToast();
   const d = deployment!;
   const [mode, setMode] = useState<Mode>(withdraw ? "Withdraw" : "Deposit");
-  const [picked, setPicked] = useState(withdraw);
+  const [picked, setPicked] = useState(withdraw ?? add);
   const [raw, setRaw] = useState("");
   const [status, setStatus] = useState<"idle" | "signing" | "confirming">("idle");
   const deposit = mode === "Deposit";
@@ -45,6 +56,20 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
     right: usd(value),
     symbol: "LP position",
   });
+  // A Meteora position the account holds: added to from the Deposit tab, withdrawn from and closed on the Withdraw tab
+  const dlmmOption = (c: Collateral, market: DlmmMarket | undefined, sub: string): Option => {
+    const off = deposit && (!market || !!market.closed);
+    return {
+      id: c.mint,
+      icon: DLMM_ICON,
+      name: c.symbol,
+      sub: `Meteora DLMM, ${rangePrice(c.dlmm!.lower)} to ${rangePrice(c.dlmm!.upper)}${sub}`,
+      right: off ? (market?.closed ?? "Pair not listed") : usd(c.value),
+      symbol: "Meteora position",
+      dlmm: { market, row: c },
+      off,
+    };
+  };
   const options: Option[] = deposit
     ? [
         { id: d.solMint, icon: "sol.webp", name: "SOL", sub: `${money(live.wallet.sol, 4)} in wallet`, right: usd(live.wallet.sol * live.prices[d.solMint]), symbol: "SOL", max: Math.max(0, live.wallet.sol - SOL_BUFFER) },
@@ -53,11 +78,26 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
           .sort((a, b) => rank(a.symbol) - rank(b.symbol))
           .map(({ mint, symbol, held }) => ({ id: mint, icon: tokenIcon(symbol), name: symbol, sub: `${money(held, 4)} in wallet`, right: usd(held * (live.prices[mint] ?? 0)), symbol, max: held })),
         ...live.wallet.lps.map((lp) => lpOption(lp.positionMint.toBase58(), lp.priceLower, lp.priceUpper, math.lpValue(lp.liquidity, lp.tickLower, lp.tickUpper, live.prices[d.solMint]))),
+        // A new Meteora position, one option per listed pair, greyed out while the pair takes nothing new
+        ...live.dlmm.map((market) => ({
+          id: `new:${market.pair}`,
+          icon: DLMM_ICON,
+          name: `${market.symbol}-USDC`,
+          sub: `Meteora DLMM, new position at ${usd(market.price)}`,
+          right: market.closed ?? "New position",
+          symbol: "Meteora position",
+          dlmm: { market },
+          off: !!market.closed,
+        })),
+        // Liquidity added to a position already held
+        ...live.collateral.flatMap((c) => (c.dlmm ? [dlmmOption(c, live.dlmm.find((m) => m.pair === c.dlmm!.pair), ", add liquidity")] : [])),
       ]
     : live.collateral.map((c) =>
-        c.lp
-          ? lpOption(c.mint, c.lp.lower, c.lp.upper, c.value)
-          : { id: c.mint, icon: tokenIcon(c.symbol), name: c.symbol, sub: `${money(c.amount, 4)} deposited`, right: usd(c.value), symbol: c.symbol, max: c.amount },
+        c.dlmm
+          ? dlmmOption(c, live.dlmm.find((m) => m.pair === c.dlmm!.pair), c.dlmm.empty ? ", empty" : "")
+          : c.lp
+            ? lpOption(c.mint, c.lp.lower, c.lp.upper, c.value)
+            : { id: c.mint, icon: tokenIcon(c.symbol), name: c.symbol, sub: `${money(c.amount, 4)} deposited`, right: usd(c.value), symbol: c.symbol, max: c.amount },
       );
   const option = options.find((o) => o.id === picked) ?? options[0];
   const isLp = option?.max === undefined;
@@ -123,17 +163,22 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
       <div role="radiogroup" aria-label="Asset" className="grid max-h-[262px] gap-2 overflow-y-auto">
         {options.map((o) => {
           const on = o.id === option.id;
+          // A pair or position that takes nothing right now is greyed out and cannot be picked, unless it was opened from its row
+          const off = !!o.off && !on;
           return (
             <button
               key={o.id}
               type="button"
               role="radio"
               aria-checked={on}
+              disabled={off}
               onClick={() => {
                 setPicked(o.id);
                 setRaw("");
               }}
-              className={`flex w-full cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${on ? "border-brand/45 bg-brand/5" : "border-line bg-bg hover:border-line-2"}`}
+              className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${off ? "cursor-not-allowed border-line bg-bg opacity-50" : "cursor-pointer"} ${
+                on ? "border-brand/45 bg-brand/5" : off ? "" : "border-line bg-bg hover:border-line-2"
+              }`}
             >
               <Token src={iconSrc(o.icon)} size={20} />
               <div>
@@ -189,36 +234,46 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
           </div>
         </>
       )}
-      <div className="mt-[18px]">
-        <KV k="Credit limit">
-          {usd(live.creditLimit)}
-          {arrow}
-          {usd(next.creditLimit)}
-        </KV>
-        <KV k="Health factor">
-          <span className={healthTone(now)}>{health(now)}</span>
-          {arrow}
-          <span className={healthTone(after)}>{health(after)}</span>
-        </KV>
-      </div>
-      <motion.button
-        type="button"
-        onClick={submit}
-        disabled={!!error || status !== "idle"}
-        whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-        className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
-          error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
-        }`}
-      >
-        {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
-        {label}
-      </motion.button>
+      {option?.dlmm &&
+        (!deposit && option.dlmm.row ? (
+          <DlmmExitForm key={option.id} live={live} row={option.dlmm.row} onClose={onClose} />
+        ) : (
+          <DlmmDepositForm key={option.id} live={live} market={option.dlmm.market} row={option.dlmm.row} onClose={onClose} />
+        ))}
+      {!option?.dlmm && (
+        <>
+          <div className="mt-[18px]">
+            <KV k="Credit limit">
+              {usd(live.creditLimit)}
+              {arrow}
+              {usd(next.creditLimit)}
+            </KV>
+            <KV k="Health factor">
+              <span className={healthTone(now)}>{health(now)}</span>
+              {arrow}
+              <span className={healthTone(after)}>{health(after)}</span>
+            </KV>
+          </div>
+          <motion.button
+            type="button"
+            onClick={submit}
+            disabled={!!error || status !== "idle"}
+            whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
+            className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
+              error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
+            }`}
+          >
+            {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
+            {label}
+          </motion.button>
+        </>
+      )}
     </div>
   );
 }
 
-/** Deposit and withdraw collateral, starting on a deposited position when one is passed in to withdraw */
-export function CollateralDialog({ live, open, onClose }: { live: Live; open: { withdraw?: string } | null; onClose: () => void }) {
+/** Deposit and withdraw collateral, starting on a deposited position when one is passed in to withdraw, or a Meteora position to add to */
+export function CollateralDialog({ live, open, onClose }: { live: Live; open: { withdraw?: string; add?: string } | null; onClose: () => void }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -248,7 +303,7 @@ export function CollateralDialog({ live, open, onClose }: { live: Live; open: { 
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <Form live={live} withdraw={open.withdraw} onClose={onClose} />
+            <Form live={live} withdraw={open.withdraw} add={open.add} onClose={onClose} />
           </motion.div>
         </motion.div>
       )}
