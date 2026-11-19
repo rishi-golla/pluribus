@@ -122,7 +122,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const scale = sums[binding] > 0 ? account.creditLimit / sums[binding] : 0;
 
   const collateral: Collateral[] = positions.map((p, i) => {
-    const price = health ? num(health.positionPrice[p.slot]) : prices[p.risk.mint];
+    // The program quotes a token worth a fraction of a cent per 10^priceExponent tokens
+    const price = health ? num(health.positionPrice[p.slot]) / 10 ** (d.assets[p.risk.mint]?.priceExponent ?? 0) : prices[p.risk.mint];
     const value = health ? num(health.positionValue[p.slot]) : estimate.values[i];
     const base = {
       mint: p.mint.toBase58(),

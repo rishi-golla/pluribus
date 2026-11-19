@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   if (!(current > 0) || price > current * MAX_MOVE || price < current / MAX_MOVE) return refuse(`Price must be within ${MAX_MOVE}x of the current one`);
 
   try {
-    const tx = new Transaction().add(...(await ix.setDemoPrice(program, signer.publicKey, new PublicKey(mint), Math.round(price * 1e6))));
+    const tx = new Transaction().add(...(await ix.setDemoPrice(program, signer.publicKey, new PublicKey(mint), Math.round(price * 1e6 * 10 ** (deployment.assets[mint].priceExponent ?? 0)))));
     return Response.json({ signature: await sendAndConfirmTransaction(connection, tx, [signer], { commitment: "confirmed" }) });
   } catch {
     return refuse("The chain rejected the price update", 502);
