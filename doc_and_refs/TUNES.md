@@ -108,15 +108,18 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
-| `group` | SOL 0, stock and xStock 1, USDC 2, LSTs 3 | column in the shock tables | Which crash column the asset falls with. |
-| `liq_cost_bps` | SOL 500, LSTs 600, stock and xStock 1000, USDC 0 | < 10000; ≥ about 476 at a 5% bonus | Haircut for the cost of liquidating. Should grow with position size and thin liquidity (memecoins). |
+| `group` | SOL 0, stock and xStock 1, USDC 2, LSTs 3, BONK 4 | column in the shock tables | Which crash column the asset falls with. Column 4 is the memecoin column: draws 60% / 30% / 50% and liquidations 45% / 20% / 38% for the crypto, equity and broad scenarios, which `list:meme` fills (an empty column is an instant tightening). |
+| `liq_cost_bps` | SOL 500, LSTs 600, stock and xStock 1000, BONK 1500, USDC 0 | < 10000; ≥ about 476 at a 5% bonus | Haircut for the cost of liquidating. Should grow with position size and thin liquidity (memecoins). |
 | `max_price_age_secs` | 1 day | > 0 | Oldest accepted price. A day is demo-only; mainnet Pyth needs seconds to minutes. |
 | `max_conf_bps` | 200 | 1 to 2000 | Widest accepted Pyth confidence band. |
 | `deposit_cap` | 0 (no cap) | 0 = uncapped | Cap per asset. Should follow on-chain depth for risky assets. |
-| `oracle`, `pyth_feed_id` | SOL Pyth feed (also the LSTs' backing feed), stock and xStock placeholders | | The stock, the xStock and each LST need real feeds before demo mode goes off. |
+| `oracle`, `pyth_feed_id` | the real Pyth feed of each asset: SOL/USD, NVDA/USD, AAPL/USD, JITOSOL/USD, BONK/USD | | JupSOL reads JITOSOL/USD because Pyth has no JUPSOL/USD feed, and its fixed backing (1.22 x SOL) caps it. The LSTs' backing feed is SOL/USD. `list:meme` and `setup` point each asset at its feed, and the push-feed account the program reads is the PDA of the push oracle `pythWSnsw…` for shard 0 and the feed id (`deployments/<cluster>.json` `pythAccount`). |
+| `live_price` | JitoSOL, JupSOL on; AAPLx, BONK off until their feeds are fresh; SOL, NVDAx off | demo mode only | With demo mode on an asset reads its admin-written demo price until `demo_set_live_price(true)` switches it to its Pyth feed. SOL and NVDAx stay on demo prices so the crash demo can move them. An LST's SOL backing follows the LST's own flag. `list:meme` flips an asset only while its feed is fresh within `max_price_age_secs` and its band fits `max_conf_bps` after the program rescales the price to 6 decimals; BONK's $0.0000024 rounds to a price of 2 with a band of 1, which fails that check. |
+| `premium_bps` | NVDAx and AAPLx 300, BONK 1500, others 0 | ≤ `MAX_RISK_PREMIUM_BPS` (3000) | Extra yearly rate on debt an asset backs. A cut applies at once, a raise waits out the activation delay (`demo_activate` applies it on a demo pool). |
+| `premium_tier_bps` | 10000 / 6000 / 3000 | ≤ 10000, not rising with the tier | Share of each asset's premium charged per loyalty tier. |
 | LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca and Raydium positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. |
 | `RAYDIUM_CLMM_PROGRAMS` | mainnet `CAMMCzo5…`, devnet `DRayAUg…` | constant in `constants.rs` | The only programs besides Orca whose pools can list. Raydium can upgrade its program, so recheck the position and pool layouts (offsets in `clmm.rs`) after each Raydium upgrade. |
-| Demo prices (setup.ts) | SOL at the pool price, stock $180, xStock $230, LSTs 0.1% under their backing | | Starting demo feed. `scripts/price.ts` moves only SOL and the stock. |
+| Demo prices (setup.ts) | SOL at the pool price, stock $180, xStock $230, LSTs 0.1% under their backing, BONK $0.000002 | | Starting demo feed. `scripts/price.ts` moves only SOL and the stock. |
 
 ## Hard caps in `programs/pluribus/src/constants.rs`
 
@@ -140,7 +143,9 @@ These need a program upgrade to change.
 |---|---|---|---|
 | `INTERVAL_MS` | keeper env | 5000 | How often the keeper checks for liquidations and tiers. |
 | `AUTOPAY_INTERVAL_MS` | keeper env | 600000 | How often each LP position's fees are harvested. |
-| `GRANT` | `web/src/app/api/faucet/route.ts` | 0.05 SOL (10 on localnet), 50 stock, 5000 USDC | Test tokens per wallet. |
+| `PYTH_INTERVAL_MS` | keeper env | 30000 | How often the feeds of live assets are posted again, and the keeper posts them again right before a volatility sample, which needs a price under `vol_max_age_secs` old. |
+| `HERMES_ACCESS_TOKEN`, `HERMES_URL`, `PYTH_PUSH` | keeper env | none, `https://hermes.pyth.network`, on | The public Hermes serves price updates only with an access token, so without one the keeper posts nothing and logs it once. `PYTH_PUSH=0` leaves the feeds to someone else, and localnet never posts. |
+| `GRANT`, `EXTRAS` | `web/src/app/api/faucet/route.ts` | 0.05 SOL (10 on localnet), 50 stock, 5000 USDC; 10 JitoSOL, 10 JupSOL, 20 AAPLx, 100M BONK | Test tokens per wallet. |
 | Faucet stock | `scripts/faucet-stock.ts` flags | 0.4 SOL, 5 positions of $20 on devnet | What the faucet wallet holds to hand out. |
 | `MAX_MOVE` | `web/src/app/api/demo/price/route.ts` | 20x | Largest demo price move per request. |
 | `SWAP_USD` | `web/src/app/api/demo/harvest/route.ts` | $1000 | Trade size used to generate LP fees in the demo. |
@@ -151,13 +156,12 @@ These need a program upgrade to change.
 
 Planned in the earlier research and plans, not implemented:
 
-- **Per-asset risk premium** for memecoins and thin stocks, routed to juniors. Today `junior_premium_bps` is one flat rate on senior yield.
 - **Coverage gate:** block risky draws when junior deposits fall below X% of risky debt.
 - **Depth-based limits:** cap liquidation size and deposits at the Orca depth within the bonus (`D(m)`), and size haircuts with it.
 - **Fee-implied σ (Panoptic)** for pool tokens without a feed. Left out on purpose for now: it needs a volume crank and can be wash-traded to push σ around.
 - **An emergency switch for a broken LST backing.** If a stake pool account stops reading (for example after an upstream migration), that LST's health checks fail, and the fix (`rate_source` → NONE or FIXED) waits out the activation delay. Liquidations of that LST are frozen meanwhile. Options: let the guardian switch to FIXED at or below the last rate at once, or fall back to the own price with an extra haircut.
 - **Close publish times for the LST's two prices.** The SOL leg is accepted anywhere inside the LST's own age window, so a liquidator can pick the lowest SOL print in that window.
-- **SDK reads the deployment file, not the chain,** for LST backing accounts, token programs and extra LP markets, and its price helper ignores the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
+- **SDK reads the deployment file, not the chain,** for LST backing accounts, token programs and extra LP markets. Which price account each asset reads (demo or Pyth) does come from the chain, and the price helper applies the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
 - **Fee harvesting for Raydium positions.** Autopay only collects Orca fees; Raydium positions keep their fees until the owner withdraws the NFT.
 - **One Raydium program per cluster.** Both Raydium ids are accepted everywhere; listing is admin-only, but a build flag could pin each cluster to its own id.
 - **Raydium's admin can turn off `decrease_liquidity` for a pool**, which would leave a liquidator holding an NFT it can't redeem. Watch Raydium pool status for listed markets.
