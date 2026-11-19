@@ -10,7 +10,7 @@ import {
   createSyncNativeInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { ComputeBudgetProgram, PublicKey, SystemProgram, type TransactionInstruction } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import {
   type AssetParams,
@@ -26,6 +26,7 @@ import {
   healthAccounts,
   locateLps,
   pda, fetchPriceSources, priceAccountFor, backingAccountFor } from "./core";
+import { DLMM_PROGRAM_ID, MEMO_PROGRAM_ID, SPOT, binArrayIndexes, decodeDlmmPair, decodeDlmmPosition, dlmmPda, holdsLiquidity } from "./dlmm";
 
 // Token amounts are always base units
 export type Amount = BN | bigint | number;
@@ -643,7 +644,6 @@ export async function autopay(
   ];
 }
 
-const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 const i32be = (n: number) => {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n);
@@ -976,6 +976,280 @@ export async function setLpMarket(
     await program.methods
       .setLpMarket(liqCostBps, paused)
       .accountsStrict({ admin, pool: pda.pool(), lpMarket: pda.lpMarket(whirlpool) })
+      .instruction(),
+  ];
+}
+
+// Meteora DLMM: positions the pool PDA owns, opened and funded through the program
+
+// The pair, the position and the market behind a Meteora position the account holds
+async function dlmmContext(program: PluribusProgram, d: Deployment, position: PublicKey) {
+  const connection = program.provider.connection;
+  const posInfo = await connection.getAccountInfo(position);
+  if (!posInfo?.owner.equals(DLMM_PROGRAM_ID)) throw new Error(`${position.toBase58()} is not a Meteora position`);
+  const held = decodeDlmmPosition(position, posInfo.data);
+  return { held, ...(await dlmmPairContext(program, d, held.pair)) };
+}
+
+async function dlmmPairContext(program: PluribusProgram, d: Deployment, pairKey: PublicKey) {
+  const connection = program.provider.connection;
+  const [pairInfo, extension] = await connection.getMultipleAccountsInfo([pairKey, dlmmPda.bitmapExtension(pairKey)]);
+  if (!pairInfo?.owner.equals(DLMM_PROGRAM_ID)) throw new Error(`${pairKey.toBase58()} is not a Meteora pair`);
+  const market = d.lpMarkets?.find((m) => m.pool === pairKey.toBase58());
+  if (!market) throw new Error(`No LP market for Meteora pair ${pairKey.toBase58()} in the ${d.cluster} deployment`);
+  const pair = decodeDlmmPair(pairKey, pairInfo.data);
+  // The program takes the DLMM program itself in place of a bitmap extension the pair does not have
+  const bitmapExtension = extension ? dlmmPda.bitmapExtension(pairKey) : DLMM_PROGRAM_ID;
+  return { pair, baseMint: key(market.baseMint), bitmapExtension };
+}
+
+// The writable bin arrays of a position's range, which every liquidity instruction names after its own accounts
+const binArrays = (pair: PublicKey, lower: number, upper: number) =>
+  binArrayIndexes(lower, upper).map((i) => ({ pubkey: dlmmPda.binArray(pair, i), isSigner: false, isWritable: true }));
+
+// The pair's side of every liquidity instruction, both tokens being classic ones
+const dlmmPairAccounts = (c: Awaited<ReturnType<typeof dlmmPairContext>>) => ({
+  lbPair: c.pair.address,
+  bitmapExtension: c.bitmapExtension,
+  reserveX: c.pair.reserveX,
+  reserveY: c.pair.reserveY,
+  tokenXMint: c.pair.mintX,
+  tokenYMint: c.pair.mintY,
+  tokenXProgram: tokenProgram,
+  tokenYProgram: tokenProgram,
+  eventAuthority: dlmmPda.eventAuthority(),
+  dlmmProgram: DLMM_PROGRAM_ID,
+});
+
+// Meteora walks every bin, so its instructions need far more than the default compute
+const dlmmBudget = (units = 800_000) => ComputeBudgetProgram.setComputeUnitLimit({ units });
+
+// First 8 bytes of sha256("global:initialize_bin_array")
+const INITIALIZE_BIN_ARRAY = Buffer.from([35, 86, 19, 185, 78, 212, 75, 211]);
+
+// Creates the bin arrays of a range that nobody has created yet, which Meteora needs before liquidity can go in
+async function missingBinArrays(program: PluribusProgram, payer: PublicKey, pair: PublicKey, lower: number, upper: number) {
+  const indexes = binArrayIndexes(lower, upper);
+  const infos = await program.provider.connection.getMultipleAccountsInfo(indexes.map((i) => dlmmPda.binArray(pair, i)));
+  return indexes.flatMap((index, i) => {
+    if (infos[i]) return [];
+    const data = Buffer.alloc(16);
+    INITIALIZE_BIN_ARRAY.copy(data);
+    data.writeBigInt64LE(BigInt(index), 8);
+    return [
+      new TransactionInstruction({
+        programId: DLMM_PROGRAM_ID,
+        keys: [
+          { pubkey: pair, isSigner: false, isWritable: false },
+          { pubkey: dlmmPda.binArray(pair, index), isSigner: false, isWritable: true },
+          { pubkey: payer, isSigner: true, isWritable: true },
+          { pubkey: systemProgram, isSigner: false, isWritable: false },
+        ],
+        data,
+      }),
+    ];
+  });
+}
+
+// Wraps lamports into the owner's wSOL account when the pair's SOL side is about to be spent
+const wrap = (owner: PublicKey, lamports: BN) => [
+  createAta(owner, NATIVE_MINT),
+  SystemProgram.transfer({ fromPubkey: owner, toPubkey: ata(NATIVE_MINT, owner), lamports: BigInt(lamports.toString()) }),
+  createSyncNativeInstruction(ata(NATIVE_MINT, owner)),
+];
+
+// Opens an empty Meteora position of `width` bins from `lowerBinId` in a listed pair, owned by the pool PDA
+// `position` is a fresh keypair's address, and that keypair signs the transaction too
+export async function dlmmOpen(
+  program: PluribusProgram,
+  d: Deployment,
+  owner: PublicKey,
+  pairKey: PublicKey,
+  position: PublicKey,
+  lowerBinId: number,
+  width: number,
+): Ixs {
+  const c = await dlmmPairContext(program, d, pairKey);
+  return [
+    dlmmBudget(200_000),
+    await program.methods
+      .dlmmOpen(lowerBinId, width)
+      .accountsStrict({
+        owner,
+        credit: pda.credit(owner),
+        pool: pda.pool(),
+        lpMarket: pda.lpMarket(pairKey),
+        baseAsset: pda.asset(c.baseMint),
+        lbPair: pairKey,
+        position,
+        eventAuthority: dlmmPda.eventAuthority(),
+        dlmmProgram: DLMM_PROGRAM_ID,
+        systemProgram,
+      })
+      .instruction(),
+  ];
+}
+
+// Adds the owner's own tokens to a Meteora position the account holds, spread over its range by `strategy` (Spot by default)
+// SOL is wrapped first and whatever Meteora leaves unspent is unwrapped again
+export async function dlmmAdd(
+  program: PluribusProgram,
+  d: Deployment,
+  owner: PublicKey,
+  position: PublicKey,
+  amountX: Amount,
+  amountY: Amount,
+  opts: { strategy?: number; slippageBins?: number } = {},
+): Ixs {
+  const c = await dlmmContext(program, d, position);
+  const [x, y] = [bn(amountX), bn(amountY)];
+  const native = [c.pair.mintX, c.pair.mintY].findIndex((m) => m.equals(NATIVE_MINT));
+  const sol = native === 0 ? x : native === 1 ? y : null;
+  return [
+    dlmmBudget(),
+    ...(await missingBinArrays(program, owner, c.pair.address, c.held.lower, c.held.upper)),
+    createAta(owner, c.pair.mintX),
+    createAta(owner, c.pair.mintY),
+    ...(sol && !sol.isZero() ? wrap(owner, sol) : []),
+    await program.methods
+      .dlmmAdd(x, y, c.pair.activeId, opts.slippageBins ?? 10, opts.strategy ?? SPOT)
+      .accountsStrict({
+        owner,
+        credit: pda.credit(owner),
+        pool: pda.pool(),
+        lpMarket: pda.lpMarket(c.pair.address),
+        baseAsset: pda.asset(c.baseMint),
+        position,
+        ...dlmmPairAccounts(c),
+        ownerTokenX: ata(c.pair.mintX, owner),
+        ownerTokenY: ata(c.pair.mintY, owner),
+      })
+      .remainingAccounts(binArrays(c.pair.address, c.held.lower, c.held.upper))
+      .instruction(),
+    ...(native >= 0 ? [unwrap(owner)] : []),
+  ];
+}
+
+// The owner's side of the exit instructions: the tokens come out to the owner's own accounts
+const dlmmExitAccounts = (owner: PublicKey, position: PublicKey, c: Awaited<ReturnType<typeof dlmmPairContext>>) => ({
+  owner,
+  credit: pda.credit(owner),
+  pool: pda.pool(),
+  position,
+  ...dlmmPairAccounts(c),
+  ownerTokenX: ata(c.pair.mintX, owner),
+  ownerTokenY: ata(c.pair.mintY, owner),
+  memoProgram: MEMO_PROGRAM_ID,
+});
+
+// Takes `bps` of the liquidity in every bin of a Meteora position out to the owner, then checks health
+export async function dlmmRemove(program: PluribusProgram, d: Deployment, owner: PublicKey, position: PublicKey, bps: number): Ixs {
+  const [c, credit] = await Promise.all([dlmmContext(program, d, position), creditOf(program, owner)]);
+  const bins = binArrays(c.pair.address, c.held.lower, c.held.upper);
+  const native = c.pair.mintX.equals(NATIVE_MINT) || c.pair.mintY.equals(NATIVE_MINT);
+  return [
+    dlmmBudget(),
+    createAta(owner, c.pair.mintX),
+    createAta(owner, c.pair.mintY),
+    await program.methods
+      .dlmmRemove(bps, bins.length)
+      .accountsStrict(dlmmExitAccounts(owner, position, c))
+      .remainingAccounts([...bins, ...(await health(program, d, credit))])
+      .instruction(),
+    ...(native ? [unwrap(owner)] : []),
+  ];
+}
+
+// Closes an emptied Meteora position: its uncollected fees and its rent go to the owner and the slot is freed
+export async function dlmmClose(program: PluribusProgram, d: Deployment, owner: PublicKey, position: PublicKey): Ixs {
+  const [c, credit] = await Promise.all([dlmmContext(program, d, position), creditOf(program, owner)]);
+  // Fees are claimed through the bin arrays, which exist only if the position ever held liquidity
+  const all = binArrays(c.pair.address, c.held.lower, c.held.upper);
+  const infos = await program.provider.connection.getMultipleAccountsInfo(all.map((b) => b.pubkey));
+  const bins = infos.every(Boolean) ? all : [];
+  const native = c.pair.mintX.equals(NATIVE_MINT) || c.pair.mintY.equals(NATIVE_MINT);
+  return [
+    dlmmBudget(400_000),
+    createAta(owner, c.pair.mintX),
+    createAta(owner, c.pair.mintY),
+    await program.methods
+      .dlmmClose(bins.length)
+      .accountsStrict(dlmmExitAccounts(owner, position, c))
+      .remainingAccounts([...bins, ...(await health(program, d, credit, { skip: position }))])
+      .instruction(),
+    ...(native ? [unwrap(owner)] : []),
+  ];
+}
+
+// The liquidator repays up to `repayAmount` USDC and takes that share, plus the bonus, of every bin of the position
+export async function dlmmLiquidate(
+  program: PluribusProgram,
+  d: Deployment,
+  liquidator: PublicKey,
+  owner: PublicKey,
+  position: PublicKey,
+  repayAmount: Amount,
+): Ixs {
+  const [c, credit] = await Promise.all([dlmmContext(program, d, position), creditOf(program, owner)]);
+  // A position that never held liquidity is closed without naming bin arrays it may not have
+  const bins = holdsLiquidity(c.held) ? binArrays(c.pair.address, c.held.lower, c.held.upper) : [];
+  const usdc = key(d.usdcMint);
+  return [
+    dlmmBudget(),
+    createAta(liquidator, c.pair.mintX),
+    createAta(liquidator, c.pair.mintY),
+    await program.methods
+      .dlmmLiquidate(bn(repayAmount), bins.length)
+      .accountsStrict({
+        ...dlmmPairAccounts(c),
+        liquidator,
+        credit: pda.credit(owner),
+        pool: pda.pool(),
+        usdcMint: usdc,
+        usdcVault: pda.usdcVault(),
+        liquidatorUsdc: ata(usdc, liquidator),
+        owner,
+        tokenProgram,
+        position,
+        liquidatorTokenX: ata(c.pair.mintX, liquidator),
+        liquidatorTokenY: ata(c.pair.mintY, liquidator),
+        memoProgram: MEMO_PROGRAM_ID,
+      })
+      .remainingAccounts([...bins, ...(await health(program, d, credit))])
+      .instruction(),
+  ];
+}
+
+// Permissionless: collects a Meteora position's fees into the protocol's vaults; the USDC part repays debt
+export async function dlmmAutopay(program: PluribusProgram, d: Deployment, caller: PublicKey, owner: PublicKey, position: PublicKey): Ixs {
+  const c = await dlmmContext(program, d, position);
+  const usdc = key(d.usdcMint);
+  return [
+    dlmmBudget(400_000),
+    await program.methods
+      .dlmmAutopay()
+      .accountsStrict({
+        caller,
+        credit: pda.credit(owner),
+        pool: pda.pool(),
+        lpMarket: pda.lpMarket(c.pair.address),
+        lbPair: c.pair.address,
+        position,
+        baseAsset: pda.asset(c.baseMint),
+        baseVault: pda.vault(c.baseMint),
+        baseMint: c.baseMint,
+        usdcAsset: pda.asset(usdc),
+        usdcCollateralVault: pda.vault(usdc),
+        usdcMint: usdc,
+        usdcVault: pda.usdcVault(),
+        reserveX: c.pair.reserveX,
+        reserveY: c.pair.reserveY,
+        tokenProgram,
+        memoProgram: MEMO_PROGRAM_ID,
+        eventAuthority: dlmmPda.eventAuthority(),
+        dlmmProgram: DLMM_PROGRAM_ID,
+      })
+      .remainingAccounts(binArrays(c.pair.address, c.held.lower, c.held.upper))
       .instruction(),
   ];
 }
