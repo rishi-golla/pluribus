@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{clmm, constants::*, error::PluribusError, math::*, oracle::*, state::*, token2022};
+use crate::{clmm, constants::*, dlmm, error::PluribusError, math::*, oracle::*, state::*, token2022};
 
 /// An account's collateral valued under every scenario
 #[derive(Default)]
@@ -52,6 +52,7 @@ pub enum Scope {
 enum Valuer {
     Token { amount: u64, decimals: u8 },
     Lp { liquidity: u128, lower: u128, upper: u128, decimals: u8 },
+    Dlmm(dlmm::Curve),
 }
 
 /// Square roots of the prices already seen in this health check
@@ -91,6 +92,7 @@ impl Valuer {
                 // Kept at or under the payout on either dex
                 Ok(under_payout(base + cut(usdc, usdc_shock)?))
             }
+            Valuer::Dlmm(ref curve) => curve.value(price, usdc_shock),
         }
     }
 }
@@ -99,6 +101,7 @@ impl Valuer {
 /// Token: asset, its mint and vault if it is a Token-2022 token, then its price account unless the asset is fixed at $1,
 /// then for a staking token the SOL price account and, for an SPL stake pool, the pool account
 /// LP: LP market, the dex's position, base asset, base price account
+/// Meteora position: LP market, the pair, the position, base asset, base price account
 pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64, scope: Scope) -> Result<Health> {
     let params = &pool.params;
     let n = params.num_scenarios as usize;
@@ -184,6 +187,22 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 h.price[i] = priced.price;
                 let (lower, upper) = range_sqrt_prices(lp.tick_lower, lp.tick_upper)?;
                 let valuer = Valuer::Lp { liquidity: lp.liquidity, lower, upper, decimals: asset.decimals };
+                let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
+                let d = asset.dynamic_shocks(params);
+                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d)
+            }
+            KIND_DLMM => {
+                let market: LpMarket = load(next()?)?;
+                let pair = next()?;
+                let account = next()?;
+                // A Meteora position has no NFT, so the slot names the position account itself
+                require_keys_eq!(account.key(), pos.mint, PluribusError::AccountMismatch);
+                let asset: Asset = load(next()?)?;
+                require_keys_eq!(asset.mint, market.base_mint, PluribusError::AccountMismatch);
+                // Oracle price only, and the pair's active bin and reserves are never read
+                let priced = read_price(pool, &asset, next()?, now)?;
+                h.price[i] = priced.price;
+                let valuer = Valuer::Dlmm(dlmm::curve(pool, &market, pair, account, asset.decimals)?);
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
                 let d = asset.dynamic_shocks(params);
                 (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d)
