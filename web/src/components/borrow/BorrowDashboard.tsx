@@ -13,7 +13,9 @@ import { series } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { healthAfterDrop, type Collateral } from "@/lib/live";
 import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
+import { CompoundStrip } from "@/components/compound/CompoundPanel";
 import { CollateralDialog } from "./CollateralDialog";
+import { CompoundDialog, CompoundPill, type CompoundTarget } from "./CompoundSetting";
 import { PortfolioChart, RANGES, SERIES, type Range, type SeriesKey } from "./PortfolioChart";
 
 const ic = { size: 16, strokeWidth: 1.75 };
@@ -450,7 +452,11 @@ const Pair = ({ badge }: { badge: string }) => (
   </span>
 );
 
-type Position = { kind: Kind | null; icon: ReactNode; name: string; sub: string; bal: string; val: string; vsub: string; ltv: number; naive?: string; power: string; liq: ReactNode; mint?: string; dlmm?: { empty: boolean } };
+type Position = {
+  kind: Kind | null; icon: ReactNode; name: string; sub: string; bal: string; val: string; vsub: string; ltv: number; naive?: string; power: string; liq: ReactNode; mint?: string; dlmm?: { empty: boolean };
+  /** An LP or Meteora position's fee setting: how far the pool's price may sit from the oracle's, in bps, for it to compound, or 0 */
+  compound?: { bps: number };
+};
 const KINDS: Record<string, Kind | null> = { SOL: "SOL", JitoSOL: "LSTs", JupSOL: "LSTs", NVDAx: "Tokenized stocks", AAPLx: "Tokenized stocks", USDC: null };
 const TOKENS: Record<string, { kind: Kind | null; icon: string; sub: string }> = Object.fromEntries(
   Object.entries(TOKEN_INFO).map(([symbol, info]) => [symbol, { ...info, kind: KINDS[symbol] ?? null }]),
@@ -474,6 +480,7 @@ function toRow(c: Collateral): Position {
       vsub: empty ? "No liquidity" : `${money(sol)} ${c.symbol.split("-")[0]} + ${money(usdc)} USDC`,
       naive: c.value > 0 ? `${((naive / c.value) * 100).toFixed(1)}%` : undefined,
       dlmm: { empty },
+      compound: { bps: c.compoundBps },
       liq: (
         <div className="flex items-center gap-2.5">
           <RangeBar from={25} to={75} at={spot} />
@@ -494,6 +501,7 @@ function toRow(c: Collateral): Position {
       bal: `Position ${shortKey(c.mint)}`,
       vsub: `${money(sol)} SOL + ${money(usdc)} USDC`,
       naive: `${((naive / c.value) * 100).toFixed(1)}%`,
+      compound: { bps: c.compoundBps },
       liq: (
         <div className="flex items-center gap-2.5">
           <RangeBar from={25} to={75} at={Math.min(100, Math.max(0, 25 + ((c.price - lower) / (upper - lower)) * 50))} />
@@ -520,9 +528,9 @@ function toRow(c: Collateral): Position {
 const POSITIONS: Position[] = [
   { kind: "SOL", icon: <TokenIcon src="sol.webp" />, name: "SOL", sub: "Solana", bal: "120.50 SOL", val: "$18,075.00", vsub: "$150.00", ltv: 66.5, power: "$12,020.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
   { kind: "LSTs", icon: <TokenIcon src="jitosol.webp" />, name: "JitoSOL", sub: "Liquid staking", bal: "41.44 JitoSOL", val: "$6,950.00", vsub: "1 JitoSOL = 1.118 SOL", ltv: 65, power: "$4,518.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
-  { kind: "LP positions", icon: <Pair badge="orca.png" />, name: "SOL-USDC", sub: "Orca Whirlpool, 120 to 180", bal: "Position #8812", val: "$10,000.00", vsub: "$38.20 fees unclaimed", ltv: 70.8, naive: "82.1%", power: "$7,080.00", liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
-  { kind: "LP positions", icon: <Pair badge="ray.webp" />, name: "SOL-USDC", sub: "Raydium CLMM, full range", bal: "Position #2207", val: "$5,200.00", vsub: "$11.70 fees unclaimed", ltv: 79.4, naive: "80.7%", power: "$4,129.00", liq: <div className="flex items-center gap-2.5"><RangeBar from={0} to={100} at={50} /><Tag tone="green">In range</Tag></div> },
-  { kind: "LP positions", icon: <Pair badge="met.webp" />, name: "SOL-USDC", sub: "Meteora DLMM, 130 to 170", bal: "Position 9Wq4...hT2e", val: "$8,400.00", vsub: "28.00 SOL + 4,200.00 USDC", ltv: 68.9, naive: "79.6%", power: "$5,788.00", liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
+  { kind: "LP positions", icon: <Pair badge="orca.png" />, name: "SOL-USDC", sub: "Orca Whirlpool, 120 to 180", bal: "Position #8812", val: "$10,000.00", vsub: "$38.20 fees unclaimed", ltv: 70.8, naive: "82.1%", power: "$7,080.00", compound: { bps: 100 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
+  { kind: "LP positions", icon: <Pair badge="ray.webp" />, name: "SOL-USDC", sub: "Raydium CLMM, full range", bal: "Position #2207", val: "$5,200.00", vsub: "$11.70 fees unclaimed", ltv: 79.4, naive: "80.7%", power: "$4,129.00", compound: { bps: 0 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={0} to={100} at={50} /><Tag tone="green">In range</Tag></div> },
+  { kind: "LP positions", icon: <Pair badge="met.webp" />, name: "SOL-USDC", sub: "Meteora DLMM, 130 to 170", bal: "Position 9Wq4...hT2e", val: "$8,400.00", vsub: "28.00 SOL + 4,200.00 USDC", ltv: 68.9, naive: "79.6%", power: "$5,788.00", dlmm: { empty: false }, compound: { bps: 0 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
   { kind: "Tokenized stocks", icon: <TokenIcon src="nvdax.webp" />, name: "NVDAx", sub: "NVIDIA xStock", bal: "18.00 NVDAx", val: "$3,240.00", vsub: "Market closed", ltv: 58, power: "$1,879.00", liq: <Meter n={3} label={<span className="text-[12.5px] text-t2">Moderate</span>} /> },
   { kind: "Memes", icon: <TokenIcon src="bonk.webp" />, name: "BONK", sub: "Bonk", bal: "212.4M BONK", val: "$4,765.00", vsub: "$0.00002243", ltv: 35, power: "$1,668.00", liq: <Meter n={2} label={<Tag tone="orange">Risky</Tag>} /> },
 ];
@@ -530,13 +538,17 @@ const POSITIONS: Position[] = [
 function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
   const [filter, setFilter] = useState<"All" | Kind>("All");
   const [dialog, setDialog] = useState<{ withdraw?: string; add?: string } | null>(null);
+  const [fees, setFees] = useState<CompoundTarget | null>(null);
   const toast = useToast();
   const { live } = useAccount();
   const all = live ? live.collateral.map(toRow) : POSITIONS;
   const rows = all.filter((p) => filter === "All" || p.kind === filter);
+  // The setting follows the position as it is on-chain, so the dialog does not keep showing what it was opened with
+  const feesNow = fees && { ...fees, bps: all.find((p) => (p.mint ?? p.name + p.sub) === fees.id)?.compound?.bps ?? fees.bps };
   return (
     <section className="panel mt-4">
       {live && <CollateralDialog live={live} open={dialog} onClose={() => setDialog(null)} />}
+      <CompoundDialog live={live} target={feesNow} onClose={() => setFees(null)} />
       <div className="flex items-center justify-between px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Collateral <span className="font-normal text-t3">{all.length === 1 ? "1 position" : `${all.length} positions`}</span>
@@ -627,7 +639,12 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
                   {r.naive && <div className="mt-0.5 text-[12.5px] text-t3">Naive {r.naive}</div>}
                 </td>
                 <td className="text-right font-medium">{r.power}</td>
-                <td>{r.liq}</td>
+                <td>
+                  {r.liq}
+                  {r.compound && (
+                    <CompoundPill bps={r.compound.bps} onOpen={() => setFees({ id: r.mint ?? r.name + r.sub, name: r.name, sub: r.sub, bps: r.compound!.bps, dlmm: !!r.dlmm })} />
+                  )}
+                </td>
                 <td className="pr-[22px] text-right">
                   <div className="flex items-center justify-end gap-2">
                     {/* A Meteora position is topped up, trimmed or closed in place, the same dialog the row opens */}
@@ -870,8 +887,10 @@ function AutopayPanel() {
   const { live, months, today, autopayPerMonth } = useAccount();
   const fast = useFastHarvest(live);
   const [enabled, setOn] = useState(true);
-  // On-chain anyone may harvest a deposited LP position, so a borrower cannot switch autopay off
-  const on = live ? live.collateral.some((c) => c.lp || c.dlmm) : enabled;
+  // On-chain anyone may harvest a deposited LP position, so a borrower cannot switch autopay off, but a position set to
+  // compound its fees is left alone by it
+  const lps = live ? live.collateral.filter((c) => c.lp || c.dlmm) : [];
+  const on = live ? lps.some((c) => !c.compoundBps) : enabled;
   const toast = useToast();
   const AW = 458;
   const bw = (AW - 29 * 4) / 30;
@@ -890,7 +909,7 @@ function AutopayPanel() {
           Autopay
           <Tag tone={on ? "green" : "neutral"}>
             <StatusDot />
-            {on ? "Active" : live ? "No LP position" : "Paused"}
+            {on ? "Active" : live ? (lps.length ? "Compounding" : "No LP position") : "Paused"}
           </Tag>
         </h3>
         {live?.canHarvest && on && (
@@ -978,6 +997,7 @@ function AutopayPanel() {
             </div>
           ))}
         </div>
+        <CompoundStrip />
       </div>
     </div>
   );
