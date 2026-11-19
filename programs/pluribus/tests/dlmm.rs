@@ -775,8 +775,9 @@ fn only_a_listed_and_live_pair_takes_positions() {
         env.svm.set_account(address, account).unwrap();
         env.send(&[env.init_lp_market_ix(&address, &sol, 500)], &[&admin])
     };
-    // Token X on Token-2022, a limit-order pair, a disabled pair, a pair with farming rewards, another account type
-    for (at, byte) in [(880, 1), (35, 2), (82, 1), (264, 7), (0, 0)] {
+    // Token X on Token-2022, a limit-order pair, a disabled pair, a pair with farming rewards, another account type,
+    // a bin step that no longer agrees with the one the pair's address was seeded with
+    for (at, byte) in [(880, 1), (35, 2), (82, 1), (264, 7), (0, 0), (80, 5)] {
         expect_err(copy(&mut env, at, byte), PluribusError::PoolNotWhitelisted);
     }
     expect_ok(copy(&mut env, 880, 0));

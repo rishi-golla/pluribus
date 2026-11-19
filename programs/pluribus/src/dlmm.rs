@@ -44,11 +44,13 @@ fn key(d: &[u8], at: usize) -> Pubkey {
 pub fn read_pair(acc: &AccountInfo) -> Result<Pair> {
     require_keys_eq!(*acc.owner, METEORA_DLMM_PROGRAM_ID, PluribusError::PoolNotWhitelisted);
     let d = acc.try_borrow_data()?;
-    // Layout: disc 8 | static parameters 32 | variable parameters 32 | seeds and type 4 | active id i32 | bin step u16 at 80 |
-    // status u8 at 82 | token X mint at 88 | token Y mint at 120
+    // Layout: disc 8 | static parameters 32 | variable parameters 32 | bump 1 | bin step seed 2 at 73 | pair type 1 |
+    // active id i32 | bin step u16 at 80 | status u8 at 82 | token X mint at 88 | token Y mint at 120
     require!(d.len() >= PAIR_LEN && d[..8] == PAIR_DISCRIMINATOR, PluribusError::PoolNotWhitelisted);
     let bin_step = u16::from_le_bytes([d[80], d[81]]);
-    require!((1..=MAX_BIN_STEP).contains(&bin_step), PluribusError::PoolNotWhitelisted);
+    // The pair keeps its bin step a second time as an address seed, and every price here hangs on it:
+    // if an upgrade ever moved the fields, the two would stop agreeing and the pair would stop counting rather than misprice
+    require!((1..=MAX_BIN_STEP).contains(&bin_step) && d[73..75] == d[80..82], PluribusError::PoolNotWhitelisted);
     Ok(Pair { bin_step, mint_x: key(&d, 88), mint_y: key(&d, 120) })
 }
 
