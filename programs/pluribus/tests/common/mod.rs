@@ -1200,6 +1200,58 @@ impl Env {
         )
     }
 
+    pub fn set_compound_ix(&self, owner: &Pubkey, position: &Pubkey, slippage_bps: u16) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetCompound { position: *position, slippage_bps }.data(),
+            pluribus::accounts::SetCompound { owner: *owner, credit: self.credit_pda(owner) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn set_compound_bounty_ix(&self, admin: &Pubkey, bounty_bps: u16) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetCompoundBounty { bounty_bps }.data(),
+            pluribus::accounts::AdminPool { admin: *admin, pool: self.pool }.to_account_metas(None),
+            None,
+        )
+    }
+
+    /// `orca` as for `autopay_ix`; the bounty goes to `recipient`'s associated token accounts
+    pub fn compound_orca_ix(&self, caller: &Pubkey, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey, orca: [Pubkey; 4], recipient: &Pubkey) -> Instruction {
+        let program = self.svm.get_account(nft).unwrap().owner;
+        let market: LpMarket = self.load(&self.lp_market_pda(whirlpool));
+        self.ix(
+            pluribus::instruction::CompoundOrca {}.data(),
+            pluribus::accounts::CompoundOrca {
+                caller: *caller,
+                credit: self.credit_pda(owner),
+                pool: self.pool,
+                lp_market: self.lp_market_pda(whirlpool),
+                whirlpool: *whirlpool,
+                position: orca_position(nft),
+                position_mint: *nft,
+                vault_nft: ata(&self.pool, nft, &program),
+                tick_array_lower: orca[0],
+                tick_array_upper: orca[1],
+                base_asset: self.asset_pda(&market.base_mint),
+                base_mint: market.base_mint,
+                base_vault: self.vault_pda(&market.base_mint),
+                base_price: self.price_account(&market.base_mint),
+                whirlpool_vault_a: orca[2],
+                usdc_asset: self.asset_pda(&self.usdc),
+                usdc_collateral_vault: self.vault_pda(&self.usdc),
+                whirlpool_vault_b: orca[3],
+                usdc_mint: self.usdc,
+                bounty_base: ata(recipient, &market.base_mint, &TOKEN),
+                bounty_usdc: ata(recipient, &self.usdc, &TOKEN),
+                token_program: TOKEN,
+                whirlpool_program: WHIRLPOOL_PROGRAM_ID,
+            }
+            .to_account_metas(None),
+            None,
+        )
+    }
+
     /// `orca` lists the Whirlpool's accounts for this position: tick array lower, tick array upper, token vault A, token vault B
     pub fn autopay_ix(&self, caller: &Pubkey, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey, orca: [Pubkey; 4]) -> Instruction {
         let program = self.svm.get_account(nft).unwrap().owner;

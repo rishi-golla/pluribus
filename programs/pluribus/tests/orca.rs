@@ -183,3 +183,103 @@ fn a_liquidated_real_position_reaches_the_liquidator() {
     assert!(credit.positions[credit.find(KIND_TOKEN, &usdc).unwrap()].amount > 0);
     assert_books_match_vaults(&env);
 }
+
+/// Liquidity the Orca position for this NFT holds
+fn liquidity_of(env: &Env, nft: &Pubkey) -> u128 {
+    let d = env.svm.get_account(&orca_position(nft)).unwrap().data;
+    u128::from_le_bytes(d[72..88].try_into().unwrap())
+}
+
+/// A pool with a 2% bounty, the second snapshotted position deposited and set to compound within `tolerance_bps`,
+/// and a bounty hunter with token accounts for both of the pool's tokens
+fn compounding(tolerance_bps: u16) -> Option<(Env, Value, Keypair, Keypair, Pubkey)> {
+    let (mut env, manifest) = real_pool()?;
+    let admin = env.admin.insecure_clone();
+    let (user, hunter) = (env.user(), env.wallet());
+    let (sol, usdc) = (env.sol, env.usdc);
+    let nft = deposit(&mut env, &manifest, 1, &user);
+    expect_ok(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), 200)], &[&admin]));
+    if tolerance_bps > 0 {
+        expect_ok(env.send(&[env.set_compound_ix(&user.pubkey(), &nft, tolerance_bps)], &[&user]));
+    }
+    env.fund(&sol, &hunter.pubkey(), 0);
+    env.fund(&usdc, &hunter.pubkey(), 0);
+    Some((env, manifest, user, hunter, nft))
+}
+
+#[test]
+fn compound_puts_real_fees_back_into_the_position_and_pays_the_bounty() {
+    let Some((mut env, manifest, user, hunter, nft)) = compounding(100) else { return };
+    let (me, whirlpool, sol, usdc) = (user.pubkey(), env.whirlpool, env.sol, env.usdc);
+    let (fee_sol, fee_usdc) = (num(&manifest["positions"][1]["uncollectedFeeA"]), num(&manifest["positions"][1]["uncollectedFeeB"]));
+    let before = (liquidity_of(&env, &nft), env.health(&me).collateral_value);
+
+    let compound = env.compound_orca_ix(&hunter.pubkey(), &me, &whirlpool, &nft, orca_accounts(&manifest, 1), &hunter.pubkey());
+    let meta = expect_ok(env.send(&[compound], &[&hunter]));
+    println!("compound_orca: {} compute units", meta.compute_units_consumed);
+
+    // The caller got 2% of each fee, the position grew, and what the range could not take is the account's collateral
+    assert_eq!(env.balance(&sol, &hunter.pubkey()), fee_sol * 200 / 10_000);
+    assert_eq!(env.balance(&usdc, &hunter.pubkey()), fee_usdc * 200 / 10_000);
+    assert!(liquidity_of(&env, &nft) > before.0);
+    let credit = env.credit(&me);
+    let kept = |mint: &Pubkey| credit.find(KIND_TOKEN, mint).map_or(0, |i| credit.positions[i].amount);
+    // At most the fees after the bounty stay behind, and at least one side went in
+    assert!(kept(&sol) < fee_sol - fee_sol * 2 / 100 || kept(&usdc) < fee_usdc - fee_usdc * 2 / 100);
+    assert!(env.health(&me).collateral_value > before.1);
+    assert_books_match_vaults(&env);
+}
+
+#[test]
+fn compound_waits_for_the_pool_price_to_sit_near_the_oracle() {
+    let Some((mut env, manifest, user, hunter, nft)) = compounding(100) else { return };
+    let (me, whirlpool, sol) = (user.pubkey(), env.whirlpool, env.sol);
+    let price = pool_price(&manifest);
+    // The oracle 3% above the pool: outside a 1% tolerance, inside 5%
+    env.set_price(&sol, price * 103 / 100);
+    let compound = env.compound_orca_ix(&hunter.pubkey(), &me, &whirlpool, &nft, orca_accounts(&manifest, 1), &hunter.pubkey());
+    expect_err(env.send(&[compound.clone()], &[&hunter]), pluribus::error::PluribusError::PoolPriceOff);
+    expect_ok(env.send(&[env.set_compound_ix(&me, &nft, 500)], &[&user]));
+    expect_ok(env.send(&[compound], &[&hunter]));
+}
+
+#[test]
+fn compounding_is_the_owners_choice_and_autopay_steps_aside_for_it() {
+    let Some((mut env, manifest, user, hunter, nft)) = compounding(0) else { return };
+    let (me, whirlpool) = (user.pubkey(), env.whirlpool);
+    let compound = env.compound_orca_ix(&hunter.pubkey(), &me, &whirlpool, &nft, orca_accounts(&manifest, 1), &hunter.pubkey());
+    expect_err(env.send(&[compound.clone()], &[&hunter]), pluribus::error::PluribusError::CompoundOff);
+
+    // Capped, and set only through the owner's own account
+    expect_err(env.send(&[env.set_compound_ix(&me, &nft, MAX_COMPOUND_SLIPPAGE_BPS + 1)], &[&user]), pluribus::error::PluribusError::InvalidParams);
+    assert!(env.send(&[env.set_compound_ix(&hunter.pubkey(), &nft, 100)], &[&hunter]).is_err());
+    expect_ok(env.send(&[env.set_compound_ix(&me, &nft, 100)], &[&user]));
+    let autopay = env.autopay_ix(&hunter.pubkey(), &me, &whirlpool, &nft, orca_accounts(&manifest, 1));
+    expect_err(env.send(&[autopay.clone()], &[&hunter]), pluribus::error::PluribusError::CompoundOn);
+
+    // Off again, and autopay takes the fees as before
+    expect_ok(env.send(&[env.set_compound_ix(&me, &nft, 0)], &[&user]));
+    expect_ok(env.send(&[autopay], &[&hunter]));
+    expect_err(env.send(&[compound], &[&hunter]), pluribus::error::PluribusError::CompoundOff);
+
+    // The bounty has a hard cap
+    let admin = env.admin.insecure_clone();
+    expect_err(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), MAX_COMPOUND_BOUNTY_BPS + 1)], &[&admin]), pluribus::error::PluribusError::InvalidParams);
+}
+
+#[test]
+fn a_withdrawn_position_forgets_its_compound_setting() {
+    let Some((mut env, manifest, user, _hunter, nft)) = compounding(300) else { return };
+    let me = user.pubkey();
+    let slot = |env: &Env| env.credit(&me).positions.iter().position(|p| p.mint == nft);
+    assert_eq!(env.credit(&me).compound_slippage_bps[slot(&env).unwrap()], 300);
+    let whirlpool = env.whirlpool;
+    let program = env.svm.get_account(&nft).unwrap().owner;
+    env.fund(&nft, &me, 0);
+    expect_ok(env.send(&[env.withdraw_lp_ix(&me, &nft)], &[&user]));
+    assert!(env.credit(&me).compound_slippage_bps.iter().all(|s| *s == 0));
+    let holder = ata(&me, &nft, &program);
+    expect_ok(env.send(&[env.deposit_lp_from_ix(&me, &whirlpool, &nft, &holder)], &[&user]));
+    assert_eq!(env.credit(&me).compound_slippage_bps[slot(&env).unwrap()], 0);
+    let _ = manifest;
+}
