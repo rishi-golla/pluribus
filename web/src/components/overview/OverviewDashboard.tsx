@@ -544,10 +544,6 @@ export function OverviewDashboard() {
         </div>
         <div className="flex gap-2">
           <Chip>
-            <span className="size-1.5 rounded-full bg-green shadow-[0_0_8px_var(--color-green)]" />
-            {live && deployment?.demoMode ? "Demo prices live" : "Pyth prices live"}
-          </Chip>
-          <Chip>
             Utilization <b>{pct(live ? live.pool.utilization : TOTALS.borrowed / POOL.supplied)}</b>
           </Chip>
         </div>
