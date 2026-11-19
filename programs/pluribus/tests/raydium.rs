@@ -658,3 +658,224 @@ fn rewards_go_to_the_owner(env: &mut Env, clmm: &Clmm) {
     assert!(env.debt(&me) < 100 * USDC);
     assert_books_match_vaults(&env);
 }
+
+// Compounding puts a position's fees back into it for a bounty, on the same chains
+
+/// The bounty hunter's transaction: compounding runs Raydium's collect and its add, which a bare transaction's compute does
+/// not cover
+fn hunt(env: &mut Env, hunter: &Keypair, compound: Instruction) -> TxResult {
+    env.send(&[budget(), compound], &[hunter])
+}
+
+/// The liquidity a Raydium position holds, at offset 81 of its account
+fn liquidity_of(env: &Env, clmm: &Clmm, lp: &Lp) -> u128 {
+    let d = env.svm.get_account(&position_pda(&clmm.program, &lp.nft).0).unwrap().data;
+    u128::from_le_bytes(d[81..97].try_into().unwrap())
+}
+
+/// A 2% bounty, the position set to compound within `tolerance_bps` (off when 0), and a bounty hunter with token accounts
+/// for both of the pool's tokens
+fn set_up_compounding(env: &mut Env, user: &Keypair, nft: &Pubkey, tolerance_bps: u16) -> Keypair {
+    let admin = env.admin.insecure_clone();
+    let hunter = env.wallet();
+    let (sol, usdc) = (env.sol, env.usdc);
+    expect_ok(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), 200)], &[&admin]));
+    if tolerance_bps > 0 {
+        expect_ok(env.send(&[env.set_compound_ix(&user.pubkey(), nft, tolerance_bps)], &[user]));
+    }
+    env.fund(&sol, &hunter.pubkey(), 0);
+    env.fund(&usdc, &hunter.pubkey(), 0);
+    hunter
+}
+
+/// A deposited position that has earned fees in both tokens, with compounding set up as above
+fn compounding(env: &mut Env, clmm: &Clmm, tolerance_bps: u16) -> (Keypair, Keypair, Lp) {
+    let user = env.user();
+    let lp = clmm.deposited(env, &user);
+    let hunter = set_up_compounding(env, &user, &lp.nft, tolerance_bps);
+    (user, hunter, lp)
+}
+
+/// What a position's fees are on a chain like `clmm`'s, as (base token, USDC)
+/// They are found by collecting them with autopay on a twin chain with the same pool, liquidity and trades, which earns the
+/// same fees to the unit and leaves the chain under test untouched
+fn fees_on_a_twin(clmm: &Clmm) -> (u64, u64) {
+    let (mut env, twin) = chain(clmm.program, clmm.usdc_first).unwrap();
+    let (user, keeper) = (env.user(), env.wallet());
+    let lp = twin.deposited(&mut env, &user);
+    let before = twin.held(&env);
+    expect_ok(env.send(&[env.autopay_raydium_ix(&keeper.pubkey(), &user.pubkey(), &twin.pool, &lp.nft, twin.accounts(&lp), &[])], &[&keeper]));
+    twin.collected(&env, before)
+}
+
+#[test]
+fn compound_puts_real_raydium_fees_back_into_the_position_and_pays_the_bounty() {
+    for (mut env, clmm) in chains() {
+        let (fee_sol, fee_usdc) = fees_on_a_twin(&clmm);
+        assert!(fee_sol > 0 && fee_usdc > 0, "fees {fee_sol} SOL and {fee_usdc} USDC");
+        let (user, hunter, lp) = compounding(&mut env, &clmm, 100);
+        let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+        let (held, liquidity, value) = (clmm.held(&env), liquidity_of(&env, &clmm, &lp), env.health(&me).collateral_value);
+
+        let compound = env.compound_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), &[]);
+        let meta = expect_ok(hunt(&mut env, &hunter, compound));
+        println!("compound_raydium: {} compute units", meta.compute_units_consumed);
+
+        // The caller got 2% of each fee, exactly, and the position grew
+        let bounty = (fee_sol * 200 / 10_000, fee_usdc * 200 / 10_000);
+        assert!(bounty.0 > 0 && bounty.1 > 0);
+        assert_eq!(env.balance(&sol, &hunter.pubkey()), bounty.0);
+        assert_eq!(env.balance(&usdc, &hunter.pubkey()), bounty.1);
+        assert!(liquidity_of(&env, &clmm, &lp) > liquidity);
+
+        // What the pool's vaults gained besides the fees that left them is what went into the position
+        let (now, fees) = (clmm.held(&env), if clmm.usdc_first { (fee_usdc, fee_sol) } else { (fee_sol, fee_usdc) });
+        let added = (now.0 + fees.0 - held.0, now.1 + fees.1 - held.1);
+        let (added_sol, added_usdc) = if clmm.usdc_first { (added.1, added.0) } else { added };
+        assert!(added_sol > 0 && added_usdc > 0);
+        // The rest of the fees stayed as the account's collateral, and one side of the range took nearly all of its share
+        let credit = env.credit(&me);
+        let kept = |mint: &Pubkey| credit.find(KIND_TOKEN, mint).map_or(0, |i| credit.positions[i].amount);
+        assert_eq!(kept(&sol), fee_sol - bounty.0 - added_sol);
+        assert_eq!(kept(&usdc), fee_usdc - bounty.1 - added_usdc);
+        assert!(kept(&sol).min(kept(&usdc)) <= 4, "kept {} SOL and {} USDC", kept(&sol), kept(&usdc));
+        assert!(env.health(&me).collateral_value > value);
+        assert_eq!(env.balance(&lp.nft, &env.pool), 1);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn compound_raydium_waits_for_the_pool_price_to_sit_near_the_oracle() {
+    for (mut env, clmm) in chains() {
+        let (user, hunter, lp) = compounding(&mut env, &clmm, 100);
+        let (me, sol) = (user.pubkey(), env.sol);
+        let compound = env.compound_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), &[]);
+        let liquidity = liquidity_of(&env, &clmm, &lp);
+        // The pool sits near $150, so an oracle 3% above or below it is outside a 1% tolerance and inside 5%
+        for oracle in [150 * USDC * 103 / 100, 150 * USDC * 97 / 100] {
+            env.set_price(&sol, oracle);
+            expect_err(hunt(&mut env, &hunter, compound.clone()), PluribusError::PoolPriceOff);
+        }
+        assert_eq!(liquidity_of(&env, &clmm, &lp), liquidity);
+        expect_ok(env.send(&[env.set_compound_ix(&me, &lp.nft, 500)], &[&user]));
+        expect_ok(hunt(&mut env, &hunter, compound));
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn raydium_compounding_is_the_owners_choice_and_autopay_steps_aside_for_it() {
+    for (mut env, clmm) in chains() {
+        let (user, hunter, lp) = compounding(&mut env, &clmm, 0);
+        let me = user.pubkey();
+        let compound = env.compound_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), &[]);
+        expect_err(hunt(&mut env, &hunter, compound.clone()), PluribusError::CompoundOff);
+
+        // Capped, and set only through the owner's own account
+        expect_err(env.send(&[env.set_compound_ix(&me, &lp.nft, MAX_COMPOUND_SLIPPAGE_BPS + 1)], &[&user]), PluribusError::InvalidParams);
+        assert!(env.send(&[env.set_compound_ix(&hunter.pubkey(), &lp.nft, 100)], &[&hunter]).is_err());
+        expect_ok(env.send(&[env.set_compound_ix(&me, &lp.nft, 100)], &[&user]));
+        let autopay = env.autopay_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[]);
+        expect_err(env.send(&[autopay.clone()], &[&hunter]), PluribusError::CompoundOn);
+
+        // Off again, and autopay takes the fees as before
+        expect_ok(env.send(&[env.set_compound_ix(&me, &lp.nft, 0)], &[&user]));
+        expect_ok(env.send(&[autopay], &[&hunter]));
+        expect_err(hunt(&mut env, &hunter, compound), PluribusError::CompoundOff);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn compound_raydium_pays_its_bounty_only_into_accounts_that_are_not_the_programs_vaults() {
+    for (mut env, clmm) in chains() {
+        let (user, hunter, lp) = compounding(&mut env, &clmm, 100);
+        let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+        let (mine_sol, mine_usdc) = (ata(&hunter.pubkey(), &sol, &TOKEN), ata(&hunter.pubkey(), &usdc, &TOKEN));
+        let (base_vault, usdc_vault) = (env.vault_pda(&sol), env.vault_pda(&usdc));
+        let ix = env.compound_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), &[]);
+
+        // The protocol's own vaults as the recipients would only move its money around, and Anchor refuses a writable account
+        // that comes twice before the program's own check of it is reached
+        let duplicate: u32 = anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount.into();
+        let mut to_base_vault = ix.clone();
+        swap_account(&mut to_base_vault, &mine_sol, base_vault);
+        assert!(failed_with_code(&hunt(&mut env, &hunter, to_base_vault), duplicate));
+        let mut to_usdc_vault = ix.clone();
+        swap_account(&mut to_usdc_vault, &mine_usdc, usdc_vault);
+        assert!(failed_with_code(&hunt(&mut env, &hunter, to_usdc_vault), duplicate));
+        // Each recipient must hold its own token
+        let mint: u32 = anchor_lang::error::ErrorCode::ConstraintTokenMint.into();
+        let mut crossed = ix.clone();
+        swap_account(&mut crossed, &mine_sol, Pubkey::default());
+        swap_account(&mut crossed, &mine_usdc, mine_sol);
+        swap_account(&mut crossed, &Pubkey::default(), mine_usdc);
+        assert!(failed_with_code(&hunt(&mut env, &hunter, crossed), mint));
+        // A pool vault that is not the pool's own is Raydium's to refuse
+        let elsewhere = env.fund(&sol, &Pubkey::new_unique(), 0);
+        let mut wrong_vault = ix.clone();
+        swap_account(&mut wrong_vault, &clmm.vault_0, elsewhere);
+        assert!(hunt(&mut env, &hunter, wrong_vault).is_err());
+        // A position the account does not hold
+        let stranger = env.user();
+        let steal = env.compound_raydium_ix(&hunter.pubkey(), &stranger.pubkey(), &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), &[]);
+        expect_err(hunt(&mut env, &hunter, steal), PluribusError::PositionNotFound);
+
+        assert_eq!(env.balance(&sol, &hunter.pubkey()) + env.balance(&usdc, &hunter.pubkey()), 0);
+        // And the untouched instruction still works
+        expect_ok(hunt(&mut env, &hunter, ix));
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn compound_raydium_with_no_fees_changes_nothing() {
+    for (mut env, clmm) in chains() {
+        let user = env.user();
+        let me = user.pubkey();
+        // No trades, so the position has earned nothing
+        let lp = clmm.open(&mut env, &user, 120.0, 180.0, 1_000);
+        expect_ok(env.send(&[env.deposit_lp_ix(&me, &clmm.pool, &lp.nft)], &[&user]));
+        let hunter = set_up_compounding(&mut env, &user, &lp.nft, 100);
+        let (held, liquidity) = (clmm.held(&env), liquidity_of(&env, &clmm, &lp));
+
+        let compound = env.compound_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), &[]);
+        expect_ok(hunt(&mut env, &hunter, compound));
+        assert_eq!((clmm.held(&env), liquidity_of(&env, &clmm, &lp)), (held, liquidity));
+        assert_eq!(env.balance(&env.sol, &hunter.pubkey()) + env.balance(&env.usdc, &hunter.pubkey()), 0);
+        assert!(env.credit(&me).positions.iter().all(|p| p.kind != KIND_TOKEN));
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn compound_raydium_pays_a_pools_rewards_only_to_the_accounts_owner() {
+    for (mut env, clmm) in chains() {
+        let (user, hunter, lp) = compounding(&mut env, &clmm, 100);
+        let me = user.pubkey();
+        // The pool runs a reward, which Raydium wants three accounts for: its vault, a recipient and its mint
+        let reward = env.new_mint(6, &TOKEN);
+        let vault = env.fund(&reward, &Pubkey::new_unique(), 0);
+        let mut pool = env.svm.get_account(&clmm.pool).unwrap();
+        pool.data[REWARD_INFOS + REWARD_MINT..REWARD_INFOS + REWARD_MINT + 32].copy_from_slice(reward.as_ref());
+        pool.data[REWARD_INFOS + REWARD_VAULT..REWARD_INFOS + REWARD_VAULT + 32].copy_from_slice(vault.as_ref());
+        env.svm.set_account(clmm.pool, pool).unwrap();
+        let group = |recipient: Pubkey| [AccountMeta::new(vault, false), AccountMeta::new(recipient, false), AccountMeta::new_readonly(reward, false)];
+        let compound = |env: &Env, extra: &[AccountMeta]| env.compound_raydium_ix(&hunter.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &hunter.pubkey(), extra);
+
+        // A reward paid to the hunter, or to any account but the owner's, would be the owner's money skimmed
+        let hunters = env.fund(&reward, &hunter.pubkey(), 0);
+        let skim = compound(&env, &group(hunters));
+        expect_err(hunt(&mut env, &hunter, skim), PluribusError::AccountMismatch);
+
+        // The owner's account takes it, and the bitmap extension among the accounts is not mistaken for a reward group
+        let owners = env.fund(&reward, &me, 0);
+        let extension = AccountMeta::new(clmm.bitmap_extension(), false);
+        let extra = [&[extension][..], &group(owners)].concat();
+        let paid = compound(&env, &extra);
+        expect_ok(hunt(&mut env, &hunter, paid));
+        assert!(env.balance(&env.sol, &hunter.pubkey()) > 0);
+        assert_books_match_vaults(&env);
+    }
+}

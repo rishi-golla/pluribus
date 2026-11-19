@@ -1252,6 +1252,43 @@ impl Env {
         )
     }
 
+    /// `clmm` and `extra` as for `autopay_raydium_ix`; the bounty goes to `recipient`'s associated token accounts
+    pub fn compound_raydium_ix(&self, caller: &Pubkey, owner: &Pubkey, pool: &Pubkey, nft: &Pubkey, clmm: [Pubkey; 5], recipient: &Pubkey, extra: &[AccountMeta]) -> Instruction {
+        let program = self.svm.get_account(nft).unwrap().owner;
+        let market: LpMarket = self.load(&self.lp_market_pda(pool));
+        let mut metas = pluribus::accounts::CompoundRaydium {
+            caller: *caller,
+            credit: self.credit_pda(owner),
+            pool: self.pool,
+            lp_market: self.lp_market_pda(pool),
+            clmm_pool: *pool,
+            position: position_pda(&market.dex_program, nft).0,
+            position_mint: *nft,
+            vault_nft: ata(&self.pool, nft, &program),
+            protocol_position: clmm[4],
+            clmm_vault_0: clmm[0],
+            clmm_vault_1: clmm[1],
+            tick_array_lower: clmm[2],
+            tick_array_upper: clmm[3],
+            base_asset: self.asset_pda(&market.base_mint),
+            base_mint: market.base_mint,
+            base_vault: self.vault_pda(&market.base_mint),
+            base_price: self.price_account(&market.base_mint),
+            usdc_asset: self.asset_pda(&self.usdc),
+            usdc_collateral_vault: self.vault_pda(&self.usdc),
+            usdc_mint: self.usdc,
+            bounty_base: ata(recipient, &market.base_mint, &TOKEN),
+            bounty_usdc: ata(recipient, &self.usdc, &TOKEN),
+            token_program: TOKEN,
+            token_program_2022: TOKEN_2022,
+            memo_program: MEMO_PROGRAM_ID,
+            dex_program: market.dex_program,
+        }
+        .to_account_metas(None);
+        metas.extend_from_slice(extra);
+        self.ix(pluribus::instruction::CompoundRaydium {}.data(), metas, None)
+    }
+
     /// `orca` lists the Whirlpool's accounts for this position: tick array lower, tick array upper, token vault A, token vault B
     pub fn autopay_ix(&self, caller: &Pubkey, owner: &Pubkey, whirlpool: &Pubkey, nft: &Pubkey, orca: [Pubkey; 4]) -> Instruction {
         let program = self.svm.get_account(nft).unwrap().owner;
