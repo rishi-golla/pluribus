@@ -9,6 +9,7 @@ import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel } from "@/components/charts/LineChart";
 import { useAccount, type Live } from "@/components/app/providers";
+import { CompoundPanel } from "@/components/compound/CompoundPanel";
 import { niceMax } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
@@ -557,6 +558,7 @@ export function OverviewDashboard() {
         <VolumePanel stats={stats} />
         <FeesPanel />
       </section>
+      <CompoundPanel />
       <MixPanel markets={markets} />
       <MarketsTable markets={markets} />
     </main>

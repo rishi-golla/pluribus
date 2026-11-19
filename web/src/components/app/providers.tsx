@@ -4,12 +4,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check, Info, TriangleAlert } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { WalletProvider, useWallet, type WalletContextState } from "@solana/wallet-adapter-react";
-import { Keypair, PublicKey, type Signer, type TransactionInstruction } from "@solana/web3.js";
+import { Keypair, PublicKey, type Signer, type TransactionInstruction, type VersionedTransaction } from "@solana/web3.js";
 import { AUTOPAY_PER_MONTH, BORROW_APR, COLLATERAL_VALUE, CREDIT_LIMIT, CURRENT_DEBT, MONTHS, debtDelta, sleep, type AccountEvent, type Month } from "@/lib/account";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
 import { DemoWalletAdapter } from "@/lib/demo-wallet";
 import { fetchEvents, loadLive, monthsOf, type LiveData, type DlmmMarket } from "@/lib/live";
-import { MAX_U64, getProgram, ix } from "@/lib/pluribus/sdk";
+import { MAX_U64, compound, getProgram, ix } from "@/lib/pluribus/sdk";
 import { explain, sendInstructions, type Stage } from "@/lib/tx";
 
 /* ---------- Toasts ---------- */
@@ -107,6 +107,17 @@ export type Live = LiveData & {
   settleSeniorHead: (onStage: OnStage) => Promise<boolean>;
   /** Closes the credit account once it has no debt and no collateral, returning its rent */
   closeAccount: (onStage: OnStage) => Promise<boolean>;
+  /**
+   * Sets what a held LP or Meteora position does with its fees: compound them back into it while the pool's price is within `bps`
+   * of the oracle's (up to 1000), or 0 to repay debt through autopay
+   */
+  setCompound: (position: string, bps: number, onStage: OnStage) => Promise<boolean>;
+  /** Sends instructions the wallet alone signs, reporting a failure to the user and reading the chain again after a success */
+  send: (build: () => Promise<TransactionInstruction[]>, onStage: OnStage) => Promise<boolean>;
+  /** Has the wallet sign a batch of transactions in one prompt, one by one when it cannot sign a batch */
+  signAll: (txs: VersionedTransaction[]) => Promise<VersionedTransaction[]>;
+  /** Reads the chain again, for what changed outside the app's own transactions */
+  reload: () => Promise<void>;
 };
 
 type Account = {
@@ -444,6 +455,16 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         cancelSeniorExit: (ticket, onStage) => run(() => ix.cancelSeniorExit(program, me, ticket), onStage),
         settleSeniorHead: (onStage) => run(() => ix.settleSeniorExit(program, d, me), onStage),
         closeAccount: (onStage) => run(() => ix.closeAccount(program, me), onStage),
+          setCompound: (position, bps, onStage) => run(() => compound.setCompound(program, me, new PublicKey(position), bps), onStage),
+        send: (build, onStage) => run(build, onStage),
+        signAll: async (txs) => {
+          if (wallet.signAllTransactions) return wallet.signAllTransactions(txs);
+          if (!wallet.signTransaction) throw new Error("This wallet cannot sign transactions without sending them");
+          const signed: VersionedTransaction[] = [];
+          for (const tx of txs) signed.push(await wallet.signTransaction(tx));
+          return signed;
+        },
+        reload: refresh,
       },
     };
   }, [current, wallet, loading, error, retry, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);

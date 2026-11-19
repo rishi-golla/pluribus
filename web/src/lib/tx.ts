@@ -1,5 +1,5 @@
 import type { WalletContextState } from "@solana/wallet-adapter-react";
-import { Transaction, type Connection, type TransactionInstruction, type Signer } from "@solana/web3.js";
+import { Transaction, type Connection, type Keypair, type TransactionInstruction, type Signer } from "@solana/web3.js";
 import { CLUSTER, deployment } from "./cluster";
 import { buildTransaction } from "./pluribus/sdk";
 import idl from "./pluribus/sdk/idl/pluribus.json";
@@ -16,6 +16,9 @@ const NEXT_STEP: Record<string, string> = {
   PriceTooUncertain: "Wait for a steadier price, then try again",
   ExceedsCreditLimit: "Repay debt or add collateral first",
   InsufficientLiquidity: "Try a smaller amount, or wait for repayments",
+  CompoundOff: "Its owner has turned compounding off, so check again",
+  CompoundOn: "Its fees are compounded instead, so autopay leaves it alone",
+  PoolPriceOff: "Try again when the pool's price is back near the oracle's",
 };
 
 /** Whether a legacy transaction stays within Solana's 1232-byte packet once signed */
@@ -60,6 +63,20 @@ export async function sendInstructions(
       ? await connection.sendRawTransaction((await wallet.signTransaction(tx)).serialize())
       : await wallet.sendTransaction(tx, connection);
   onStage("confirming");
+  const { value } = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
+  if (value.err) throw new Error(JSON.stringify(value.err));
+  return signature;
+}
+
+/**
+ * Sends the instructions as one transaction signed by a key the app holds itself, such as the auto-compound session key, and
+ * waits until it is confirmed. Returns the signature. Legacy format, so it is for short transactions with no health check
+ */
+export async function sendAsKeypair(connection: Connection, keypair: Keypair, instructions: TransactionInstruction[]) {
+  const latest = await connection.getLatestBlockhash();
+  const tx = new Transaction({ feePayer: keypair.publicKey, ...latest }).add(...instructions);
+  tx.sign(keypair);
+  const signature = await connection.sendRawTransaction(tx.serialize());
   const { value } = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
   if (value.err) throw new Error(JSON.stringify(value.err));
   return signature;
