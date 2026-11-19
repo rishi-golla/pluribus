@@ -84,7 +84,21 @@ Some collateral backs no new debt while still protecting debt already drawn:
 
 ### Autopay
 
-Anyone can collect the trading fees of a deposited liquidity position: an Orca position in the main SOL/USDC pool, a Raydium position or a Meteora position. The USDC part repays your debt. The SOL part, and any USDC beyond the debt, stays in the account as collateral. The keeper does this every 10 minutes by default. It cannot be switched off. Any pool rewards Raydium pays out at the same time go to your own wallet.
+Anyone can collect the trading fees of a deposited liquidity position: an Orca position in the main SOL/USDC pool, a Raydium position or a Meteora position. The USDC part repays your debt. The SOL part, and any USDC beyond the debt, stays in the account as collateral. The keeper does this every 10 minutes by default. It cannot be switched off, but a position can compound its fees instead (see below). Any pool rewards Raydium pays out at the same time go to your own wallet.
+
+#### Compounding
+
+Instead of repaying debt, a position's fees can go back into the position. You choose per position, on the Borrow page, by the **Fees** button on its collateral row: **repay debt** (autopay, the default) or **compound within** a tolerance.
+
+- **What happens.** Anyone can compound the position: the fees are collected, a share of them is paid to whoever compounds, the rest is added back to the position, and anything the position's range cannot take stays in your account as collateral. Compounding can only raise your health. While it is on, autopay leaves the position alone, so its fees no longer repay debt.
+- **Tolerance.** Compounding only runs while the pool's price is within your tolerance of the oracle's price, which stops someone moving the pool price to compound at your cost. The Borrow page offers 0.5%, 1% and 2%, or a custom value up to 10%. A looser tolerance lets compounding run more often, but exposes more of the fees to price manipulation.
+- **Bounty.** The share of the fees paid to whoever compounds is set by the pool's admin, 5% at most. It is shown next to the setting.
+- **Orca and Meteora.** Orca positions in the main pool compound today. Raydium and Meteora positions can be set to compound too, but until their compounders are live their fees stay in the position instead of repaying debt.
+
+**Compound for everyone.** The Overview page, and a line on the Borrow page, list the positions that can be compounded now and the bounty they would pay. You do not need a position of your own, only a wallet. The first time, **Create accounts** makes the token accounts the bounty is paid into. Then there are two ways to run it:
+
+- **Compound all** signs every batch in one wallet prompt, and the bounty goes to your wallet. A batch that fails does not stop the others.
+- **Auto-compound** keeps a throwaway key in your browser. One wallet prompt sends it 0.01 SOL for fees. While the tab is open, every few minutes the key looks for positions, compounds them and sends the bounty to your wallet, with a log and running totals. **Stop** ends it, and **Return SOL** sends the key's remaining SOL back. The key only pays fees and compounds, and it never holds your funds.
 
 ### Repaying and withdrawing
 
