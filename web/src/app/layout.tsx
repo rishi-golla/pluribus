@@ -13,8 +13,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// the logo as a data url: the repo ignores .svg files, so an icon file would never reach a fresh clone
+const ICON =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#0c0c0c"/><g fill="#c6f432" transform="translate(4 4)"><rect width="15" height="15"/><rect x="16" width="8" height="8"/><rect y="16" width="15" height="8"/><rect x="16" y="9" width="8" height="15"/></g></svg>',
+  );
+
 export const metadata: Metadata = {
   title: "Pluribus | Borrow against everything you hold",
+  icons: { icon: ICON },
   description:
     "Borrow USDC against your SOL, staked SOL, liquidity positions, tokenized stocks and memecoins in one loan. No end date, and your LP fees pay it down.",
 };
