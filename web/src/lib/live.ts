@@ -101,14 +101,24 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const estimate = math.limits(risks, shock, prices);
   // The program's own figures whenever its view runs, and the float estimate when there is no account or the view fails
   const account = health
-    ? { debt: num(health.debt), creditLimit: num(health.creditLimit), liquidationLimit: num(health.liquidationLimit), collateralValue: num(health.collateralValue), rateBps: health.borrowRateBps }
+    ? {
+        debt: num(health.debt),
+        creditLimit: num(health.creditLimit),
+        liquidationLimit: num(health.liquidationLimit),
+        collateralValue: num(health.collateralValue),
+        rateBps: health.borrowRateBps,
+        premiumBps: health.premiumRateBps,
+      }
     : {
         debt: credit ? (Number(credit.debtShares.toString()) * Number(pool.borrowIndex[tier].toString())) / 1e24 : 0,
         creditLimit: estimate.creditLimit,
         liquidationLimit: estimate.liquidationLimit,
         collateralValue: estimate.collateralValue,
-        rateBps: stats.borrowRateBps - params.tierDiscountBps[tier],
+        // The premium the account was last charged, scaled by its tier's share
+        premiumBps: credit ? (credit.premiumBps * pool.premiumTierBps[tier]) / 1e4 : 0,
+        rateBps: 0,
       };
+  if (!health) account.rateBps = stats.borrowRateBps - params.tierDiscountBps[tier] + account.premiumBps;
   const scale = sums[binding] > 0 ? account.creditLimit / sums[binding] : 0;
 
   const collateral: Collateral[] = positions.map((p, i) => {
@@ -204,7 +214,15 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     tier,
     healthyDays: credit ? Math.floor((now - credit.healthySince.toNumber()) / DAY) : 0,
     /** Parts of the borrow rate, which add up to `borrowApr` */
-    rate: { base: params.baseRateBps / 1e4, utilization: (borrowRateBps + params.tierDiscountBps[tier] - params.baseRateBps) / 1e4, discount: params.tierDiscountBps[tier] / 1e4 },
+    rate: {
+      base: params.baseRateBps / 1e4,
+      utilization: (borrowRateBps - account.premiumBps + params.tierDiscountBps[tier] - params.baseRateBps) / 1e4,
+      discount: params.tierDiscountBps[tier] / 1e4,
+      /** The collateral's risk premium after the tier's share, paid to junior lenders */
+      premium: account.premiumBps / 1e4,
+    },
+    /** Share of each asset's risk premium charged in each loyalty tier */
+    premiumTiers: pool.premiumTierBps.map((bps) => bps / 1e4),
     tiers: params.tierDiscountBps.map((bps, t) => ({ discount: bps / 1e4, minDays: params.tierMinHealthySecs[t].toNumber() / DAY })),
     collateral,
     prices,

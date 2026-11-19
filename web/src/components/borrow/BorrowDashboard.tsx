@@ -45,6 +45,8 @@ function CreditHero({ p }: { p: Projection }) {
         ["Base rate", pct(live.rate.base)],
         [`Utilization, ${(live.pool.utilization * 100).toFixed(1)}%`, `+${pct(live.rate.utilization)}`],
         [`Loyalty, ${live.healthyDays} healthy days`, `${live.rate.discount ? "-" : ""}${pct(live.rate.discount)}`],
+        // Risky collateral pays juniors for taking the first loss, less as the account earns loyalty tiers
+        ...(live.rate.premium > 0 ? [["Risk premium, collateral mix", `+${pct(live.rate.premium)}`]] : []),
       ]
     : [
         ["Base rate", "7.80%"],
