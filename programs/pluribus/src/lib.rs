@@ -119,6 +119,10 @@ pub mod pluribus {
         autopay::handle_autopay(ctx)
     }
 
+    pub fn autopay_raydium<'info>(ctx: Context<'info, AutopayRaydium<'info>>) -> Result<()> {
+        autopay_raydium::handle_autopay_raydium(ctx)
+    }
+
     pub fn accrue(ctx: Context<Accrue>) -> Result<()> {
         keeper::handle_accrue(ctx)
     }

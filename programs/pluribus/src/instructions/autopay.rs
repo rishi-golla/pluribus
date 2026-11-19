@@ -66,7 +66,7 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
     a.pool.accrue(Clock::get()?.unix_timestamp)?;
     let mint = a.position_mint.key();
     a.credit.find(KIND_LP, &mint)?;
-    // Fees are collected through Orca with the base token in vault A, so other markets keep their fees in the position
+    // Fees are collected through Orca with the base token in vault A, and Raydium markets have autopay_raydium
     require!(a.lp_market.dex_program == WHIRLPOOL_PROGRAM_ID && a.lp_market.base_first, PluribusError::UnsupportedDex);
     let orca = read_position(&a.position)?;
     require_keys_eq!(orca.position_mint, mint, PluribusError::AccountMismatch);
@@ -94,6 +94,7 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
     )?;
 
     // The pool PDA holds the NFT, so it signs as the position authority and fees land in our own vaults
+    let before = (a.base_vault.amount, a.usdc_collateral_vault.amount);
     let collect = Instruction {
         program_id: WHIRLPOOL_PROGRAM_ID,
         accounts: vec![
@@ -126,39 +127,72 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
         &[&seeds],
     )?;
 
-    // What arrived is measured from the vault balances, not taken from Orca's word
-    let (base_before, usdc_before) = (a.base_vault.amount, a.usdc_collateral_vault.amount);
-    a.base_vault.reload()?;
-    a.usdc_collateral_vault.reload()?;
-    let base_fee = a.base_vault.amount.saturating_sub(base_before);
-    let usdc_fee = a.usdc_collateral_vault.amount.saturating_sub(usdc_before);
+    Harvest {
+        caller: a.caller.key(),
+        pool: &mut a.pool,
+        credit: &mut a.credit,
+        base_asset: &mut a.base_asset,
+        base_vault: &mut a.base_vault,
+        usdc_asset: &mut a.usdc_asset,
+        usdc_collateral_vault: &mut a.usdc_collateral_vault,
+        usdc_mint: &a.usdc_mint,
+        usdc_vault: &a.usdc_vault,
+        token_program: &a.token_program,
+    }
+    .book(before)
+}
 
-    if base_fee > 0 {
-        let base_mint = a.base_asset.mint;
-        a.credit.add_token(&base_mint, base_fee)?;
-        a.base_asset.total_deposited = a.base_asset.total_deposited.saturating_add(base_fee);
-        emit!(CollateralChanged { account: a.credit.key(), mint: base_mint, kind: KIND_TOKEN, amount: base_fee, deposit: true });
-    }
+/// The accounts a harvest pays into, the same whichever dex the fees came from
+pub(crate) struct Harvest<'a, 'info> {
+    pub caller: Pubkey,
+    pub pool: &'a mut Account<'info, Pool>,
+    pub credit: &'a mut Account<'info, CreditAccount>,
+    pub base_asset: &'a mut Account<'info, Asset>,
+    pub base_vault: &'a mut InterfaceAccount<'info, TokenAccount>,
+    pub usdc_asset: &'a mut Account<'info, Asset>,
+    pub usdc_collateral_vault: &'a mut InterfaceAccount<'info, TokenAccount>,
+    pub usdc_mint: &'a InterfaceAccount<'info, Mint>,
+    pub usdc_vault: &'a InterfaceAccount<'info, TokenAccount>,
+    pub token_program: &'a Interface<'info, TokenInterface>,
+}
 
-    let owed = to_u64((usdc_fee as u128).min(a.pool.debt_of(&a.credit)?))?;
-    // An amount too small to retire a debt share is kept as collateral instead
-    let paid = if owed > 0 && a.pool.retires_debt(&a.credit, owed)? { a.pool.repay(&mut a.credit, owed)? } else { 0 };
-    if paid > 0 {
-        push(&a.token_program, &a.usdc_mint, &a.usdc_collateral_vault, &a.usdc_vault, &a.pool, paid)?;
-        emit!(Repaid {
-            account: a.credit.key(),
-            payer: a.caller.key(),
-            amount: paid,
-            debt: to_u64(a.pool.debt_of(&a.credit)?)?,
-            source: 1,
-        });
+impl Harvest<'_, '_> {
+    /// Books the fees a collect delivered into the collateral vaults, given their balances (base, USDC) before it
+    /// The USDC part repays debt and the rest stays in the account as collateral
+    pub fn book(self, before: (u64, u64)) -> Result<()> {
+        // What arrived is measured from the vault balances, not taken from the dex's word
+        self.base_vault.reload()?;
+        self.usdc_collateral_vault.reload()?;
+        let base_fee = self.base_vault.amount.saturating_sub(before.0);
+        let usdc_fee = self.usdc_collateral_vault.amount.saturating_sub(before.1);
+
+        if base_fee > 0 {
+            let base_mint = self.base_asset.mint;
+            self.credit.add_token(&base_mint, base_fee)?;
+            self.base_asset.total_deposited = self.base_asset.total_deposited.saturating_add(base_fee);
+            emit!(CollateralChanged { account: self.credit.key(), mint: base_mint, kind: KIND_TOKEN, amount: base_fee, deposit: true });
+        }
+
+        let owed = to_u64((usdc_fee as u128).min(self.pool.debt_of(self.credit)?))?;
+        // An amount too small to retire a debt share is kept as collateral instead
+        let paid = if owed > 0 && self.pool.retires_debt(self.credit, owed)? { self.pool.repay(self.credit, owed)? } else { 0 };
+        if paid > 0 {
+            push(self.token_program, self.usdc_mint, self.usdc_collateral_vault, self.usdc_vault, self.pool, paid)?;
+            emit!(Repaid {
+                account: self.credit.key(),
+                payer: self.caller,
+                amount: paid,
+                debt: to_u64(self.pool.debt_of(self.credit)?)?,
+                source: 1,
+            });
+        }
+        let kept = usdc_fee - paid;
+        if kept > 0 {
+            let usdc = self.usdc_mint.key();
+            self.credit.add_token(&usdc, kept)?;
+            self.usdc_asset.total_deposited = self.usdc_asset.total_deposited.saturating_add(kept);
+            emit!(CollateralChanged { account: self.credit.key(), mint: usdc, kind: KIND_TOKEN, amount: kept, deposit: true });
+        }
+        Ok(())
     }
-    let kept = usdc_fee - paid;
-    if kept > 0 {
-        let usdc = a.usdc_mint.key();
-        a.credit.add_token(&usdc, kept)?;
-        a.usdc_asset.total_deposited = a.usdc_asset.total_deposited.saturating_add(kept);
-        emit!(CollateralChanged { account: a.credit.key(), mint: usdc, kind: KIND_TOKEN, amount: kept, deposit: true });
-    }
-    Ok(())
 }
