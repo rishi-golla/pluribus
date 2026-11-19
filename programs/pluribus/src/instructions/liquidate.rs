@@ -8,13 +8,13 @@ use crate::{
 /// Health is the margin between the liquidation limit and the debt, and a liquidation must not shrink it
 /// The ratio cannot be the test because any bonus lowers it once it is under (1 + bonus) * weight
 /// That would block liquidations on the accounts furthest under water
-fn require_not_worse(debt: u128, limit: u128, debt_after: u128, limit_after: u128) -> Result<()> {
+pub(crate) fn require_not_worse(debt: u128, limit: u128, debt_after: u128, limit_after: u128) -> Result<()> {
     require!(debt_after + limit <= debt + limit_after, PluribusError::HealthNotImproved);
     Ok(())
 }
 
 /// After any liquidation: back to the base rate tier, and write off debt nothing backs any more
-fn settle(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i64) -> Result<()> {
+pub(crate) fn settle(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i64) -> Result<()> {
     credit.healthy_since = now;
     if credit.tier != 0 {
         let from = credit.tier;
