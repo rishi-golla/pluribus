@@ -26,7 +26,10 @@ A credit account holds up to 5 positions. You borrow USDC against all of them to
 | USDC | yes |
 | JitoSOL and JupSOL, mock staked SOL | yes |
 | AAPLx, a mock Token-2022 stock | yes |
-| Raydium SOL/USDC liquidity position | SDK only; backs debt from 26 Nov 2026, once its activation delay has passed |
+| BONK, a mock memecoin | yes |
+| Raydium SOL/USDC liquidity position | SDK only |
+
+JitoSOL and JupSOL are priced from their live Pyth feeds. SOL, NVDAx, AAPLx and BONK use demo prices the admin sets, so the demo can crash them on purpose. BONK is priced per million tokens, since a single token is worth a tiny fraction of a cent.
 
 ### Credit limit
 
@@ -58,9 +61,17 @@ Some collateral backs no new debt while still protecting debt already drawn:
 - Falling under the warning health, or being liquidated, returns the account to the base tier.
 - A tier changes only when someone sends `refresh_tier`. The keeper does this.
 
+### Risk premium
+
+- Risky collateral adds a premium to your rate: 15% a year for BONK and 3% for NVDAx and AAPLx on devnet. SOL, staked SOL, USDC and their liquidity positions add none.
+- Your premium is each position's premium weighted by how much it adds to your credit limit in a crash. BONK that makes up a quarter of your borrowing power adds a quarter of its premium.
+- It fades with your tier: you pay the full premium at the base tier, 60% after 7 healthy days and 30% after 30.
+- It is charged as debt and paid to junior lenders, who take the first loss if risky collateral fails.
+- It is recalculated when you draw or withdraw, and by the keeper about every 10 minutes. The Borrow page lists it in the rate breakdown.
+
 ### Autopay
 
-Anyone can collect the trading fees of a deposited Orca position in the main SOL/USDC pool. The USDC part repays your debt. The SOL part, and any USDC beyond the debt, stays in the account as collateral. The keeper does this every 10 minutes by default. It cannot be switched off. Raydium positions keep their fees until you withdraw them.
+Anyone can collect the trading fees of a deposited Orca position in the main SOL/USDC pool. The USDC part repays your debt. The SOL part, and any USDC beyond the debt, stays in the account as collateral. The keeper does this every 10 minutes by default. It cannot be switched off. Raydium positions are harvested the same way; any pool rewards Raydium pays out at the same time go to your own wallet.
 
 ### Repaying and withdrawing
 
@@ -146,11 +157,11 @@ As deployed on 18 Nov 2026. `doc_and_refs/TUNES.md` lists every setting with its
 
 Draw shock, then liquidation shock, per scenario.
 
-| Scenario | SOL | Stocks | USDC | Staked SOL |
-|---|---|---|---|---|
-| Crypto crash | 30% / 20% | 15% / 10% | 3% / 1% | 35% / 23% |
-| Equity crash | 15% / 10% | 35% / 25% | 3% / 1% | 20% / 13% |
-| Broad selloff | 25% / 17% | 25% / 17% | 3% / 1% | 30% / 20% |
+| Scenario | SOL | Stocks | USDC | Staked SOL | Memecoins |
+|---|---|---|---|---|---|
+| Crypto crash | 30% / 20% | 15% / 10% | 3% / 1% | 35% / 23% | 60% / 45% |
+| Equity crash | 15% / 10% | 35% / 25% | 3% / 1% | 20% / 13% | 30% / 20% |
+| Broad selloff | 25% / 17% | 25% / 17% | 3% / 1% | 30% / 20% | 50% / 38% |
 
 ### What $10,000 of collateral supports
 
@@ -160,6 +171,7 @@ Draw shock, then liquidation shock, per scenario.
 | JitoSOL or JupSOL | 6% | $6,110 | $7,238 |
 | NVDAx or AAPLx | 10% | $5,850 | $6,750 |
 | USDC | 0% | $9,700 | $9,900 |
+| BONK | 15% | $3,400 | $4,675 |
 | $5,000 SOL + $5,000 NVDAx | | $6,937.50 | $7,650 |
 
 Held in two separate accounts, the last row would have a credit limit of $6,250.
@@ -172,6 +184,8 @@ Held in two separate accounts, the last row would have a credit limit of $6,250.
 | Kink | 90% utilization |
 | Share of interest to the reserve, the protocol, lenders | 10%, 10%, 80% |
 | Tier discounts | 0.40% after 7 healthy days, 0.80% after 30 |
+| Risk premiums | BONK 15%, NVDAx and AAPLx 3%, others 0% |
+| Share of the premium charged per tier | 100%, 60%, 30% |
 | Warning health | 1.10 |
 | Liquidation bonus | 5% |
 | Close factor | 50% of the debt per transaction |
