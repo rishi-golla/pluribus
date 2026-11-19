@@ -217,7 +217,17 @@ export function EarnUpTo({ className }: { className?: string }) {
   // no yield is claimed when the pool could not be read
   if (facts === null) return null;
   return (
-    <p className={className}>{facts ? `Earn up to ${facts.apy.junior.toFixed(1)}% lending USDC.` : "\u00a0"}</p>
+    <p className={className}>
+      {facts ? (
+        <>
+          Earn up to{" "}
+          {/* the figure is the point of the line, so it is the one thing in the hero's text that takes the accent */}
+          <span className="mx-0.5 text-[1.9em] leading-none tracking-[-0.03em] text-brand">{facts.apy.junior.toFixed(1)}%</span> APY lending USDC.
+        </>
+      ) : (
+        "\u00a0"
+      )}
+    </p>
   );
 }
 
