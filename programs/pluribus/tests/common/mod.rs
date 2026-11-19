@@ -521,6 +521,12 @@ impl Env {
                     let market: LpMarket = self.load(&self.lp_market_pda(&whirlpool));
                     keys.extend([self.lp_market_pda(&whirlpool), position, self.asset_pda(&market.base_mint), self.price_account(&market.base_mint)]);
                 }
+                KIND_DLMM => {
+                    // A Meteora position names its pair right after the discriminator
+                    let pair = Pubkey::new_from_array(self.svm.get_account(&p.mint).unwrap().data[8..40].try_into().unwrap());
+                    let market: LpMarket = self.load(&self.lp_market_pda(&pair));
+                    keys.extend([self.lp_market_pda(&pair), pair, p.mint, self.asset_pda(&market.base_mint), self.price_account(&market.base_mint)]);
+                }
                 _ => {}
             }
         }

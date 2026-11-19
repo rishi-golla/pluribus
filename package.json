@@ -8,6 +8,7 @@
     "orca:fixture": "tsx scripts/orca-fixture.ts",
     "orca:snapshot": "tsx scripts/orca-snapshot.ts",
     "orca:verify": "tsx scripts/orca-verify.ts",
+    "dlmm:snapshot": "tsx scripts/dlmm-snapshot.ts",
     "idl": "mkdir -p sdk/idl && cp target/idl/pluribus.json target/types/pluribus.ts sdk/idl/",
     "sdk:sync": "mkdir -p deployments web/src/lib/pluribus && rsync -a --delete sdk deployments web/src/lib/pluribus/",
     "localnet": "tsx scripts/localnet.ts",
