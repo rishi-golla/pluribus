@@ -3,6 +3,7 @@ import BN from "bn.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   NATIVE_MINT,
+  TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
   createCloseAccountInstruction,
@@ -10,6 +11,7 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, type TransactionInstruction } from "@solana/web3.js";
+import { Buffer } from "buffer";
 import {
   type AssetParams,
   type Deployment,
@@ -17,6 +19,7 @@ import {
   type PoolParams,
   KIND_TOKEN,
   WHIRLPOOL_PROGRAM_ID,
+  decodeLpPosition,
   decodeOrcaPosition,
   fetchCredit,
   type CreditAccount,
@@ -594,7 +597,7 @@ export async function refreshTier(program: PluribusProgram, d: Deployment, owner
 }
 
 // Collects a deposited position's Orca fees: the USDC part repays `owner`'s debt and the SOL part becomes collateral
-// Only for the main whirlpool: other markets keep their fees in the position
+// Only for the main whirlpool: Raydium markets have `autopayRaydium`
 export async function autopay(
   program: PluribusProgram,
   d: Deployment,
@@ -629,6 +632,105 @@ export async function autopay(
         whirlpoolVaultB: key(d.whirlpoolVaultB),
         whirlpoolProgram: WHIRLPOOL_PROGRAM_ID,
       })
+      .instruction(),
+  ];
+}
+
+const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const i32be = (n: number) => {
+  const b = Buffer.alloc(4);
+  b.writeInt32BE(n);
+  return b;
+};
+
+// What autopay needs of a Raydium pool account, read at its fixed offsets:
+// disc 8 | bump 1 | config 32 | creator 32 | mints 2x32 | vaults 2x32 | observation 32 | decimals 2 | tick spacing u16 at 235,
+// and from 397 three reward infos of 169 bytes, each with its mint at +57 and its vault at +89
+function decodeRaydiumPool(data: Buffer) {
+  const at = (offset: number) => new PublicKey(data.subarray(offset, offset + 32));
+  const rewards = [0, 1, 2]
+    .map((i) => ({ mint: at(397 + 169 * i + 57), vault: at(397 + 169 * i + 89) }))
+    .filter((r) => !r.mint.equals(PublicKey.default));
+  return { vault0: at(137), vault1: at(169), spacing: data.readUInt16LE(235), rewards };
+}
+
+// Collects a deposited Raydium position's fees like `autopay` does for Orca: the USDC part repays `owner`'s debt and the
+// base token part becomes collateral
+// Raydium pays out a position's rewards in the same call, and the program only lets them go to `owner`,
+// so the owner's account for each reward token is created first when it is missing
+export async function autopayRaydium(
+  program: PluribusProgram,
+  d: Deployment,
+  caller: PublicKey,
+  owner: PublicKey,
+  positionMint: PublicKey,
+  pool: PublicKey,
+): Ixs {
+  const market = lpMarketOf(d, pool);
+  const [usdc, position] = [key(d.usdcMint), pda.lpPosition(market.dexProgram, positionMint)];
+  const [mint, account, poolAccount] = await program.provider.connection.getMultipleAccountsInfo([positionMint, position, pool]);
+  if (!mint || !account || !poolAccount) throw new Error(`Raydium position for ${positionMint.toBase58()} not found`);
+  const { tickLower, tickUpper } = decodeLpPosition(market.dexProgram, account.data);
+  const clmm = decodeRaydiumPool(poolAccount.data);
+  // A tick array spans 60 ticks of the pool's spacing, and sits at its start index as four big-endian bytes
+  const span = 60 * clmm.spacing;
+  const tickArray = (tick: number) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("tick_array"), pool.toBuffer(), i32be(Math.floor(tick / span) * span)],
+      market.dexProgram,
+    )[0];
+  const protocolPosition = PublicKey.findProgramAddressSync(
+    [Buffer.from("position"), pool.toBuffer(), i32be(tickLower), i32be(tickUpper)],
+    market.dexProgram,
+  )[0];
+  // Passed whether the position needs it or not, which Raydium only reads when it does
+  const bitmapExtension = PublicKey.findProgramAddressSync(
+    [Buffer.from("pool_tick_array_bitmap_extension"), pool.toBuffer()],
+    market.dexProgram,
+  )[0];
+  const rewardMints = await program.provider.connection.getMultipleAccountsInfo(clmm.rewards.map((r) => r.mint));
+  const creates: TransactionInstruction[] = [];
+  const remaining = [{ pubkey: bitmapExtension, isSigner: false, isWritable: true }];
+  clmm.rewards.forEach((r, i) => {
+    const tokenProgram = rewardMints[i]?.owner;
+    if (!tokenProgram) throw new Error(`Reward mint ${r.mint.toBase58()} not found`);
+    const recipient = ata(r.mint, owner, tokenProgram);
+    creates.push(createAssociatedTokenAccountIdempotentInstruction(caller, recipient, owner, r.mint, tokenProgram));
+    remaining.push(
+      { pubkey: r.vault, isSigner: false, isWritable: true },
+      { pubkey: recipient, isSigner: false, isWritable: true },
+      { pubkey: r.mint, isSigner: false, isWritable: false },
+    );
+  });
+  return [
+    budget(),
+    ...creates,
+    await program.methods
+      .autopayRaydium()
+      .accountsStrict({
+        ...usdcAccounts(d),
+        caller,
+        credit: pda.credit(owner),
+        lpMarket: pda.lpMarket(pool),
+        clmmPool: pool,
+        position,
+        positionMint,
+        vaultNft: ata(positionMint, pda.pool(), mint.owner),
+        protocolPosition,
+        clmmVault0: clmm.vault0,
+        clmmVault1: clmm.vault1,
+        tickArrayLower: tickArray(tickLower),
+        tickArrayUpper: tickArray(tickUpper),
+        baseAsset: pda.asset(market.baseMint),
+        baseMint: market.baseMint,
+        baseVault: pda.vault(market.baseMint),
+        usdcAsset: pda.asset(usdc),
+        usdcCollateralVault: pda.vault(usdc),
+        tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+        memoProgram: MEMO_PROGRAM_ID,
+        dexProgram: market.dexProgram,
+      })
+      .remainingAccounts(remaining)
       .instruction(),
   ];
 }
