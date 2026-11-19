@@ -97,6 +97,45 @@
       "args": []
     },
     {
+      "name": "apply_asset_premium",
+      "discriminator": [
+        211,
+        59,
+        31,
+        153,
+        251,
+        29,
+        164,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "apply_lp_market",
       "discriminator": [
         120,
@@ -167,6 +206,39 @@
         34,
         133,
         116
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_premium_tiers",
+      "discriminator": [
+        252,
+        75,
+        91,
+        207,
+        243,
+        192,
+        7,
+        46
       ],
       "accounts": [
         {
@@ -992,6 +1064,113 @@
         {
           "name": "shares",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "demo_activate",
+      "discriminator": [
+        173,
+        91,
+        54,
+        170,
+        24,
+        27,
+        131,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "demo_set_live_price",
+      "discriminator": [
+        228,
+        54,
+        176,
+        112,
+        179,
+        162,
+        124,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "live",
+          "type": "bool"
         }
       ]
     },
@@ -2432,6 +2611,35 @@
       "args": []
     },
     {
+      "name": "migrate_account",
+      "discriminator": [
+        177,
+        228,
+        60,
+        125,
+        13,
+        116,
+        44,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "migrate_pool",
       "discriminator": [
         55,
@@ -3167,6 +3375,73 @@
       ]
     },
     {
+      "name": "set_asset_premium",
+      "discriminator": [
+        95,
+        11,
+        19,
+        252,
+        34,
+        23,
+        132,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "premium_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "set_demo_price",
       "discriminator": [
         9,
@@ -3484,6 +3759,56 @@
             "defined": {
               "name": "PoolParams"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_premium_tiers",
+      "discriminator": [
+        211,
+        27,
+        251,
+        37,
+        93,
+        48,
+        182,
+        0
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "tier_bps",
+          "type": {
+            "array": [
+              "u16",
+              3
+            ]
           }
         }
       ]
@@ -4358,6 +4683,19 @@
       ]
     },
     {
+      "name": "PremiumBooked",
+      "discriminator": [
+        187,
+        248,
+        104,
+        228,
+        58,
+        12,
+        99,
+        22
+      ]
+    },
+    {
       "name": "ProtocolFeesCollected",
       "discriminator": [
         165,
@@ -4843,6 +5181,13 @@
             "type": "i64"
           },
           {
+            "name": "live_price",
+            "docs": [
+              "In demo mode, read the Pyth feed instead of the admin's demo price, for assets that should show real prices"
+            ],
+            "type": "bool"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4850,9 +5195,28 @@
             "type": {
               "array": [
                 "u8",
-                7
+                6
               ]
             }
+          },
+          {
+            "name": "premium_bps",
+            "docs": [
+              "Extra yearly rate on debt this asset backs, paid to junior lenders, who lose first if it fails",
+              "Added after launch: `migrate_account` grows an asset listed before it, and the new bytes start at zero"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "pending_premium_bps",
+            "docs": [
+              "A higher premium waiting out the activation delay, live from `premium_pending_at` when that is not 0"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "premium_pending_at",
+            "type": "i64"
           }
         ]
       }
@@ -5115,6 +5479,21 @@
                 5
               ]
             }
+          },
+          {
+            "name": "premium_bps",
+            "docs": [
+              "Risk premium of the collateral when last valued, before the tier's share, in bps a year",
+              "Added after launch: `migrate_account` grows an account opened before it, and the new bytes start at zero"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "premium_since",
+            "docs": [
+              "When the premium was last booked as debt, 0 until the first booking starts the clock"
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -5271,6 +5650,13 @@
                 5
               ]
             }
+          },
+          {
+            "name": "premium_rate_bps",
+            "docs": [
+              "Part of `borrow_rate_bps` that is the collateral's risk premium after the tier's share"
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -5799,6 +6185,42 @@
           {
             "name": "senior_head",
             "type": "u64"
+          },
+          {
+            "name": "premium_tier_bps",
+            "docs": [
+              "Share of each asset's risk premium charged in each loyalty tier, so the premium fades while an account stays healthy",
+              "Added after launch: a pool grown by `migrate_pool` charges no premium until these are set"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "pending_premium_tier_bps",
+            "docs": [
+              "Higher shares waiting out the activation delay, live from `premium_tier_pending_at` when that is not 0"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "premium_tier_pending_at",
+            "type": "i64"
+          },
+          {
+            "name": "premium_booked",
+            "docs": [
+              "Risk premium booked as debt to date"
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -6065,6 +6487,33 @@
               "Bump of the dex's address for an LP position, so the health check can confirm it cheaply"
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PremiumBooked",
+      "docs": [
+        "Risk premium charged as new debt: `amount` at `rate_bps` a year, the collateral's premium after the tier's share"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "rate_bps",
+            "type": "u16"
+          },
+          {
+            "name": "debt",
+            "type": "u64"
           }
         ]
       }

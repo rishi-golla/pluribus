@@ -103,6 +103,45 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "applyAssetPremium",
+      "discriminator": [
+        211,
+        59,
+        31,
+        153,
+        251,
+        29,
+        164,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "applyLpMarket",
       "discriminator": [
         120,
@@ -173,6 +212,39 @@ export type Pluribus = {
         34,
         133,
         116
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "applyPremiumTiers",
+      "discriminator": [
+        252,
+        75,
+        91,
+        207,
+        243,
+        192,
+        7,
+        46
       ],
       "accounts": [
         {
@@ -998,6 +1070,113 @@ export type Pluribus = {
         {
           "name": "shares",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "demoActivate",
+      "discriminator": [
+        173,
+        91,
+        54,
+        170,
+        24,
+        27,
+        131,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "demoSetLivePrice",
+      "discriminator": [
+        228,
+        54,
+        176,
+        112,
+        179,
+        162,
+        124,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "live",
+          "type": "bool"
         }
       ]
     },
@@ -2438,6 +2617,35 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "migrateAccount",
+      "discriminator": [
+        177,
+        228,
+        60,
+        125,
+        13,
+        116,
+        44,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "migratePool",
       "discriminator": [
         55,
@@ -3173,6 +3381,73 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "setAssetPremium",
+      "discriminator": [
+        95,
+        11,
+        19,
+        252,
+        34,
+        23,
+        132,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "premiumBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "setDemoPrice",
       "discriminator": [
         9,
@@ -3490,6 +3765,56 @@ export type Pluribus = {
             "defined": {
               "name": "poolParams"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "setPremiumTiers",
+      "discriminator": [
+        211,
+        27,
+        251,
+        37,
+        93,
+        48,
+        182,
+        0
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "tierBps",
+          "type": {
+            "array": [
+              "u16",
+              3
+            ]
           }
         }
       ]
@@ -4364,6 +4689,19 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "premiumBooked",
+      "discriminator": [
+        187,
+        248,
+        104,
+        228,
+        58,
+        12,
+        99,
+        22
+      ]
+    },
+    {
       "name": "protocolFeesCollected",
       "discriminator": [
         165,
@@ -4849,6 +5187,13 @@ export type Pluribus = {
             "type": "i64"
           },
           {
+            "name": "livePrice",
+            "docs": [
+              "In demo mode, read the Pyth feed instead of the admin's demo price, for assets that should show real prices"
+            ],
+            "type": "bool"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -4856,9 +5201,28 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                7
+                6
               ]
             }
+          },
+          {
+            "name": "premiumBps",
+            "docs": [
+              "Extra yearly rate on debt this asset backs, paid to junior lenders, who lose first if it fails",
+              "Added after launch: `migrate_account` grows an asset listed before it, and the new bytes start at zero"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "pendingPremiumBps",
+            "docs": [
+              "A higher premium waiting out the activation delay, live from `premium_pending_at` when that is not 0"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "premiumPendingAt",
+            "type": "i64"
           }
         ]
       }
@@ -5121,6 +5485,21 @@ export type Pluribus = {
                 5
               ]
             }
+          },
+          {
+            "name": "premiumBps",
+            "docs": [
+              "Risk premium of the collateral when last valued, before the tier's share, in bps a year",
+              "Added after launch: `migrate_account` grows an account opened before it, and the new bytes start at zero"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "premiumSince",
+            "docs": [
+              "When the premium was last booked as debt, 0 until the first booking starts the clock"
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -5277,6 +5656,13 @@ export type Pluribus = {
                 5
               ]
             }
+          },
+          {
+            "name": "premiumRateBps",
+            "docs": [
+              "Part of `borrow_rate_bps` that is the collateral's risk premium after the tier's share"
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -5805,6 +6191,42 @@ export type Pluribus = {
           {
             "name": "seniorHead",
             "type": "u64"
+          },
+          {
+            "name": "premiumTierBps",
+            "docs": [
+              "Share of each asset's risk premium charged in each loyalty tier, so the premium fades while an account stays healthy",
+              "Added after launch: a pool grown by `migrate_pool` charges no premium until these are set"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "pendingPremiumTierBps",
+            "docs": [
+              "Higher shares waiting out the activation delay, live from `premium_tier_pending_at` when that is not 0"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "premiumTierPendingAt",
+            "type": "i64"
+          },
+          {
+            "name": "premiumBooked",
+            "docs": [
+              "Risk premium booked as debt to date"
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -6071,6 +6493,33 @@ export type Pluribus = {
               "Bump of the dex's address for an LP position, so the health check can confirm it cheaply"
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "premiumBooked",
+      "docs": [
+        "Risk premium charged as new debt: `amount` at `rate_bps` a year, the collateral's premium after the tier's share"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "rateBps",
+            "type": "u16"
+          },
+          {
+            "name": "debt",
+            "type": "u64"
           }
         ]
       }
