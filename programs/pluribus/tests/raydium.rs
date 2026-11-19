@@ -323,6 +323,11 @@ fn chain(program: Pubkey, usdc_first: bool) -> Option<(Env, Clmm)> {
         AccountMeta::new_readonly(rent::ID, false),
     ];
     expect_ok(env.send(&[budget(), Instruction::new_with_bytes(program, &data, metas)], &[&creator]));
+    // The pool account is read at fixed offsets by the SDK: its mints, then its vaults, and the tick spacing at 235
+    let made = env.svm.get_account(&pool).unwrap();
+    assert_eq!((&made.data[73..105], &made.data[105..137]), (mint_0.as_ref(), mint_1.as_ref()));
+    assert_eq!((&made.data[137..169], &made.data[169..201]), (clmm.vault_0.as_ref(), clmm.vault_1.as_ref()));
+    assert_eq!(u16::from_le_bytes(made.data[235..237].try_into().unwrap()) as i32, spacing);
     let admin = env.admin.insecure_clone();
     expect_ok(env.send(&[env.init_lp_market_ix(&pool, &sol, 500)], &[&admin]));
     Some((env, clmm))
