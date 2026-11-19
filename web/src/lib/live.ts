@@ -14,8 +14,7 @@ import {
   getProgram,
   listOrcaPositions,
   math,
-  pda,
-} from "./pluribus/sdk";
+  pda, DLMM_PROGRAM_ID, KIND_DLMM, binPrice, decodeDlmmPair, decodeDlmmPosition } from "./pluribus/sdk";
 import type { AccountEvent, Month } from "./account";
 
 export type Risk = math.RiskPosition;
@@ -30,7 +29,7 @@ const num = (x: { toString(): string }, decimals = 6) => Number(x.toString()) / 
 const scenario = (p: math.ShockParams, s: number): math.ShockParams => ({ ...p, only: s });
 
 export type Collateral = {
-  /** Token mint, or the position NFT mint for an LP */
+  /** Token mint, the position NFT mint for an LP, or the position account for a Meteora position */
   mint: string;
   symbol: string;
   amount: number;
@@ -43,8 +42,29 @@ export type Collateral = {
   risk: Risk;
   /** Price range, payout at the current price, and the limit a flat per-token discount would give */
   lp?: { lower: number; upper: number; sol: number; usdc: number; naive: number };
-  /** The same for a Meteora position, whose `mint` is the position account the pool owns */
-  dlmm?: { lower: number; upper: number; sol: number; usdc: number; naive: number };
+  /** The same for a Meteora position, whose `mint` is the position account the pool owns, with its pair, bin range and whether it holds no liquidity */
+  dlmm?: { pair: string; lowerBin: number; upperBin: number; lower: number; upper: number; sol: number; usdc: number; naive: number; empty: boolean };
+};
+
+/** A listed Meteora pair: where a new position goes and why it might take no new liquidity */
+export type DlmmMarket = {
+  pair: string;
+  baseMint: string;
+  /** The base token's symbol */
+  symbol: string;
+  /** Whether the base token is the pair's token X, which fixes the bin price direction and the order of the two amounts */
+  baseIsX: boolean;
+  baseDecimals: number;
+  activeId: number;
+  binStep: number;
+  /** USDC per whole base token at the pair's active bin */
+  price: number;
+  /** USDC per whole base token at a bin */
+  binPrice: (binId: number) => number;
+  /** Why no new position or liquidity is accepted right now, or null */
+  closed: string | null;
+  /** What the SDK's limits helper needs to value bins in this pair */
+  risk: (bins: math.DlmmBin[]) => Risk;
 };
 
 export type LiveMarket = { collateral: number; crashLtv: number | null; liqCostBps: number };
@@ -55,7 +75,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const program = getProgram(connection);
   const whirlpool = new PublicKey(d.whirlpool);
   const listed = Object.keys(d.assets);
-  const [pool, credit, viewed, prices, assetAccounts, lpMarket, lamports, tokens, tokens2022, supply, juniorSupply, walletLps, poolLps, queuedExit, seniorExits] = await Promise.all([
+  const [pool, credit, viewed, prices, assetAccounts, lpMarket, lamports, tokens, tokens2022, supply, juniorSupply, walletLps, poolLps, queuedExit, seniorExits, dlmmListed] = await Promise.all([
     fetchPool(program),
     fetchCredit(program, owner),
     // A stale price fails the view, and the page still has to load so the price can be set again
@@ -75,13 +95,67 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     fetchJuniorExit(program, owner),
     // A program from before the senior queue has no such accounts, and the page still loads
     fetchSeniorExits(program, owner).catch(() => []),
+    // A deployment with no Meteora pair listed has nothing to read here
+    loadDlmmListings(connection, program, d),
   ]);
   // Every token the deployment lists that the program has whitelisted, by mint
   const assets = new Map(assetAccounts.flatMap((a, i) => (a ? [[listed[i], a] as const] : [])));
   const [solAsset, stockAsset] = [assets.get(d.solMint), assets.get(d.stockMint)];
   if (!solAsset || !stockAsset) throw new Error(`SOL or ${d.assets[d.stockMint]?.symbol ?? "the stock"} is not listed on ${d.cluster}`);
-  const positions = credit ? await fetchPositions(program, d, credit) : [];
+  const dlmmHeld = credit?.positions.filter((p) => p.kind === KIND_DLMM) ?? [];
+  const [positions, dlmmAccounts] = await Promise.all([
+    credit ? fetchPositions(program, d, credit) : [],
+    // The position accounts, for their bin range, which a position with no liquidity otherwise does not show
+    dlmmHeld.length ? connection.getMultipleAccountsInfo(dlmmHeld.map((p) => p.mint)) : [],
+  ]);
   const now = Date.now() / 1000;
+  // A listing still in its activation delay backs no new debt, the same as a paused one
+  const waiting = (activeAt: { toString(): string }) => now < math.effectiveAt(pool, activeAt);
+  const dlmmPositions = new Map(
+    dlmmHeld.flatMap((p, i) => {
+      const info = dlmmAccounts[i];
+      return info?.owner.equals(DLMM_PROGRAM_ID) ? [[p.mint.toBase58(), decodeDlmmPosition(p.mint, info.data)] as const] : [];
+    }),
+  );
+  const dlmmMarkets: DlmmMarket[] = dlmmListed.flatMap(({ pair, market }) => {
+    const baseMint = market.baseMint.toBase58();
+    const asset = assets.get(baseMint);
+    if (!asset) return [];
+    const baseIsX = market.baseFirst;
+    const [decimalsX, decimalsY] = baseIsX ? [asset.decimals, 6] : [6, asset.decimals];
+    const at = (id: number) => binPrice(id, pair.binStep, decimalsX, decimalsY, baseIsX);
+    const closed =
+      pair.status !== 0
+        ? "Meteora has disabled this pair"
+        : market.paused || asset.params.paused
+          ? "Market is paused"
+          : waiting(market.activeAt) || waiting(asset.activeAt)
+            ? "Market is not active yet"
+            : null;
+    return [
+      {
+        pair: pair.address.toBase58(),
+        baseMint,
+        symbol: d.assets[baseMint]?.symbol ?? "SOL",
+        baseIsX,
+        baseDecimals: asset.decimals,
+        activeId: pair.activeId,
+        binStep: pair.binStep,
+        price: at(pair.activeId),
+        binPrice: at,
+        closed,
+        risk: (bins: math.DlmmBin[]): Risk => ({
+          mint: baseMint,
+          group: asset.params.group,
+          liqCostBps: market.liqCostBps,
+          paused: market.paused || asset.params.paused || waiting(market.activeAt) || waiting(asset.activeAt),
+          shockBps: math.dynamicShocks(asset, pool.params),
+          bins,
+          usdcGroup: pool.usdcGroup,
+        }),
+      },
+    ];
+  });
 
   const shock: math.ShockParams = {
     numScenarios: pool.params.numScenarios,
@@ -141,9 +215,17 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       const { bins, group, usdcGroup, liqCostBps } = p.risk;
       const held = math.dlmmAmounts(bins, price);
       const naive = (held.base * price * (1 - shockOf(group)) + held.usdc * (1 - shockOf(usdcGroup))) * (1 - liqCostBps / 1e4);
-      const prices = bins.map((b) => b.price);
-      const range = prices.length ? { lower: Math.min(...prices), upper: Math.max(...prices) } : { lower: price, upper: price };
-      return { ...base, symbol: "SOL-USDC", dlmm: { ...range, sol: held.base, usdc: held.usdc, naive } };
+      const at = dlmmPositions.get(base.mint);
+      const market = dlmmMarkets.find((m) => m.pair === at?.pair.toBase58());
+      // The position's own range, so one that holds no liquidity still shows where it sits
+      const edges = at && market ? [market.binPrice(at.lower), market.binPrice(at.upper)] : bins.map((b) => b.price);
+      const range = edges.length ? { lower: Math.min(...edges), upper: Math.max(...edges) } : { lower: price, upper: price };
+      const symbol = `${market?.symbol ?? d.assets[p.risk.mint]?.symbol ?? "SOL"}-USDC`;
+      return {
+        ...base,
+        symbol,
+        dlmm: { pair: at?.pair.toBase58() ?? "", lowerBin: at?.lower ?? 0, upperBin: at?.upper ?? 0, ...range, sol: held.base, usdc: held.usdc, naive, empty: !bins.length },
+      };
     }
     const { liquidity, tickLower, tickUpper, group, usdcGroup, liqCostBps } = p.risk;
     const held = math.lpAmounts(liquidity, tickLower, tickUpper, price);
@@ -173,8 +255,6 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     return { amount: num(raw), raw };
   };
 
-  // A listing still in its activation delay backs no new debt, the same as a paused one
-  const waiting = (activeAt: { toString(): string }) => now < math.effectiveAt(pool, activeAt);
   const juniorWallet = shares(pda.juniorMint());
   const juniorPrice = junior?.sharePrice ?? 1;
   const deadline = queuedExit ? math.juniorExitDeadline(pool, queuedExit) : 0;
@@ -246,6 +326,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     /** Index of the scenario that sets the credit limit */
     binding,
     lpRisk,
+    /** Every Meteora pair listed on-chain, for opening positions */
+    dlmm: dlmmMarkets,
     /** Mints of every whitelisted token other than SOL, which is deposited from the wallet's native balance */
     tokenMints: [...assets.keys()].filter((m) => m !== d.solMint),
     /** The same for `amount` whole tokens of any whitelisted mint */
@@ -360,5 +442,21 @@ export function monthsOf(events: AccountEvent[], today: string, avgApr: number, 
       inProgress: key === today.slice(0, 7),
       events: events.filter((e) => e.date.startsWith(key)),
     };
+  });
+}
+
+/** Each Meteora pair the deployment lists that is also listed on-chain, with the program's market for it */
+async function loadDlmmListings(connection: Connection, program: ReturnType<typeof getProgram>, d: Deployment) {
+  const listed = (d.lpMarkets ?? []).filter((m) => m.dexProgram === DLMM_PROGRAM_ID.toBase58());
+  if (!listed.length) return [];
+  const [pairs, markets] = await Promise.all([
+    connection.getMultipleAccountsInfo(listed.map((m) => new PublicKey(m.pool))),
+    program.account.lpMarket.fetchMultiple(listed.map((m) => pda.lpMarket(new PublicKey(m.pool)))),
+  ]);
+  return listed.flatMap((m, i) => {
+    const [info, market] = [pairs[i], markets[i]];
+    // A pair the deployment names but the admin has not listed, or one that is gone, cannot take a position
+    if (!info?.owner.equals(DLMM_PROGRAM_ID) || !market) return [];
+    return [{ pair: decodeDlmmPair(new PublicKey(m.pool), info.data), market }];
   });
 }
