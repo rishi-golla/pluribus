@@ -68,15 +68,15 @@ const healthColor = (h: number) => (h < 1.3 ? "var(--color-red)" : h < 1.8 ? "va
 
 function Pills<T extends string>({ id, items, value, onChange, small }: { id: string; items: readonly { key: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; small?: boolean }) {
   return (
-    <div className={`inline-flex border border-line-2 p-0.5 ${small ? "text-[12px]" : "text-[13.5px]"}`}>
+    <div className={`inline-flex rounded-lg border border-line-2 p-0.5 ${small ? "text-[12px]" : "text-[13.5px]"}`}>
       {items.map((it) => (
         <button
           key={it.key}
           type="button"
           onClick={() => onChange(it.key)}
-          className={`relative cursor-pointer font-medium transition-colors ${small ? "px-2.5 py-1" : "px-4 py-1.5"} ${value === it.key ? "text-t1" : "text-t3 hover:text-t2"}`}
+          className={`relative cursor-pointer rounded-md font-medium transition-colors ${small ? "px-2.5 py-1" : "px-4 py-1.5"} ${value === it.key ? "text-t1" : "text-t3 hover:text-t2"}`}
         >
-          {value === it.key && <motion.span layoutId={`pill-${id}`} transition={SNAP} className="absolute inset-0 bg-s3" />}
+          {value === it.key && <motion.span layoutId={`pill-${id}`} transition={SNAP} className="absolute inset-0 rounded-md bg-s3" />}
           <span className="relative">{it.label}</span>
         </button>
       ))}
@@ -125,7 +125,7 @@ function ActionButton({ stage, disabled, onClick, children, done }: { stage: Sta
       whileTap={{ scale: 0.98 }}
       disabled={disabled || stage !== "idle"}
       onClick={onClick}
-      className="mt-6 grid h-11 w-full cursor-pointer place-items-center bg-brand text-[14px] font-medium text-[#0c0c0c] transition-opacity disabled:cursor-default disabled:opacity-60 [&:disabled[data-stage]]:opacity-100"
+      className="mt-6 grid h-11 w-full cursor-pointer place-items-center rounded-[10px] bg-brand text-[14px] font-medium text-[#0c0c0c] transition-opacity disabled:cursor-default disabled:opacity-60 [&:disabled[data-stage]]:opacity-100"
       data-stage={stage === "idle" ? undefined : stage}
     >
       <AnimatePresence mode="popLayout" initial={false}>
@@ -183,10 +183,10 @@ function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits |
       </div>
 
       <div className="mt-6 flex items-end justify-between">
-        <div className="text-[34px] font-medium leading-none tracking-[-0.04em] tabular-nums">
+        <div className="text-[34px] font-medium leading-none tracking-[-0.025em] tabular-nums">
           <Num value={amount} prefix="$" />
         </div>
-        <span className="flex items-center gap-2 border border-line-2 bg-s2 py-1 pl-1 pr-3 text-[13px] font-medium">
+        <span className="flex items-center gap-2 rounded-lg border border-line-2 bg-s2 py-1 pl-1 pr-3 text-[13px] font-medium">
           <Token src="/tokens/usdc.webp" size={20} />
           USDC
         </span>
@@ -201,7 +201,7 @@ function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits |
         </div>
       </div>
 
-      <div className="mt-6 space-y-3 border border-line bg-bg p-4 text-[13px]">
+      <div className="mt-6 space-y-3 rounded-[10px] border border-line bg-bg p-4 text-[13px]">
         <div className="flex items-center justify-between">
           <span className="text-t2">Credit used</span>
           <span className="font-medium tabular-nums">
@@ -214,9 +214,9 @@ function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits |
             )}
           </span>
         </div>
-        <div className="relative h-1.5 overflow-hidden bg-white/[0.07]">
-          <motion.div className="absolute inset-y-0 left-0 bg-brand/40" animate={{ width: `${limits ? Math.min(100, (Math.max(debt, after) / LIMIT) * 100) : 0}%` }} transition={SNAP} />
-          <motion.div className="absolute inset-y-0 left-0 bg-brand" animate={{ width: `${limits ? Math.min(100, (Math.min(debt, after) / LIMIT) * 100) : 0}%` }} transition={SNAP} />
+        <div className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-brand/40" animate={{ width: `${limits ? Math.min(100, (Math.max(debt, after) / LIMIT) * 100) : 0}%` }} transition={SNAP} />
+          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-brand" animate={{ width: `${limits ? Math.min(100, (Math.min(debt, after) / LIMIT) * 100) : 0}%` }} transition={SNAP} />
         </div>
         <div className="flex items-center justify-between pt-1">
           <span className="text-t2">Health factor</span>
@@ -227,16 +227,16 @@ function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits |
             </motion.span>
           </span>
         </div>
-        <div className="relative h-1.5 bg-[linear-gradient(90deg,var(--color-red),var(--color-orange)_35%,var(--color-green)_70%)] opacity-80">
+        <div className="relative h-1.5 rounded-full bg-[linear-gradient(90deg,var(--color-red),var(--color-orange)_35%,var(--color-green)_70%)] opacity-80">
           <motion.span
-            className="absolute top-1/2 h-3.5 w-1 -translate-x-1/2 -translate-y-1/2 bg-white shadow-[0_0_0_3px_var(--color-bg)]"
+            className="absolute top-1/2 h-3.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_3px_var(--color-bg)]"
             animate={{ left: `${barPos(next) * 100}%` }}
             transition={SNAP}
           />
         </div>
       </div>
       <div className="mt-2 text-[11.5px] text-t3">
-        {limits ? "Example: the portfolio above, with on-chain crash limits" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
+        {limits ? "Example account, using the portfolio above" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
       </div>
 
       <ActionButton stage={tx.stage} disabled={amount <= 0} onClick={() => tx.run(() => onCommit(mode, amount))} done={`${mode === "draw" ? "Drawn" : "Repaid"}, added to your statement`}>
@@ -299,9 +299,9 @@ function EarnCard() {
             type="button"
             whileTap={{ scale: 0.97 }}
             onClick={() => setPick(k)}
-            className={`relative cursor-pointer border px-4 py-3 text-left transition-colors ${k === pick ? "border-line-2" : "border-line hover:border-line-2"}`}
+            className={`relative cursor-pointer rounded-[10px] border px-4 py-3 text-left transition-colors ${k === pick ? "border-line-2" : "border-line hover:border-line-2"}`}
           >
-            {k === pick && <motion.span layoutId="earn-pick" transition={SNAP} className="absolute inset-0 bg-s3" />}
+            {k === pick && <motion.span layoutId="earn-pick" transition={SNAP} className="absolute inset-0 rounded-[10px] bg-s3" />}
             <span className="relative flex items-center gap-2 text-[13px] text-t2">
               <Token src="/tokens/usdc.webp" size={18} />
               {TRANCHES[k].name}
@@ -325,7 +325,7 @@ function EarnCard() {
       <div className="mt-5 flex items-end justify-between">
         <div>
           <div className="text-[12.5px] text-t3">Interest earned</div>
-          <div className="mt-1 text-[28px] font-medium leading-none tracking-[-0.04em]" style={{ color: t.color }}>
+          <div className="mt-1 text-[28px] font-medium leading-none tracking-[-0.025em]" style={{ color: t.color }}>
             <Num value={earned} decimals={2} prefix="+$" />
           </div>
         </div>
@@ -345,18 +345,18 @@ function EarnCard() {
 
       <AnimatePresence mode="popLayout" initial={false}>
         {position ? (
-          <motion.div key="pos" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={QUICK} className="mt-5 flex items-center justify-between border border-line bg-bg px-4 py-3">
+          <motion.div key="pos" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={QUICK} className="mt-5 flex items-center justify-between rounded-[10px] border border-line bg-bg px-4 py-3">
             <div>
               <div className="flex items-center gap-1.5 text-[12px] text-t3">
                 <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping bg-green opacity-60" />
-                  <span className="relative inline-flex size-1.5 bg-green" />
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-green opacity-60" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-green" />
                 </span>
                 Earning live in {TRANCHES[position.tranche].token}
               </div>
               <div className="mt-1 font-mono text-[15px] tabular-nums text-t1">+${live.toFixed(6)}</div>
             </div>
-            <button type="button" onClick={() => setPosition(null)} className="cursor-pointer border border-line-2 px-3 py-1.5 text-[12.5px] font-medium text-t2 transition-colors hover:text-t1">
+            <button type="button" onClick={() => setPosition(null)} className="cursor-pointer rounded-md border border-line-2 px-3 py-1.5 text-[12.5px] font-medium text-t2 transition-colors hover:text-t1">
               Withdraw
             </button>
           </motion.div>
@@ -407,7 +407,7 @@ function StatementCard({ today }: { today: Row[] }) {
     <>
       <div className="flex items-center justify-between">
         <Pills id="statement-month" small items={MONTHS.map((x, i) => ({ key: String(i), label: x.name.slice(0, 3) }))} value={String(month)} onChange={(v) => setMonth(Number(v))} />
-        <button type="button" onClick={exportCsv} className="flex cursor-pointer items-center gap-1.5 border border-line-2 px-2.5 py-1.5 text-[12px] font-medium text-t2 transition-colors hover:text-t1">
+        <button type="button" onClick={exportCsv} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-line-2 px-2.5 py-1.5 text-[12px] font-medium text-t2 transition-colors hover:text-t1">
           <Download size={13} strokeWidth={1.75} />
           CSV
         </button>
@@ -423,7 +423,7 @@ function StatementCard({ today }: { today: Row[] }) {
             key={f.key}
             type="button"
             onClick={() => setFilter(f.key)}
-            className={`cursor-pointer px-2 py-1 text-[11.5px] font-medium transition-colors ${filter === f.key ? "bg-brand-dim text-brand" : "text-t3 hover:text-t2"}`}
+            className={`cursor-pointer rounded px-2 py-1 text-[11.5px] font-medium transition-colors ${filter === f.key ? "bg-brand-dim text-brand" : "text-t3 hover:text-t2"}`}
           >
             {f.label}
           </button>
@@ -440,7 +440,7 @@ function StatementCard({ today }: { today: Row[] }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 8 }}
               transition={{ layout: SNAP, opacity: QUICK, x: SNAP }}
-              className="-mx-2 flex items-center justify-between border-b border-line px-2 py-2.5 text-[13.5px] transition-colors hover:bg-white/[0.03]"
+              className="-mx-2 flex items-center justify-between rounded-md border-b border-line px-2 py-2.5 text-[13.5px] transition-colors hover:bg-white/[0.03]"
             >
               <span className="flex items-center gap-3">
                 <span className="w-12 text-[12px] text-t3">{r.date}</span>
@@ -465,8 +465,8 @@ function StatementCard({ today }: { today: Row[] }) {
       </div>
       <div className="mt-3 flex items-center gap-3 text-[12.5px]">
         <span className="whitespace-nowrap text-t3">Interest covered by LP fees</span>
-        <div className="h-1.5 flex-1 overflow-hidden bg-white/[0.07]">
-          <motion.div className="h-full bg-green" animate={{ width: `${covered * 100}%` }} transition={SNAP} />
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+          <motion.div className="h-full rounded-full bg-green" animate={{ width: `${covered * 100}%` }} transition={SNAP} />
         </div>
         <span className="w-9 text-right font-medium tabular-nums text-green">{Math.round(covered * 100)}%</span>
       </div>
@@ -480,27 +480,27 @@ const TABS = [
   {
     key: "borrow",
     label: "Borrow",
-    title: "Draw USDC in one step.",
-    body: "Pick an amount and see your health factor before you sign. Try a draw, then check Statements.",
-    points: ["No maturity", "Repay anytime, from your wallet or collateral", "LP fees repay debt automatically"],
+    title: "Borrow USDC against what you hold.",
+    body: "Choose an amount and see how safe the loan would be before you sign. Borrow here, then open Statements to see it recorded.",
+    points: ["No end date: repay when you want", "Repay from your wallet or by selling collateral", "Fees from your LP positions go toward the loan"],
     href: "/borrow",
     cta: "Open a credit line",
   },
   {
     key: "earn",
     label: "Earn",
-    title: "Lend at the risk you choose.",
-    body: "Seniors are paid first, behind two layers of cover. Juniors take first loss for higher yield.",
-    points: ["Yield paid out evenly each week", "Seniors covered by the insurance fund and juniors", "Juniors earn every risk premium"],
+    title: "Lend USDC and earn the interest borrowers pay.",
+    body: "Choose between two pools. Senior is paid first and loses money last. Junior takes losses first and earns a higher rate for it.",
+    points: ["Interest is paid out through the week", "A reserve fund absorbs losses before either pool", "Leave Senior any time; Junior has a waiting period"],
     href: "/earn",
     cta: "Start earning",
   },
   {
     key: "statements",
     label: "Statements",
-    title: "Every dollar, accounted for.",
-    body: "Every draw, repayment, autopay and premium by month, and how much interest your LP fees covered.",
-    points: ["Filter by activity", "Track autopay against interest", "Export any month as CSV"],
+    title: "See where every payment went.",
+    body: "A statement for each month: what you borrowed, what you repaid, the interest charged, and how much of it your LP fees paid for you.",
+    points: ["Filter by type of payment", "Compare LP fee repayments with interest", "Download any month as a CSV file"],
     href: "/statements",
     cta: "See statements",
   },
@@ -530,9 +530,9 @@ export function ProductTour() {
     <section aria-labelledby="product-tour">
       <FadeUp className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between sm:gap-8" y={20}>
         <div>
-          <div className="text-[12px] uppercase tracking-[0.06em] text-brand">The app</div>
-          <h2 id="product-tour" className="mt-4 text-[32px] sm:text-[40px] font-semibold leading-[1.08] tracking-[-0.04em]">
-            How it works
+          <div className="text-[12px] uppercase tracking-[0.06em] text-brand">Demo</div>
+          <h2 id="product-tour" className="mt-4 text-[32px] sm:text-[40px] font-semibold leading-[1.08] tracking-[-0.025em]">
+            Try it without a wallet
           </h2>
         </div>
         <Pills id="tour-tab" items={TABS} value={tab} onChange={go} />
@@ -550,7 +550,7 @@ export function ProductTour() {
               exit="exit"
               transition={{ x: SNAP, opacity: QUICK }}
             >
-              <h3 className="text-[30px] font-semibold leading-[1.1] tracking-[-0.04em]">{t.title}</h3>
+              <h3 className="text-[30px] font-semibold leading-[1.1] tracking-[-0.025em]">{t.title}</h3>
               <p className="mt-4 max-w-[440px] text-[15px] leading-[1.65] text-t2">{t.body}</p>
               <ul className="mt-6 space-y-2.5">
                 {t.points.map((p) => (
@@ -569,7 +569,7 @@ export function ProductTour() {
           </AnimatePresence>
         </div>
 
-        <div className="relative h-[500px] overflow-hidden border border-line-2 bg-s1">
+        <div className="relative h-[500px] overflow-hidden rounded-xl border border-line bg-s1">
           <AnimatePresence mode="popLayout" initial={false} custom={dir}>
             <motion.div
               key={tab}

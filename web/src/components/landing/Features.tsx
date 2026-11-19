@@ -31,14 +31,14 @@ export function Features() {
       <Column
         index={1}
         delay={0}
-        title="Crash-tested, not snapshotted"
-        body="LPs are valued at the crash price from range, liquidity and oracle price alone, so pool manipulation can't raise your limit."
+        title="Liquidity positions count as collateral"
+        body="A liquidity position loses value when the price leaves its range. We value it at the price after a drop, so your limit holds when the market falls. Narrow ranges lose more, so they count for less."
       >
         <div className="font-mono text-[12.5px]">
           <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-line pb-2 text-t3">
-            <span>SOL-USDC</span>
-            <span>Naive</span>
-            <span className="text-brand">Crash</span>
+            <span>Borrowable, SOL-USDC</span>
+            <span>Today</span>
+            <span className="text-brand">After a drop</span>
           </div>
           {ltvRows.map(([range, naive, crash]) => (
             <div key={range} className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-dashed border-line py-2.5 last:border-0">
@@ -53,8 +53,8 @@ export function Features() {
       <Column
         index={2}
         delay={0.08}
-        title="Autopay from LP fees"
-        body="Keepers harvest your LP fees to repay debt, or compound them back in. Stay healthy and your rate drops."
+        title="Your LP fees pay down the loan"
+        body="Liquidity positions earn trading fees. A bot collects them and repays your debt with them, or adds them back to the position if you prefer. Keep the loan in good standing and your interest rate falls over time."
       >
         <AutopayRepaid />
       </Column>
@@ -62,8 +62,8 @@ export function Features() {
       <Column
         index={3}
         delay={0.16}
-        title="Pick your risk as a lender"
-        body="Seniors sit behind the insurance fund and juniors. Juniors take first loss and earn every risk premium."
+        title="Lenders choose their risk"
+        body="Senior lenders are paid first and lose money last. Junior lenders take losses first and earn a higher rate for it."
       >
         <div className="grid grid-cols-2 border-t border-line">
           <div className="pr-4 pt-4">

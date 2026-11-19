@@ -173,7 +173,7 @@ export function LineChart({
         </motion.g>
       </svg>
       <motion.div
-        className="glass-tip pointer-events-none absolute top-[18px] min-w-[170px] border border-line-2 px-3 py-2.5 text-xs"
+        className="glass-tip pointer-events-none absolute top-[18px] min-w-[170px] rounded-lg border border-line-2 px-3 py-2.5 text-xs"
         initial={{ opacity: 0, left: cx > 230 ? cx - 196 : cx + 16 }}
         animate={{ opacity: inView ? 1 : 0, left: cx > 230 ? cx - 196 : cx + 16 }}
         transition={{ left: SPRING, opacity: { duration: 0.4, delay: 1.2 } }}

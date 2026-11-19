@@ -1,22 +1,23 @@
 "use client";
 
 import { useInView, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { Num } from "@/components/motion";
-import { CLUSTER } from "@/lib/cluster";
-import { EXAMPLE_USD, usePoolFacts, type ExampleKey } from "./PoolFacts";
-import { LOST, SIDE, borderPath, cellStates, initialOwners, labelCells, quotas, settle } from "./grid";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { EXAMPLE_USD, type ExampleKey } from "./PoolFacts";
+import { SIDE, cellStates, initialOwners, labelCells, quotas, settle } from "./grid";
 
 // seeds are [column, row] cells each holding grows from, laid out so the board reads corner to corner
-const PARTS: { key: ExampleKey; name: string; seed: readonly [number, number] }[] = [
-  { key: "sol", name: "SOL", seed: [4, 4] },
-  { key: "lst", name: "JitoSOL", seed: [15, 3] },
-  { key: "lp", name: "SOL-USDC LP", seed: [9, 10] },
-  { key: "stock", name: "NVDAx", seed: [16, 11] },
-  { key: "meme", name: "BONK", seed: [4, 16] },
-  { key: "usdc", name: "USDC", seed: [15, 17] },
+// `dim` is the share of a holding's cells drawn gray: riskier holdings lose more of their green.
+// It is illustrative, not read from the pool: the board is a picture, the numbers live in the table below it
+const PARTS: { key: ExampleKey; name: string; seed: readonly [number, number]; dim: number }[] = [
+  { key: "sol", name: "SOL", seed: [6, 6], dim: 0.24 },
+  { key: "lst", name: "JitoSOL", seed: [24, 5], dim: 0.27 },
+  { key: "lp", name: "SOL-USDC LP", seed: [15, 16], dim: 0.22 },
+  { key: "stock", name: "NVDAx", seed: [26, 18], dim: 0.31 },
+  { key: "meme", name: "BONK", seed: [6, 26], dim: 0.28 },
+  { key: "usdc", name: "USDC", seed: [24, 27], dim: 0.1 },
 ];
 const BASE: number[] = PARTS.map((p) => EXAMPLE_USD[p.key]);
+const DIM = PARTS.map((p) => p.dim);
 // built at load so the server and the browser draw the same first frame
 const START = initialOwners(
   PARTS.map((p) => p.seed),
@@ -25,8 +26,8 @@ const START = initialOwners(
 const START_LABELS = labelCells(START, PARTS.length);
 
 const TICK_MS = 800;
-const PULSE_MS = 24_000;
-const PULSE_LEN_MS = 2_600;
+// cells that may change hands each tick: enough that holdings visibly push at each other, few enough that nothing jumps
+const MOVES = 8;
 
 // price drift: SOL moves the staking token fully and the LP by half, the stock and the memecoin move alone, USDC holds
 type Factors = { sol: number; stock: number; meme: number; own: number[] };
@@ -42,53 +43,58 @@ const valuesOf = (f: Factors) => {
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const dollars = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
-const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-/** The hero's picture: the example portfolio as one board of cells, sized by value and split by what a crash leaves borrowable */
+/** The hero's picture: the example portfolio as one board of cells, each holding sized by its value and pushing at its neighbours as prices move */
 export function PortfolioGrid() {
-  const facts = usePoolFacts();
-  const ex = facts?.example;
   const reduce = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { amount: 0.2 });
+  // one cell plus its gap, in css pixels; 17 fits the desktop column and stands in until the board is measured
+  const [pitch, setPitch] = useState(17);
   const [shown, setShown] = useState(true);
   const [hover, setHover] = useState<number | null>(null);
   const [board, setBoard] = useState({ owner: START, labels: START_LABELS, values: BASE });
-  const [pulsing, setPulsing] = useState(false);
-  const [scanned, setScanned] = useState(false);
   const factors = useRef<Factors>({ sol: 0, stock: 0, meme: 0, own: BASE.map(() => 0) });
   const live = !reduce && inView && shown && hover === null;
+  // no lines are drawn between holdings: a channel of gray cells runs along every border and keeps their green apart
+  const states = useMemo(() => cellStates(board.owner, DIM), [board.owner]);
 
-  // each holding's share that counts toward the credit line and the share still standing at the liquidation line
-  const ratios = useMemo(
-    () => (ex ? PARTS.map((p) => ({ credit: ex.credit[p.key] / EXAMPLE_USD[p.key], liquidation: ex.liquidation[p.key] / EXAMPLE_USD[p.key] })) : null),
-    [ex],
-  );
-  const states = useMemo(
-    () =>
-      ratios &&
-      cellStates(
-        board.owner,
-        ratios.map((r) => clamp(1 - r.liquidation, 0, 1)),
-        ratios.map((r) => clamp(r.liquidation - r.credit, 0, 1)),
-      ),
-    [board.owner, ratios],
-  );
-  const path = useMemo(() => borderPath(board.owner), [board.owner]);
+  // Cells sized as a fraction of the width land between pixels, and the browser then draws some a pixel wider than others.
+  // So the cell and the gap are each a whole number of device pixels, and the board is as wide as those add up to.
+  // At a 125% or 150% display a whole device pixel is not a round css length, so the board is zoomed by 1 / ratio
+  // and laid out in device pixels, where whole numbers stay whole. Text inside is scaled back up by --scale.
+  useEffect(() => {
+    const [box, el] = [ref.current, boardRef.current];
+    if (!box || !el) return;
+    const fit = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const zoomed = CSS.supports("zoom", "0.5");
+      // css pixels per unit of the lengths set below
+      const unit = zoomed ? 1 : 1 / dpr;
+      const gap = Math.max(1, Math.round(2 * dpr));
+      const cell = Math.floor((box.clientWidth * dpr + gap) / SIDE);
+      el.style.zoom = zoomed ? String(1 / dpr) : "";
+      el.style.setProperty("--gap", `${gap * unit}px`);
+      el.style.setProperty("--pitch", `${cell * unit}px`);
+      el.style.setProperty("--scale", String(zoomed ? dpr : 1));
+      setPitch(cell / dpr);
+    };
+    // fires once on observe, then on every resize; a browser zoom changes the pixel ratio and fires resize
+    const observer = new ResizeObserver(fit);
+    observer.observe(box);
+    window.addEventListener("resize", fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, []);
 
   useEffect(() => {
     const onChange = () => setShown(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", onChange);
     return () => document.removeEventListener("visibilitychange", onChange);
   }, []);
-
-  // the first fill sweeps corner to corner, later changes land in place
-  useEffect(() => {
-    if (!ex) return;
-    const t = setTimeout(() => setScanned(true), 1_800);
-    return () => clearTimeout(t);
-  }, [ex]);
 
   useEffect(() => {
     if (!live) return;
@@ -97,43 +103,14 @@ export function PortfolioGrid() {
       const values = valuesOf(factors.current);
       setBoard((b) => {
         const owner = [...b.owner];
-        // a few cells a tick, so holdings push at each other instead of jumping
-        settle(owner, quotas(values), Math.random, 3);
+        settle(owner, quotas(values), Math.random, MOVES);
         return { owner, labels: labelCells(owner, PARTS.length, b.labels), values };
       });
     }, TICK_MS);
     return () => clearInterval(id);
   }, [live]);
 
-  // every so often a scan line runs the worst crash across the board and lights up what it takes
-  useEffect(() => {
-    if (!live || !ex) return;
-    let off: ReturnType<typeof setTimeout> | undefined;
-    const id = setInterval(() => {
-      setPulsing(true);
-      off = setTimeout(() => setPulsing(false), PULSE_LEN_MS);
-    }, PULSE_MS);
-    return () => {
-      clearInterval(id);
-      clearTimeout(off);
-      setPulsing(false);
-    };
-  }, [live, ex]);
-
   const total = board.values.reduce((a, b) => a + b, 0);
-  const credit = ratios ? board.values.reduce((s, v, i) => s + v * ratios[i].credit, 0) : undefined;
-  const part = hover === null ? undefined : PARTS[hover];
-  const readout = part
-    ? {
-        label: `${part.name} borrowable`,
-        value: ratios ? board.values[hover!] * ratios[hover!].credit : undefined,
-        note: ratios ? `${dollars(board.values[hover!])} held, ${pct(ratios[hover!].credit)} LTV` : `${dollars(board.values[hover!])} held`,
-      }
-    : {
-        label: "Credit line",
-        value: credit,
-        note: ex === null ? `Couldn't read the ${CLUSTER} pool.` : ex ? `Worst of ${ex.scenarios} crash scenarios: ${ex.scenario.toLowerCase()}` : "Crash-testing with the pool's settings",
-      };
 
   const pick = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -142,94 +119,53 @@ export function PortfolioGrid() {
   };
 
   return (
-    <div ref={ref}>
-      <div className="mb-3 flex items-baseline justify-between border-b border-line pb-3 text-[11.5px] uppercase tracking-[0.05em] text-t3">
-        <span className={pulsing ? "text-brand" : undefined}>{pulsing && ex ? `Stress test: ${ex.scenario}` : "Example portfolio"}</span>
-        <span>
-          Collateral <Num value={total} prefix="$" className="text-t1" />
-        </span>
-      </div>
-
+    <div ref={ref} className="grid-box">
       <div
-        className="relative aspect-square touch-none outline outline-1 outline-white/25"
+        ref={boardRef}
+        className="grid-board relative touch-none lg:ml-auto"
         role="img"
-        aria-label={`Example ${dollars(total)} portfolio of ${PARTS.map((p) => p.name).join(", ")}. ${readout.label}: ${readout.value === undefined ? "not read yet" : dollars(readout.value)}.`}
+        aria-label={`An example portfolio as one board, split into ${PARTS.map((p) => p.name).join(", ")}.`}
         onPointerMove={pick}
         onPointerLeave={() => setHover(null)}
       >
-        <div className="grid size-full grid-cols-20">
-          {board.owner.map((o, c) => {
-            const [r, k] = [Math.floor(c / SIDE), c % SIDE];
-            const state = states?.[c];
-            return (
-              <div key={c} className="grid-cell-in p-px" style={{ animationDelay: `${(r + k) * 16}ms` }}>
-                <span
-                  className="grid-cell block size-full"
-                  data-state={state ?? "pending"}
-                  data-flash={pulsing && state === LOST ? "" : undefined}
-                  style={
-                    {
-                      "--col": k,
-                      opacity: hover !== null && o !== hover ? 0.25 : 1,
-                      transitionDelay: scanned ? undefined : `${(r + k) * 14}ms`,
-                    } as CSSProperties
-                  }
-                />
+        <div className="grid-cells">
+          {board.owner.map((o, c) => (
+            <span
+              key={c}
+              className="grid-cell grid-cell-in"
+              data-state={states[c]}
+              style={{ animationDelay: `${(Math.floor(c / SIDE) + (c % SIDE)) * 9}ms`, opacity: hover !== null && o !== hover ? 0.25 : 1 }}
+            />
+          ))}
+        </div>
+        {board.labels.map((c, i) => {
+          // a label takes the place of a block of whole cells, so its edges are the grid's own
+          const wide = Math.ceil((PARTS[i].name.length * 8.4 + 22) / pitch);
+          const tall = pitch >= 15 ? 2 : 3;
+          const col = clamp((c % SIDE) - Math.floor(wide / 2), 0, SIDE - wide);
+          const row = clamp(Math.floor(c / SIDE) - Math.floor(tall / 2), 0, SIDE - tall);
+          return (
+            <div
+              key={PARTS[i].key}
+              className="pointer-events-none absolute flex flex-col justify-center bg-bg leading-[1.15] transition-[left,top,opacity] duration-700 ease-out"
+              style={{
+                left: `calc(var(--pitch) * ${col})`,
+                top: `calc(var(--pitch) * ${row})`,
+                width: `calc(var(--pitch) * ${wide} - var(--gap))`,
+                height: `calc(var(--pitch) * ${tall} - var(--gap))`,
+                paddingInline: "calc(8px * var(--scale, 1))",
+                opacity: hover !== null && hover !== i ? 0.3 : 1,
+              }}
+            >
+              <div className="whitespace-nowrap font-semibold text-t1" style={{ fontSize: "calc(12px * var(--scale, 1))" }}>
+                {PARTS[i].name}
               </div>
-            );
-          })}
-        </div>
-        <svg viewBox={`0 0 ${SIDE} ${SIDE}`} className="pointer-events-none absolute inset-0 size-full" aria-hidden>
-          <path d={path} fill="none" stroke="var(--color-t1)" strokeWidth={2} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
-        </svg>
-        {pulsing && <div className="grid-scan pointer-events-none absolute inset-y-0 w-[2px] bg-brand" aria-hidden />}
-        {board.labels.map((c, i) => (
-          <div
-            key={PARTS[i].key}
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border border-white/70 bg-bg/90 px-2.5 py-1.5 leading-tight transition-[left,top,opacity] duration-700 ease-out"
-            style={{
-              left: `${clamp((((c % SIDE) + 0.5) / SIDE) * 100, 10, 90)}%`,
-              top: `${clamp(((Math.floor(c / SIDE) + 0.5) / SIDE) * 100, 6, 94)}%`,
-              opacity: hover !== null && hover !== i ? 0.3 : 1,
-            }}
-          >
-            <div className="whitespace-nowrap text-[12.5px] font-semibold text-t1">{PARTS[i].name}</div>
-            <div className="text-[12px] tabular-nums text-t2">{((board.values[i] / total) * 100).toFixed(1)}%</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
-        <div className="min-w-0">
-          <div className="text-[11.5px] uppercase tracking-[0.05em] text-t3">
-            {/* token names keep their case, NVDAx is not NVDAX */}
-            {part ? (
-              <>
-                <span className="normal-case">{part.name}</span> borrowable
-              </>
-            ) : (
-              readout.label
-            )}
-          </div>
-          <div className="mt-2 text-[40px] font-semibold leading-none tracking-[-0.04em] text-brand">
-            {readout.value === undefined ? "—" : <Num value={readout.value} prefix="$" countUp />}
-          </div>
-          <div className="mt-2 text-[12px] text-t3">{readout.note}</div>
-        </div>
-        <ul className="shrink-0 space-y-1.5 text-[12px] text-t2">
-          <li className="flex items-center gap-2.5">
-            <span className="grid-cell size-3" data-state="0" />
-            Borrowable
-          </li>
-          <li className="flex items-center gap-2.5">
-            <span className="grid-cell size-3" data-state="1" />
-            Buffer before liquidation
-          </li>
-          <li className="flex items-center gap-2.5">
-            <span className="grid-cell size-3" data-state="2" />
-            Crash haircut
-          </li>
-        </ul>
+              <div className="tabular-nums text-t2" style={{ fontSize: "calc(11px * var(--scale, 1))" }}>
+                {((board.values[i] / total) * 100).toFixed(1)}%
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

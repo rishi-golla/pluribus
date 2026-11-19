@@ -14,9 +14,8 @@ export type ExampleKey = keyof typeof EXAMPLE_USD;
 
 /** The example portfolio valued with the pool's own crash tables, liquidation costs and prices */
 export type Example = {
-  /** What each holding still backs for a draw and against liquidation, in the scenario that sets the credit limit */
+  /** What each holding still backs for a draw, in the scenario that sets the credit limit */
   credit: Record<ExampleKey, number>;
-  liquidation: Record<ExampleKey, number>;
   creditLimit: number;
   liquidationLimit: number;
   /** How many crash scenarios the pool runs, the one that sets the credit limit, and how far it drops each holding's price for a draw, 0 to 1 */
@@ -99,7 +98,6 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
   const assets: Record<ExampleKey, Asset> = { sol, lst, lp: sol, stock, meme, usdc };
   return {
     credit: each((_, r) => math.limits([r], worst, prices).creditLimit),
-    liquidation: each((_, r) => math.limits([r], worst, prices).liquidationLimit),
     creditLimit: total.creditLimit,
     liquidationLimit: total.liquidationLimit,
     scenarios: shock.numScenarios,
@@ -193,16 +191,16 @@ export function AutopayRepaid() {
     <>
       <div className="flex items-baseline justify-between">
         {total === undefined ? (
-          <span className="font-mono text-[30px] leading-none tracking-[-0.04em] text-brand">—</span>
+          <span className="font-mono text-[30px] leading-none tracking-[-0.025em] text-brand">—</span>
         ) : (
-          <Num value={total} decimals={2} prefix="$" countUp className="font-mono text-[30px] leading-none tracking-[-0.04em] text-brand" />
+          <Num value={total} decimals={2} prefix="$" countUp className="font-mono text-[30px] leading-none tracking-[-0.025em] text-brand" />
         )}
         <span className="font-mono text-[12px] text-t3">repaid on {CLUSTER}, 30D</span>
       </div>
       <div className="mt-4">
         <FeeBars days={days ?? null} />
       </div>
-      <div className="mt-3 font-mono text-[11.5px] text-t3">{days === null ? "Needs the indexer" : "\u00a0"}</div>
+      <div className="mt-3 font-mono text-[11.5px] text-t3">{days === null ? "History unavailable right now" : "\u00a0"}</div>
     </>
   );
 }
@@ -213,11 +211,21 @@ export function ExampleApy({ tranche, className }: { tranche: "senior" | "junior
   return <Num value={facts.apy[tranche]} decimals={2} suffix="%" countUp className={className} />;
 }
 
+/** The hero's lending line: the junior yield with the pool lent out to its target, read from the rate curve so the figure cannot go stale */
+export function EarnUpTo({ className }: { className?: string }) {
+  const facts = usePoolFacts();
+  // no yield is claimed when the pool could not be read
+  if (facts === null) return null;
+  return (
+    <p className={className}>{facts ? `Earn up to ${facts.apy.junior.toFixed(1)}% lending USDC.` : "\u00a0"}</p>
+  );
+}
+
 /** Says where the example yields come from, so they are not read as a quote */
 export function ExampleNote({ className }: { className?: string }) {
   const facts = usePoolFacts();
   if (facts === undefined) return <div className={className}>&nbsp;</div>;
-  return <div className={className}>{facts ? `At ${facts.kink}% utilization, from the on-chain rate curve` : `Could not read the ${CLUSTER} pool`}</div>;
+  return <div className={className}>{facts ? `Rates with ${facts.kink}% of the pool lent out` : `Could not read the ${CLUSTER} pool`}</div>;
 }
 
 const compact = (v: number) =>
@@ -229,15 +237,15 @@ export function PoolStats() {
       // Every token the deployment lists, its Orca pool and each other LP market, such as the Raydium and Meteora pairs
     const collateralTypes = deployment ? Object.keys(deployment.assets).length + 1 + (deployment.lpMarkets?.length ?? 0) : undefined;
     const cells: { label: string; usd?: number; count?: number }[] = [
-    { label: `Total supplied on ${CLUSTER}`, usd: facts?.supplied },
-    { label: `Credit drawn on ${CLUSTER}`, usd: facts?.drawn },
-    { label: "Collateral types", count: collateralTypes },
-    { label: `Bad debt on ${CLUSTER}`, usd: facts?.badDebt },
+    { label: "Supplied by lenders", usd: facts?.supplied },
+    { label: "Currently borrowed", usd: facts?.drawn },
+    { label: "Assets accepted", count: collateralTypes },
+    { label: "Unpaid losses", usd: facts?.badDebt },
   ];
   return cells.map((c, i) => (
     <div key={c.label} className={i === 0 ? "py-7" : "border-l border-line py-7 pl-7"}>
       <div className="text-[11.5px] uppercase tracking-[0.04em] text-t3">{c.label}</div>
-      <div className="mt-2 text-[38px] font-medium tracking-[-0.04em]">
+      <div className="mt-2 text-[38px] font-medium tracking-[-0.025em]">
         {c.count !== undefined ? <Num value={c.count} countUp /> : c.usd === undefined ? "—" : <Num {...compact(c.usd)} prefix="$" countUp />}
       </div>
     </div>

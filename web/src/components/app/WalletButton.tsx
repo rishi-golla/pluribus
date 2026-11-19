@@ -11,7 +11,7 @@ import { DEMO_WALLET } from "@/lib/demo-wallet";
 import { shortKey } from "@/lib/account";
 
 const ic = { size: 16, strokeWidth: 1.75 };
-const item = "flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-[13.5px] transition-colors hover:bg-white/[0.05]";
+const item = "flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13.5px] transition-colors hover:bg-white/[0.05]";
 
 export function WalletButton() {
   const { wallets, publicKey, connecting, select, disconnect } = useWallet();
@@ -46,9 +46,9 @@ export function WalletButton() {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={`flex h-9 cursor-pointer items-center gap-2 border border-line bg-s1 pr-2.5 text-[13px] font-medium transition-colors hover:border-line-2 ${address ? "pl-1.5" : "pl-3"}`}
+        className={`flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-line bg-s1 pr-2.5 text-[13px] font-medium transition-colors hover:border-line-2 ${address ? "pl-1.5" : "pl-3"}`}
       >
-        {address ? <span className="wallet-avatar size-6 " /> : <Wallet {...ic} className="text-t2" />}
+        {address ? <span className="wallet-avatar size-6 rounded-md" /> : <Wallet {...ic} className="text-t2" />}
         {address ? shortKey(address) : connecting ? "Connecting..." : "Connect wallet"}
         <ChevronDown {...ic} className={`text-t3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -56,7 +56,7 @@ export function WalletButton() {
         {open && (
             <motion.div
               role="menu"
-              className="glass-tip absolute right-0 z-30 mt-2 w-56 border border-line-2 p-1.5"
+              className="glass-tip absolute right-0 z-30 mt-2 w-56 rounded-[10px] border border-line-2 p-1.5"
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98 }}
@@ -84,7 +84,7 @@ export function WalletButton() {
                 <>
                   {ready.map((w) => (
                     <button key={w.adapter.name} type="button" role="menuitem" onClick={() => select(w.adapter.name)} className={item}>
-                      {w.adapter.name === DEMO_WALLET ? <span className="wallet-avatar size-5 " /> : <Token src={w.adapter.icon} size={20} className="!rounded-md [&_img]:rounded-md" />}
+                      {w.adapter.name === DEMO_WALLET ? <span className="wallet-avatar size-5 rounded" /> : <Token src={w.adapter.icon} size={20} className="!rounded-md [&_img]:rounded-md" />}
                       {w.adapter.name}
                     </button>
                   ))}

@@ -33,13 +33,13 @@ function Toaster({ toast }: { toast: Toast | null }) {
           <motion.div
             key={toast.id}
             role="status"
-            className="glass-tip pointer-events-auto flex items-center gap-3 border border-line-2 py-3 pl-3 pr-5"
+            className="glass-tip pointer-events-auto flex items-center gap-3 rounded-xl border border-line-2 py-3 pl-3 pr-5"
             initial={{ opacity: 0, y: -12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
           >
-            <span className={`grid size-9 place-items-center ${tone.cls}`}>{tone.icon}</span>
+            <span className={`grid size-9 place-items-center rounded-[10px] ${tone.cls}`}>{tone.icon}</span>
             <div>
               <div className="text-[13.5px] font-medium">{toast.title}</div>
               {toast.detail && <div className="text-[12.5px] text-t2">{toast.detail}</div>}
@@ -479,7 +479,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     return (
       <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
         <div className="panel flex h-[320px] flex-col items-center justify-center gap-2 text-center" role="alert">
-          <span className="grid size-10 place-items-center bg-red/12 text-red">
+          <span className="grid size-10 place-items-center rounded-[10px] bg-red/12 text-red">
             <TriangleAlert size={18} strokeWidth={2} />
           </span>
           <div className="mt-2 text-[15px] font-medium">{error.title}</div>
@@ -488,7 +488,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={retry}
-              className="mt-3 h-9 cursor-pointer border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium text-t1 transition-colors hover:bg-s3"
+              className="mt-3 h-9 cursor-pointer rounded-lg border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium text-t1 transition-colors hover:bg-s3"
             >
               Try again now
             </button>

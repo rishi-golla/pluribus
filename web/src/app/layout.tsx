@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Instrument_Sans } from "next/font/google";
 import { MotionProvider } from "@/components/motion";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const instrumentSans = Instrument_Sans({
+  variable: "--font-instrument-sans",
   subsets: ["latin"],
 });
 
@@ -16,12 +16,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Pluribus | Borrow against everything you hold",
   description:
-    "One credit line for your SOL, LSTs, LP positions and tokenized stocks. Crash-tested valuation, no maturity, repaid by your LP fees.",
+    "Borrow USDC against your SOL, staked SOL, liquidity positions, tokenized stocks and memecoins in one loan. No end date, and your LP fees pay it down.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="en" className={`${instrumentSans.variable} ${geistMono.variable} antialiased`}>
       <body className="overflow-x-hidden">
         <MotionProvider>{children}</MotionProvider>
       </body>

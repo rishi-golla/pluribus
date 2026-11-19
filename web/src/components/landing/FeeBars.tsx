@@ -33,6 +33,7 @@ export function FeeBars({ days }: { days: number[] | null }) {
             y={96 - h}
             width={barW}
             height={h}
+            rx={1.5}
             fill="var(--color-brand)"
             fillOpacity={days ? 0.25 + (i / (DAYS - 1)) * 0.6 : 0.15}
             style={{ transformBox: "fill-box", transformOrigin: "bottom" }}

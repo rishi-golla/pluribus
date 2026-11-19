@@ -18,7 +18,7 @@ const TOTAL = Object.values(EXAMPLE_USD).reduce((a, b) => a + b, 0);
 const dollars = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-/** The hero's example portfolio as a table: what each holding is worth, how far the binding crash drops it, and what it lets you borrow */
+/** The example portfolio as a table: what each holding is worth, how far its price is assumed to fall, and what it lets you borrow */
 export function CreditLimit() {
   const facts = usePoolFacts();
   const ex = facts?.example;
@@ -26,19 +26,15 @@ export function CreditLimit() {
   return (
     <section aria-labelledby="credit-limit" className="grid items-start gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,640px)]">
       <FadeUp y={20}>
-        <div className="text-[12px] uppercase tracking-[0.06em] text-brand">Credit limit</div>
-        <h2 id="credit-limit" className="mt-4 text-[32px] sm:text-[40px] font-semibold leading-[1.08] tracking-[-0.04em]">
-          One crash test
-          <br />
-          for the whole basket.
+        <div className="text-[12px] uppercase tracking-[0.06em] text-brand">Borrowing limit</div>
+        <h2 id="credit-limit" className="mt-4 text-[32px] sm:text-[40px] font-semibold leading-[1.08] tracking-[-0.025em]">
+          How much you can borrow
         </h2>
         <p className="mt-5 max-w-[440px] text-[15px] leading-[1.65] text-t2">
-          {ex
-            ? `Your holdings crash together in ${ex.scenarios} scenarios. The worst, a ${ex.scenario.toLowerCase()}, sets your limit.`
-            : "Your holdings crash together in every scenario the pool runs. The worst sets your limit."}
+          You can borrow what your assets would still be worth after a sharp price drop. Riskier assets count for less.
         </p>
         <Link href="/docs#credit-limit" className="group mt-7 inline-flex items-center gap-1.5 text-[14px] text-t1">
-          How the scenarios work
+          How the limit is calculated
           <ArrowRight size={15} strokeWidth={1.75} className="transition-transform duration-200 group-hover:translate-x-0.5" />
         </Link>
       </FadeUp>
@@ -49,8 +45,8 @@ export function CreditLimit() {
             <tr className="border-b border-line-2 text-[11.5px] uppercase tracking-[0.05em] text-t3">
               <th className="pb-3 text-left font-normal">Asset</th>
               <th className="pb-3 text-right font-normal">Value</th>
-              <th className="pb-3 text-right font-normal">Crash</th>
-              <th className="pb-3 text-right font-normal">LTV</th>
+              <th className="pb-3 text-right font-normal">Price drop</th>
+              <th className="pb-3 text-right font-normal">Counted</th>
               <th className="pb-3 text-right font-normal">Borrow</th>
             </tr>
           </thead>
@@ -79,7 +75,7 @@ export function CreditLimit() {
           </tfoot>
         </table>
         <div className="mt-3 text-[11.5px] text-t3">
-          {ex === null ? `Couldn't read the ${CLUSTER} pool.` : `The hero's example portfolio, valued with the ${CLUSTER} pool's crash tables and liquidation costs.`}
+          {ex === null ? `Couldn't read the ${CLUSTER} pool.` : `An example ${dollars(TOTAL)} portfolio, using the ${CLUSTER} pool's current settings.`}
         </div>
       </FadeUp>
     </section>

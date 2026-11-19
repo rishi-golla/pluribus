@@ -1,13 +1,12 @@
 import { seeded } from "./assets";
 
 /** The hero's board: SIDE by SIDE cells shared out between the example portfolio's holdings */
-export const SIDE = 20;
+export const SIDE = 32;
 export const CELLS = SIDE * SIDE;
 
 export const LIME = 0;
-export const BUFFER = 1;
-export const LOST = 2;
-export type CellState = typeof LIME | typeof BUFFER | typeof LOST;
+export const GRAY = 1;
+export type CellState = typeof LIME | typeof GRAY;
 
 const NB: number[][] = Array.from({ length: CELLS }, (_, c) => {
   const [r, k] = [Math.floor(c / SIDE), c % SIDE];
@@ -129,11 +128,92 @@ export function initialOwners(seeds: readonly (readonly [number, number])[], val
   return owner;
 }
 
-/** A fixed jitter per cell, so the crash eats into borders unevenly and the same way on server and browser */
-export const JITTER: number[] = (() => {
+// a fixed value per cell that changes slowly across the board, with a little grain on top,
+// so dimmed cells gather in ragged patches like a heatmap and sit the same on server and browser
+const NOISE: number[] = (() => {
   const rand = seeded(29);
-  return Array.from({ length: CELLS }, () => rand() * 1.6);
+  const STEP = 5;
+  const n = Math.ceil(SIDE / STEP) + 2;
+  const lattice = Array.from({ length: n * n }, () => rand());
+  const ease = (t: number) => t * t * (3 - 2 * t);
+  return Array.from({ length: CELLS }, (_, c) => {
+    const [y, x] = [Math.floor(c / SIDE) / STEP, (c % SIDE) / STEP];
+    const [y0, x0] = [Math.floor(y), Math.floor(x)];
+    const [fy, fx] = [ease(y - y0), ease(x - x0)];
+    const at = (r: number, k: number) => lattice[r * n + k];
+    const v = at(y0, x0) * (1 - fx) * (1 - fy) + at(y0, x0 + 1) * fx * (1 - fy) + at(y0 + 1, x0) * (1 - fx) * fy + at(y0 + 1, x0 + 1) * fx * fy;
+    return v * 6 + rand() * 1.6;
+  });
 })();
+
+/**
+ * What each cell shows. A gray channel one cell wide runs along every border, so no two holdings' green cells touch,
+ * not even at a corner. Past that, `dim[i]` is roughly the share of region i drawn gray, 0 to 1: the rest of it
+ * reaches inward from the borders where the noise is low. Each holding's green is then tidied into one solid island.
+ */
+export function cellStates(owner: number[], dim: number[]): CellState[] {
+  const depth = depths(owner, false);
+  const states = new Array<CellState>(CELLS).fill(LIME);
+  // the channel is cut from one side only, the later holding's, and looks at all eight neighbours to close corners
+  for (let c = 0; c < CELLS; c++) {
+    const [r, k] = [Math.floor(c / SIDE), c % SIDE];
+    for (let dr = -1; dr <= 1 && states[c] === LIME; dr++)
+      for (let dk = -1; dk <= 1; dk++) {
+        const [rr, kk] = [r + dr, k + dk];
+        if (rr < 0 || kk < 0 || rr >= SIDE || kk >= SIDE || owner[rr * SIDE + kk] >= owner[c]) continue;
+        states[c] = GRAY;
+        break;
+      }
+  }
+  const byRegion: number[][] = dim.map(() => []);
+  owner.forEach((o, c) => byRegion[o].push(c));
+  byRegion.forEach((cells, i) => {
+    const green = cells.filter((c) => states[c] === LIME).sort((a, b) => depth[a] + NOISE[a] - (depth[b] + NOISE[b]));
+    const more = Math.round(cells.length * dim[i]) - (cells.length - green.length);
+    for (let j = 0; j < more; j++) states[green[j]] = GRAY;
+  });
+
+  // one island per holding: green cells cut off from the holding's largest green piece go gray
+  const piece = new Int32Array(CELLS).fill(-1);
+  const sizes: number[] = [];
+  const best: number[] = dim.map(() => -1);
+  for (let c = 0; c < CELLS; c++) {
+    if (states[c] !== LIME || piece[c] >= 0) continue;
+    const id = sizes.length;
+    const stack = [c];
+    piece[c] = id;
+    let size = 0;
+    while (stack.length) {
+      const x = stack.pop()!;
+      size++;
+      for (const n of NB[x]) {
+        if (states[n] !== LIME || owner[n] !== owner[c] || piece[n] >= 0) continue;
+        piece[n] = id;
+        stack.push(n);
+      }
+    }
+    sizes.push(size);
+    if (best[owner[c]] < 0 || size > sizes[best[owner[c]]]) best[owner[c]] = id;
+  }
+  for (let c = 0; c < CELLS; c++) if (states[c] === LIME && piece[c] !== best[owner[c]]) states[c] = GRAY;
+
+  // no holes: gray that cannot be reached from a border between holdings through other gray is a hole in the green, and goes green
+  const open = new Uint8Array(CELLS);
+  const stack: number[] = [];
+  for (let c = 0; c < CELLS; c++) {
+    if (states[c] !== GRAY || depth[c] !== 0) continue;
+    open[c] = 1;
+    stack.push(c);
+  }
+  while (stack.length)
+    for (const n of NB[stack.pop()!]) {
+      if (states[n] !== GRAY || open[n]) continue;
+      open[n] = 1;
+      stack.push(n);
+    }
+  for (let c = 0; c < CELLS; c++) if (states[c] === GRAY && !open[c]) states[c] = LIME;
+  return states;
+}
 
 // steps from each cell to the nearest cell of another region; `edges` counts the board's edge as a border too
 function depths(owner: number[], edges: boolean): number[] {
@@ -152,24 +232,6 @@ function depths(owner: number[], edges: boolean): number[] {
       queue.push(n);
     }
   return depth;
-}
-
-/**
- * What each cell shows: per region, `lost[i]` and `buffer[i]` are the shares of its value a crash takes
- * and the cushion above the liquidation line, 0 to 1. The crash eats in from the region's borders.
- */
-export function cellStates(owner: number[], lost: number[], buffer: number[]): CellState[] {
-  const depth = depths(owner, false);
-  const byRegion: number[][] = lost.map(() => []);
-  owner.forEach((o, c) => byRegion[o].push(c));
-  const states = new Array<CellState>(CELLS).fill(LIME);
-  byRegion.forEach((cells, i) => {
-    cells.sort((x, y) => depth[x] + JITTER[x] - (depth[y] + JITTER[y]));
-    const nLost = Math.round(cells.length * lost[i]);
-    const nBuffer = Math.round(cells.length * buffer[i]);
-    cells.forEach((c, j) => (states[c] = j < nLost ? LOST : j < nLost + nBuffer ? BUFFER : LIME));
-  });
-  return states;
 }
 
 /** The cell deepest inside each region, for its label; keeps `prev` unless it left the region or a clearly deeper cell exists */
@@ -193,15 +255,4 @@ export function labelCells(owner: number[], n: number, prev?: number[]): number[
     const p = prev?.[i];
     return p !== undefined && owner[p] === i && depth[p] >= depth[pick] - 1 ? p : pick;
   });
-}
-
-/** Line segments along every edge between two regions, in cell units, as an SVG path */
-export function borderPath(owner: number[]): string {
-  let d = "";
-  for (let c = 0; c < CELLS; c++) {
-    const [r, k] = [Math.floor(c / SIDE), c % SIDE];
-    if (k < SIDE - 1 && owner[c + 1] !== owner[c]) d += `M${k + 1} ${r}v1`;
-    if (r < SIDE - 1 && owner[c + SIDE] !== owner[c]) d += `M${k} ${r + 1}h1`;
-  }
-  return d;
 }

@@ -17,7 +17,7 @@ export function Guide({ slug }: { slug: GuideSlug }) {
               key={g.slug}
               href={g.href}
               aria-current={g.slug === slug ? "page" : undefined}
-              className={` px-3 py-2 font-medium transition-colors ${g.slug === slug ? "bg-s3 text-t1" : "text-t2 hover:text-t1"}`}
+              className={`rounded-lg px-3 py-2 font-medium transition-colors ${g.slug === slug ? "bg-s3 text-t1" : "text-t2 hover:text-t1"}`}
             >
               {g.label}
             </Link>
@@ -26,7 +26,7 @@ export function Guide({ slug }: { slug: GuideSlug }) {
         <div className="mt-7 px-3 text-[12px] font-medium text-t3">On this page</div>
         <nav aria-label="Sections" className="mt-2 grid gap-px">
           {sections.map((h) => (
-            <a key={h.id} href={`#${h.id}`} className={` py-1 pr-2 text-t2 transition-colors hover:text-t1 ${h.depth === 3 ? "pl-6 text-[13px] text-t3" : "pl-3"}`}>
+            <a key={h.id} href={`#${h.id}`} className={`rounded py-1 pr-2 text-t2 transition-colors hover:text-t1 ${h.depth === 3 ? "pl-6 text-[13px] text-t3" : "pl-3"}`}>
               {h.text}
             </a>
           ))}
