@@ -13,6 +13,8 @@ import { niceMax } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
 import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market } from "@/lib/markets";
+import { DLMM_PROGRAM_ID, RAYDIUM_CLMM_PROGRAM_IDS } from "@/lib/pluribus/sdk";
+import { iconSrc, tokenIcon } from "@/lib/tokens";
 
 const RANGES = ["7D", "30D", "90D"] as const;
 type Range = (typeof RANGES)[number];
@@ -343,13 +345,24 @@ const FILTER_ICONS: Record<"All" | AssetClass, string[]> = {
   All: [],
   SOL: ["sol.webp"],
   LSTs: ["jitosol.webp", "jupsol.webp", "msol.png"],
-  "LP positions": ["orca.png", "ray.webp"],
-  Stocks: ["nvdax.webp"],
+  "LP positions": ["orca.png", "ray.webp", "met.webp"],
+  Stocks: ["nvdax.webp", tokenIcon("AAPLx")],
   Memes: ["bonk.webp"],
 };
 
+/** Whether the deployment lists the market, whether or not the app reads its totals */
+function listed(m: Market) {
+  const d = deployment;
+  if (!d) return false;
+  // A token market is named for its symbol
+  if (!m.dex) return Object.values(d.assets).some((a) => a.symbol === m.name);
+  if (m.dex === "orca") return !!d.whirlpool;
+  const programs = m.dex === "meteora" ? [DLMM_PROGRAM_ID.toBase58()] : RAYDIUM_CLMM_PROGRAM_IDS.map((k) => k.toBase58());
+  return !!d.lpMarkets?.some((l) => programs.includes(l.dexProgram));
+}
+
 function MarketIcon({ m }: { m: Market }) {
-  if (!m.lpBadge) return <Token src={`/tokens/${m.icon}`} size={32} />;
+  if (!m.lpBadge) return <Token src={iconSrc(m.icon)} size={32} />;
   return (
     <span className="flex">
       <span className="rounded-full shadow-[0_0_0_2px_var(--color-s1)]">
@@ -379,7 +392,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "collateral", dir: -1 });
   const rows = useMemo(() => {
     const shown = (list: Market[]) => list.filter((m) => filter === "All" || m.cls === filter);
-    // Markets that are not on-chain yet have no figures to sort by, so they follow the live ones
+    // Markets the app has no totals for have no figures to sort by, so they follow the live ones
     const planned = live ? MARKETS.filter((m) => !live.markets[m.id]) : [];
     return [...shown(markets).sort((a, b) => (SORTERS[sort.key](a) - SORTERS[sort.key](b)) * sort.dir), ...shown(planned)];
   }, [markets, live, filter, sort]);
@@ -407,7 +420,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
             {!!FILTER_ICONS[f].length && (
               <span className="flex">
                 {FILTER_ICONS[f].map((i, k) => (
-                  <Token key={i} src={`/tokens/${i}`} size={16} className={`shadow-[0_0_0_2px_var(--color-s1)] ${k ? "-ml-1.5" : ""}`} />
+                  <Token key={i} src={iconSrc(i)} size={16} className={`shadow-[0_0_0_2px_var(--color-s1)] ${k ? "-ml-1.5" : ""}`} />
                 ))}
               </span>
             )}
@@ -437,7 +450,9 @@ function MarketsTable({ markets }: { markets: Market[] }) {
         </thead>
         <tbody>
           {rows.map((m) => {
-            const planned = !!live && !live.markets[m.id];
+            // Markets the app reads no totals for show dashes, and only the ones the deployment does not list are planned
+              const unread = !!live && !live.markets[m.id];
+              const planned = unread && !listed(m);
             const used = m.collateral > 0 ? powerUsed(m) : 0;
             return (
               <motion.tr
@@ -463,7 +478,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                     </div>
                   </div>
                 </td>
-                {planned ? (
+                {unread ? (
                   COLUMNS.map((c) => (
                     <td key={c.key} className="text-right">
                       {dash}
@@ -496,7 +511,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                   </>
                 )}
                 <td>
-                  <LiquidityMeter n={planned ? 0 : m.liquidity} />
+                  <LiquidityMeter n={unread ? 0 : m.liquidity} />
                 </td>
                 <td className="pr-[22px] text-right">
                   <Link href="/borrow" aria-label={`Borrow against ${m.name}`} className="inline-flex text-t3 transition-colors group-hover:text-t1">
