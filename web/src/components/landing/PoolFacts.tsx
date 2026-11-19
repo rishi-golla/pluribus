@@ -8,7 +8,7 @@ import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
 import { SCENARIO_NAMES, fetchStats } from "@/lib/live";
 import { type Asset, type Pool, type PluribusProgram, fetchAsset, fetchLpMarket, fetchPool, fetchPrices, getProgram, math } from "@/lib/pluribus/sdk";
 
-/** The example portfolio How it works draws and the product tour borrows against, in dollars */
+/** The example portfolio the hero draws and the product tour borrows against, in dollars */
 export const EXAMPLE_USD = { sol: 3_750, lp: 3_750, stock: 3_000, usdc: 1_500 } as const;
 export type ExampleKey = keyof typeof EXAMPLE_USD;
 

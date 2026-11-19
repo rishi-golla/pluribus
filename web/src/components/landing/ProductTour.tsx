@@ -20,7 +20,7 @@ type Kind = "draw" | "repay" | "autopay" | "interest";
 type Row = { id: string; date: string; kind: Kind; amount: number };
 const LABEL: Record<Kind, string> = { draw: "Draw", repay: "Repayment", autopay: "Autopay from LP fees", interest: "Interest" };
 
-// Three months of the How it works example, ending with the debt the Borrow tab starts from
+// Three months of the hero's example portfolio, ending with the debt the Borrow tab starts from
 const MONTHS: { key: string; name: string; rows: Row[] }[] = [
   {
     key: "sep",
@@ -57,7 +57,7 @@ const total = (rows: Row[]) => rows.reduce((s, r) => s + r.amount, 0);
 const OPENINGS = MONTHS.map((_, i) => total(MONTHS.slice(0, i).flatMap((m) => m.rows)));
 const START_DEBT = total(MONTHS.flatMap((m) => m.rows));
 
-// The example account's limits: the How it works portfolio valued with the pool's own crash tables
+// The example account's limits: the hero's portfolio valued with the pool's own crash tables
 type Limits = { credit: number; liquidation: number };
 const health = (debt: number, liquidation: number) => (debt > 0 ? liquidation / debt : Infinity);
 // 1 at the left edge of the bar, 3 or more at the right
@@ -236,7 +236,7 @@ function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits |
         </div>
       </div>
       <div className="mt-2 text-[11.5px] text-t3">
-        {limits ? "Example account: the How it works portfolio, limits from the on-chain crash tables" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
+        {limits ? "Example account: the portfolio above, limits from the on-chain crash tables" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
       </div>
 
       <ActionButton stage={tx.stage} disabled={amount <= 0} onClick={() => tx.run(() => onCommit(mode, amount))} done={`${mode === "draw" ? "Drawn" : "Repaid"}, added to your statement`}>

@@ -97,11 +97,6 @@
       var(--color-bg);
   }
 
-  /* The hero's quieter field, gone well before the next section */
-  .landing-dots-hero {
-    mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 40%, transparent 80%);
-  }
-
   .app-ambient {
     background: radial-gradient(900px 340px at 50% -120px, rgb(158 140 255 / 0.13), transparent 70%);
   }
