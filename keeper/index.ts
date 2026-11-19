@@ -1,4 +1,4 @@
-// One loop that liquidates, refreshes loyalty tiers, collects LP fees, pays the senior withdrawal queue and keeps the demo feed fresh
+// One loop that liquidates, refreshes loyalty tiers and risk premiums, collects LP fees, pays the senior withdrawal queue and keeps the demo feed fresh
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -70,6 +70,8 @@ const keeper = Keypair.fromSecretKey(Uint8Array.from(secret));
 const me = keeper.publicKey;
 const intervalMs = millis("INTERVAL_MS", 5000);
 const autopayMs = millis("AUTOPAY_INTERVAL_MS", 600_000);
+// How often an account paying a risk premium is refreshed, which books the premium and resets it to the collateral held
+const premiumMs = millis("PREMIUM_INTERVAL_MS", 600_000);
 // How often the push feeds of live assets are posted again; PYTH_PUSH=0 leaves them to someone else
 const pythMs = millis("PYTH_INTERVAL_MS", 30_000);
 const pythPush = env.PYTH_PUSH !== "0" && cluster !== "localnet";
@@ -176,10 +178,22 @@ async function watchDebt(pool: Pool, owner: PublicKey, now: number) {
   }
   if (!credit || !health) return;
   const to = expectedTier(pool, credit, health, now);
+  const id = owner.toBase58();
   if (to !== credit.tier) {
     await send(`Tier of ${owner}: refreshed from ${credit.tier} to ${to}`, await ix.refreshTier(program, d, owner));
+    lastPremiumRefresh.set(id, Date.now());
+    return;
+  }
+  // The premium is booked whenever the account is touched, so a quiet account is refreshed on a schedule:
+  // that keeps junior payouts smooth and moves a changed collateral mix or asset premium into effect
+  const charged = credit.premiumBps !== 0 || health.premiumRateBps !== 0;
+  if (charged && Date.now() - (lastPremiumRefresh.get(id) ?? 0) >= premiumMs) {
+    lastPremiumRefresh.set(id, Date.now());
+    await send(`Premium of ${owner}: booked at ${health.premiumRateBps / 100}% a year`, await ix.refreshTier(program, d, owner));
   }
 }
+
+const lastPremiumRefresh = new Map<string, number>();
 
 const lastFeeCheck = new Map<string, number>();
 
