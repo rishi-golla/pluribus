@@ -441,6 +441,213 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "autopayRaydium",
+      "discriminator": [
+        241,
+        183,
+        77,
+        204,
+        129,
+        59,
+        121,
+        202
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "creditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lpMarket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "clmmPool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "clmmPool",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "positionMint"
+        },
+        {
+          "name": "vaultNft"
+        },
+        {
+          "name": "protocolPosition",
+          "writable": true
+        },
+        {
+          "name": "clmmVault0",
+          "writable": true
+        },
+        {
+          "name": "clmmVault1",
+          "writable": true
+        },
+        {
+          "name": "tickArrayLower",
+          "writable": true
+        },
+        {
+          "name": "tickArrayUpper",
+          "writable": true
+        },
+        {
+          "name": "baseAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lpMarket.baseMint",
+                "account": "lpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "baseMint"
+        },
+        {
+          "name": "baseVault",
+          "writable": true
+        },
+        {
+          "name": "usdcAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcCollateralVault",
+          "writable": true
+        },
+        {
+          "name": "usdcMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdcVault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "tokenProgram",
+          "docs": [
+            "USDC is a classic token, and Raydium takes the classic program in this slot whatever the pool trades"
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "tokenProgram2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        },
+        {
+          "name": "memoProgram",
+          "address": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+        },
+        {
+          "name": "dexProgram"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "cancelJuniorExit",
       "discriminator": [
         113,
@@ -4678,6 +4885,11 @@ export type Pluribus = {
       "code": 6041,
       "name": "exitCancelled",
       "msg": "This senior exit was already cancelled"
+    },
+    {
+      "code": 6042,
+      "name": "notRaydiumMarket",
+      "msg": "This needs a Raydium market"
     }
   ],
   "types": [
