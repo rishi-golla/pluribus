@@ -210,10 +210,12 @@ const compact = (v: number) =>
 /** The stats strip, read from the pool this build points at */
 export function PoolStats() {
   const facts = usePoolFacts();
-  const cells: { label: string; usd?: number; count?: number }[] = [
+      // Every token the deployment lists, its Orca pool and each other LP market, such as the Raydium and Meteora pairs
+    const collateralTypes = deployment ? Object.keys(deployment.assets).length + 1 + (deployment.lpMarkets?.length ?? 0) : undefined;
+    const cells: { label: string; usd?: number; count?: number }[] = [
     { label: `Total supplied on ${CLUSTER}`, usd: facts?.supplied },
     { label: `Credit drawn on ${CLUSTER}`, usd: facts?.drawn },
-    { label: "Collateral types", count: 4 },
+    { label: "Collateral types", count: collateralTypes },
     { label: `Bad debt on ${CLUSTER}`, usd: facts?.badDebt },
   ];
   return cells.map((c, i) => (

@@ -52,7 +52,7 @@ function steps(ex: Example | null | undefined, drawn: number): { title: string; 
       title: "Bring everything you hold",
       body: (
         <>
-          SOL, liquid staking tokens, Orca LP positions, tokenized stocks and USDC all go into one account. Here each block is ${BLOCK_USD} of an example{" "}
+          SOL, liquid staking tokens, LP positions from Orca, Raydium and Meteora, tokenized stocks, memecoins and USDC all go into one account. Here each block is ${BLOCK_USD} of an example{" "}
           {dollars(usd(TOTAL))} portfolio.
         </>
       ),

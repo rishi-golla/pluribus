@@ -32,7 +32,7 @@ export function Features() {
         index={1}
         delay={0}
         title="Crash-tested, not snapshot"
-        body="LP positions are valued at the crash price using only ticks, liquidity and oracle prices, so manipulating a pool can't raise your limit."
+        body="LP positions are valued at the crash price using only their range, liquidity and oracle prices, so manipulating a pool can't raise your limit."
       >
         <div className="font-mono text-[12.5px]">
           <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-line pb-2 text-t3">
