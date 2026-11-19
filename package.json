@@ -24,7 +24,8 @@
     "keeper": "tsx keeper/index.ts",
     "keeper:e2e": "tsx scripts/keeper-e2e.ts",
     "indexer": "tsx indexer/server.ts",
-    "indexer:replay": "tsx indexer/replay.ts"
+    "indexer:replay": "tsx indexer/replay.ts",
+    "dlmm:market": "tsx scripts/dlmm-market.ts"
   },
   "dependencies": {
     "@anchor-lang/core": "1.2.2",
