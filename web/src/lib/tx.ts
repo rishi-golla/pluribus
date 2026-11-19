@@ -1,5 +1,5 @@
 import type { WalletContextState } from "@solana/wallet-adapter-react";
-import { Transaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { Transaction, type Connection, type TransactionInstruction, type Signer } from "@solana/web3.js";
 import { CLUSTER, deployment } from "./cluster";
 import { buildTransaction } from "./pluribus/sdk";
 import idl from "./pluribus/sdk/idl/pluribus.json";
@@ -34,6 +34,8 @@ export async function sendInstructions(
   wallet: Pick<WalletContextState, "publicKey" | "sendTransaction" | "signTransaction">,
   instructions: TransactionInstruction[],
   onStage: (stage: Stage) => void,
+  // Keys the app holds itself, such as the position being opened, which must sign next to the wallet
+  signers: Signer[] = [],
 ) {
   const latest = await connection.getLatestBlockhash();
   if (!wallet.publicKey) throw new Error("Connect a wallet first");
@@ -45,6 +47,11 @@ export async function sendInstructions(
     deployment && !(CLUSTER === "localnet" && fits(legacy))
       ? await buildTransaction(connection, deployment, wallet.publicKey, instructions, latest.blockhash)
       : legacy;
+  // These sign first, so the wallet adds its own signature to a message that no longer changes
+  if (signers.length) {
+    if (tx instanceof Transaction) tx.partialSign(...signers);
+    else tx.sign(signers);
+  }
   onStage("signing");
   // Extension wallets such as Phantom do not list a local chain among their networks, so asking them to send fails before
   // anything is signed. On the local chain the wallet only signs and the app sends the transaction itself
