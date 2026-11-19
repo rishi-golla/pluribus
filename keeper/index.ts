@@ -32,6 +32,7 @@ import {
   MAX_U64,
   RAYDIUM_CLMM_PROGRAM_IDS,
   buildTransaction,
+  compound,
   decodeError,
   fetchAllCredits,
   fetchCredit,
@@ -79,6 +80,12 @@ const intervalMs = millis("INTERVAL_MS", 5000);
 const autopayMs = millis("AUTOPAY_INTERVAL_MS", 600_000);
 // How often an account paying a risk premium is refreshed, which books the premium and resets it to the collateral held
 const premiumMs = millis("PREMIUM_INTERVAL_MS", 600_000);
+// How often the keeper looks for positions set to compound and compounds those worth it for the bounty; COMPOUND=0 leaves
+// them to other callers
+const compoundMs = millis("COMPOUND_INTERVAL_MS", 600_000);
+const compounding = env.COMPOUND !== "0";
+// The least bounty, in dollars, worth a transaction
+const compoundMinUsd = Number(env.COMPOUND_MIN_USD ?? "0.01");
 // How often the push feeds of live assets are posted again; PYTH_PUSH=0 leaves them to someone else
 const pythMs = millis("PYTH_INTERVAL_MS", 30_000);
 const pythPush = env.PYTH_PUSH !== "0" && cluster !== "localnet";
@@ -370,6 +377,26 @@ async function seniorQueue(start: Pool) {
   }
 }
 
+// Compounds every position whose owner opted in and whose bounty is worth a transaction, with the keeper as caller and recipient
+let lastCompound = 0;
+async function compoundForBounty() {
+  if (Date.now() - lastCompound < compoundMs) return;
+  lastCompound = Date.now();
+  const found = await compound.findCompoundable(program, d, me, me, { minUsd: compoundMinUsd });
+  if (!found.length) return;
+  const setup = await compound.bountyAccountSetup(connection, d, me, me, found);
+  if (setup.length) await send("Bounty token accounts created", setup);
+  if (dryRun) {
+    log(`Dry run, not sent: compound ${found.length} positions for $${found.reduce((s, f) => s + f.usd, 0).toFixed(4)} of bounty`);
+    return;
+  }
+  const packed = await compound.packCompounds(connection, d, me, found);
+  for (const r of await compound.sendCompounds(connection, packed, { keypair: keeper })) {
+    const what = `${r.items.length} positions for $${r.items.reduce((s, f) => s + f.usd, 0).toFixed(4)}`;
+    log(r.error ? `Compound of ${what} failed: ${r.error}` : `Compounded ${what}, tx ${r.signature}`);
+  }
+}
+
 let stopping = false;
 let wake = () => {};
 
@@ -392,13 +419,17 @@ async function pass() {
     if (stopping) return;
     const owner = account.owner;
     // Fees first, since they pay debt down at no cost before a liquidation is considered
-    for (const p of account.positions) {
-      if (p.kind === KIND_LP || p.kind === KIND_DLMM) await attempt(`Autopay for ${owner}`, () => autopay(pool, account, p.mint));
+    for (const [slot, p] of account.positions.entries()) {
+      // A position set to compound is left to the bounty, autopay would be refused
+        if ((p.kind === KIND_LP || p.kind === KIND_DLMM) && account.compoundSlippageBps[slot] === 0) {
+        await attempt(`Autopay for ${owner}`, () => autopay(pool, account, p.mint));
+      }
     }
     if (!account.debtShares.isZero()) await attempt(`Debt check of ${owner}`, () => watchDebt(pool, owner, now));
   }
   // Last, after repayments and liquidations this pass have brought cash back
   if (!stopping) await attempt("Senior queue", async () => seniorQueue(await fetchPool(program)));
+  if (!stopping && compounding) await attempt("Compound", compoundForBounty);
 }
 
 const stop = () => {
