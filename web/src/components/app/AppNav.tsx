@@ -15,6 +15,7 @@ const LINKS = [
   { href: "/borrow", label: "Borrow" },
   { href: "/earn", label: "Earn" },
   { href: "/statements", label: "Statements" },
+  { href: "/compound", label: "Compound" },
 ];
 
 /** App header. Pass `active` to pin a tab (landing preview); otherwise it follows the current route. */
@@ -40,12 +41,12 @@ export function AppNav({ active }: { active?: string }) {
             <Link
               key={l.href}
               href={l.href}
-              className={` px-3.5 py-2 text-sm font-medium transition-colors ${current === l.href ? "bg-s3 text-t1" : "text-t2 hover:text-t1"}`}
+              className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${current === l.href ? "bg-s3 text-t1" : "text-t2 hover:text-t1"}`}
             >
               {l.label}
             </Link>
           ))}
-          <Link href="/docs" className="px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
+          <Link href="/docs" className="rounded-lg px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
             Docs
           </Link>
         </nav>
@@ -61,17 +62,17 @@ export function AppNav({ active }: { active?: string }) {
               </>
             )}
           </div>
-          <div className="flex h-9 w-[220px] items-center gap-2 border border-line bg-s1 pl-3 pr-2.5 text-[13px] text-t3">
+          <div className="flex h-9 w-[220px] items-center gap-2 rounded-lg border border-line bg-s1 pl-3 pr-2.5 text-[13px] text-t3">
             <Search {...ic} />
             Search markets
-            <kbd className="ml-auto border border-line-2 px-1.5 py-px font-mono text-[11px] text-t3">/</kbd>
+            <kbd className="ml-auto rounded border border-line-2 px-1.5 py-px font-mono text-[11px] text-t3">/</kbd>
           </div>
-          <div className="grid size-9 place-items-center border border-line bg-s1 text-t2">
+          <div className="grid size-9 place-items-center rounded-lg border border-line bg-s1 text-t2">
             <Bell {...ic} />
           </div>
           {active ? (
-            <div className="flex h-9 items-center gap-2 border border-line bg-s1 pl-1.5 pr-2.5 text-[13px] font-medium">
-              <span className="wallet-avatar size-6 " />
+            <div className="flex h-9 items-center gap-2 rounded-lg border border-line bg-s1 pl-1.5 pr-2.5 text-[13px] font-medium">
+              <span className="wallet-avatar size-6 rounded-md" />
               7xKX...q9Fh
               <ChevronDown {...ic} className="text-t3" />
             </div>

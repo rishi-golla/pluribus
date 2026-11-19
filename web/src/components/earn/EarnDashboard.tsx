@@ -1,17 +1,16 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ArrowDownLeft, ArrowUpRight, Check, ChevronDown, Clock, Flame, Repeat, Shield, ShieldCheck, X, Zap, type LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, Flame, Shield, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
+import { useState } from "react";
 import { Chip, KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
+import { Fold } from "@/components/Fold";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel, type ChartLine } from "@/components/charts/LineChart";
 import { useAccount, useToast, type Live, type Sample } from "@/components/app/providers";
-import { displayAmount, money, shortKey, usd } from "@/lib/account";
+import { displayAmount, money, usd } from "@/lib/account";
 import { axisTimes, inRange, niceMax, series, smoothPath, timeLabel, type Point } from "@/lib/chart";
-import { explorer, isSignature } from "@/lib/explorer";
-import { DEMO_LENDING, fetchLending, type LenderEvent } from "@/lib/lending";
 import { compactUsd } from "@/lib/markets";
 
 type Tranche = "senior" | "junior";
@@ -134,9 +133,9 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
       <div className="pointer-events-none absolute -right-20 -top-[120px] h-[300px] w-[360px] rounded-full opacity-[0.22] blur-[60px]" style={{ background: t.color }} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="relative grid size-10 place-items-center border border-line-2 bg-s2">
+          <div className="relative grid size-10 place-items-center rounded-[10px] border border-line-2 bg-s2">
             <Token src="/tokens/usdc.webp" size={24} />
-            <span className="absolute -bottom-[5px] -right-[5px] grid size-[18px] place-items-center shadow-[0_0_0_2px_var(--color-s1)]" style={{ background: t.color }}>
+            <span className="absolute -bottom-[5px] -right-[5px] grid size-[18px] place-items-center rounded shadow-[0_0_0_2px_var(--color-s1)]" style={{ background: t.color }}>
               <Badge size={11} strokeWidth={2.5} className="text-[#09090b]" />
             </span>
           </div>
@@ -396,7 +395,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
     <div className="panel">
       <div className="px-[22px] pb-[22px] pt-[18px]">
         {rules?.pausedUntil && (
-          <div className="mb-4 border border-orange/30 bg-orange/5 px-3.5 py-2.5 text-[12.5px] text-t2">
+          <div className="mb-4 rounded-[10px] border border-orange/30 bg-orange/5 px-3.5 py-2.5 text-[12.5px] text-t2">
             Junior exits paused until {when(rules.pausedUntil)}
           </div>
         )}
@@ -427,7 +426,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
                 aria-checked={on}
                 disabled={soon}
                 onClick={() => onTranche(id)}
-                className={`mt-2 flex w-full items-center gap-3 border px-3.5 py-3 text-left transition-colors first-of-type:mt-0 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
+                className={`mt-2 flex w-full items-center gap-3 rounded-[10px] border px-3.5 py-3 text-left transition-colors first-of-type:mt-0 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
                   on ? "border-brand/45 bg-brand/5" : soon ? "border-line bg-bg" : "border-line bg-bg hover:border-line-2"
                 }`}
               >
@@ -443,7 +442,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
               </button>
             );
           })}
-        <label className="mt-3.5 block border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
+        <label className="mt-3.5 block rounded-[10px] border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
           <div className="flex items-center justify-between">
             <Label>Amount</Label>
             <Label>
@@ -463,7 +462,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
               onBlur={() => raw && setRaw((Number(raw) || 0).toFixed(2))}
               className="w-full min-w-0 bg-transparent text-[32px] font-medium tracking-[-0.035em] text-t1 outline-none placeholder:text-t3"
             />
-            <span className="inline-flex h-9 shrink-0 items-center gap-2 border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
+            <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
               <Token src="/tokens/usdc.webp" size={20} />
               USDC
               <ChevronDown size={16} strokeWidth={1.75} className="text-t3" />
@@ -502,7 +501,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           onClick={submit}
           disabled={!!error || status !== "idle"}
           whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-          className={`mt-4 flex h-12 w-full items-center justify-center gap-2.5 text-[15px] font-medium transition-colors ${
+          className={`mt-4 flex h-12 w-full items-center justify-center gap-2.5 rounded-[10px] text-[15px] font-medium transition-colors ${
             error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]"
           }`}
         >
@@ -527,9 +526,9 @@ function SeniorQueue({ live }: { live: Live }) {
     if (ok) toast(done);
   };
   const { cash, seniorQueue } = live.pool;
-  const chip = "h-9 flex-1 cursor-pointer border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  const chip = "h-9 flex-1 cursor-pointer rounded-md border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
-    <div className="mt-4 border border-line bg-bg px-3.5 py-3">
+    <div className="mt-4 rounded-[10px] border border-line bg-bg px-3.5 py-3">
       <div className="flex items-center justify-between">
         <Label>Withdrawal queue</Label>
         <span className="text-[12px] text-t3">{money(seniorQueue.reserved)} USDC held for the queue</span>
@@ -596,9 +595,9 @@ function ExitQueue({ live }: { live: Live }) {
     setBusy(null);
     if (ok) toast(done);
   };
-  const chip = "h-9 flex-1 cursor-pointer border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  const chip = "h-9 flex-1 cursor-pointer rounded-md border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
-    <div className="mt-4 border border-line bg-bg px-3.5 py-3">
+    <div className="mt-4 rounded-[10px] border border-line bg-bg px-3.5 py-3">
       <div className="flex items-center justify-between">
         <Label>Exit queue</Label>
         <Tag tone={state === "ready" ? "green" : state === "lapsed" ? "neutral" : "orange"}>{state === "ready" ? "Ready to claim" : state === "lapsed" ? "Lapsed" : "Waiting"}</Tag>
@@ -682,134 +681,15 @@ function Donut({ split, apr }: { split: Split[]; apr: number }) {
           transition={{ duration: 0.9, delay: 0.15 + i * 0.25, ease: EASE }}
         />
       ))}
-      <text x={60} y={56} textAnchor="middle" style={{ fill: "#f0f0f0", font: "500 17px var(--font-geist-mono)" }}>
+      <text x={60} y={56} textAnchor="middle" style={{ fill: "#f0f0f0", font: "500 17px var(--font-sans)" }}>
         {(apr * 100).toFixed(1)}%
       </text>
-      <text x={60} y={73} textAnchor="middle" style={{ fill: "#6e6e6e", font: "400 10.5px var(--font-geist-mono)" }}>
+      <text x={60} y={73} textAnchor="middle" style={{ fill: "#6e6e6e", font: "400 10.5px var(--font-sans)" }}>
         borrow APR
       </text>
     </motion.svg>
   );
 }
-const LENDING_KIND: Record<LenderEvent["kind"], { label: string; icon: LucideIcon; color: string; sign: "+" | "-" | "" }> = {
-  deposit: { label: "Deposit", icon: ArrowDownLeft, color: "var(--color-brand)", sign: "+" },
-  withdraw: { label: "Withdrawal", icon: ArrowUpRight, color: "var(--color-green)", sign: "-" },
-  convert: { label: "Moved to junior", icon: Repeat, color: "var(--color-brand)", sign: "" },
-  "exit-requested": { label: "Exit requested", icon: Clock, color: "var(--color-orange)", sign: "" },
-  "exit-claimed": { label: "Exit claimed", icon: Check, color: "var(--color-green)", sign: "" },
-  "exit-cancelled": { label: "Exit cancelled", icon: X, color: "var(--color-t3)", sign: "" },
-  queued: { label: "Withdrawal queued", icon: Clock, color: "var(--color-orange)", sign: "" },
-  settled: { label: "Withdrawal paid", icon: Check, color: "var(--color-green)", sign: "-" },
-};
-const LENDING_FILTERS = ["All", "Deposits", "Withdrawals", "Queue"] as const;
-type LendingFilter = (typeof LENDING_FILTERS)[number];
-const LENDING_FILTER_KINDS: Record<Exclude<LendingFilter, "All">, LenderEvent["kind"][]> = {
-  Deposits: ["deposit", "convert"],
-  Withdrawals: ["withdraw", "exit-claimed", "settled"],
-  Queue: ["exit-requested", "exit-cancelled", "queued"],
-};
-const LENDING_SHOWN = 10;
-const lendingDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric", timeZone: "UTC" });
-
-/** The wallet's deposits, withdrawals, conversions and exit queue moves, newest first, from the indexer */
-function LendingHistory({ live }: { live: Live | null }) {
-  const [filter, setFilter] = useState<LendingFilter>("All");
-  const [showAll, setShowAll] = useState(false);
-  // Null when no indexer is configured or it did not answer, kept with its wallet so another wallet never shows it
-  const [fetched, setFetched] = useState<{ owner: string; rows: LenderEvent[] | null }>();
-  const owner = live?.owner;
-  useEffect(() => {
-    if (!owner) return;
-    let on = true;
-    // Every transaction of the wallet gives a fresh `live`, so the list is read again after each one
-    fetchLending(owner)
-      .catch(() => null)
-      .then((rows) => on && setFetched({ owner, rows }));
-    return () => {
-      on = false;
-    };
-  }, [owner, live]);
-
-  // Undefined while loading
-  const loaded = live ? (fetched && fetched.owner === owner ? fetched.rows : undefined) : DEMO_LENDING;
-  const listed = loaded ? [...loaded].reverse() : [];
-  const matching = filter === "All" ? listed : listed.filter((r) => LENDING_FILTER_KINDS[filter].includes(r.kind));
-  const rows = showAll ? matching : matching.slice(0, LENDING_SHOWN);
-  return (
-    <div className="panel">
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
-        <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
-          Lending activity {loaded && <span className="font-normal text-t3">{listed.length} events</span>}
-        </h3>
-        <Segmented small label="Filter lending activity" items={LENDING_FILTERS} value={filter} onChange={setFilter} />
-      </div>
-      <table className="mt-3.5 w-full border-collapse">
-        <thead>
-          <tr className="text-[12.5px] text-t3 [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
-            <th className="pl-[22px] text-left">Activity</th>
-            <th className="text-left">Date</th>
-            <th className="text-right">Amount</th>
-            <th className="text-right">Shares</th>
-            <th className="pr-[22px] text-right">Transaction</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const k = LENDING_KIND[r.kind];
-            const t = TRANCHES[r.tranche];
-            const Icon = k.icon;
-            return (
-              <tr key={r.id} className="border-t border-line transition-colors hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5">
-                <td className="pl-[22px]">
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-8 place-items-center border border-line bg-s3" style={{ color: k.color }}>
-                      <Icon size={15} strokeWidth={1.75} />
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2 font-medium">
-                        {k.label}
-                        <Tag tone={t.tone}>{t.name}</Tag>
-                      </div>
-                      <div className="mt-0.5 text-[12.5px] text-t3">{r.detail}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="text-t2">{lendingDate(r.date)}</td>
-                <td className={`text-right font-medium ${k.sign ? "" : "text-t2"}`}>{r.amount > 0 ? `${k.sign}${usd(r.amount)}` : "-"}</td>
-                <td className="text-right text-t2">
-                  {money(r.shares)} {t.token}
-                </td>
-                <td className="pr-[22px] text-right">
-                  <a
-                    href={isSignature(r.tx) ? explorer(r.tx) : "#"}
-                    {...(isSignature(r.tx) && { target: "_blank", rel: "noreferrer" })}
-                    className="inline-flex items-center justify-end gap-1.5 font-mono text-[12.5px] text-t3 transition-colors hover:text-t1"
-                  >
-                    {isSignature(r.tx) ? shortKey(r.tx) : r.tx}
-                    <ArrowUpRight size={13} strokeWidth={1.75} />
-                  </a>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {!rows.length && (
-        <div className="px-[22px] py-10 text-center text-t3">
-          {loaded === undefined ? "Loading lending activity" : loaded === null ? "Shown once an indexer is connected" : filter === "All" ? "No lending activity yet" : `No ${filter.toLowerCase()} yet`}
-        </div>
-      )}
-      {matching.length > LENDING_SHOWN && (
-        <button type="button" onClick={() => setShowAll(!showAll)} className="w-full cursor-pointer border-t border-line py-3 text-[13px] font-medium text-t2 transition-colors hover:text-t1">
-          {showAll ? `Show the latest ${LENDING_SHOWN}` : `Show all ${matching.length}`}
-        </button>
-      )}
-    </div>
-  );
-}
-
-
-
 export function EarnDashboard() {
   const [tranche, setTranche] = useState<Tranche>("senior");
   const { live } = useAccount();
@@ -867,7 +747,9 @@ export function EarnDashboard() {
         <SupplyPanel tranche={tranche} onTranche={setTranche} />
       </section>
 
-      <section className="mt-4 grid grid-cols-2 gap-4">
+      <section className="mt-4">
+        <Fold title="How lending works" summary="Who takes losses first, and where interest goes">
+        <div className="grid grid-cols-2 gap-4">
         <div className="panel">
           <div className="flex items-center justify-between px-[22px] pt-[18px]">
             <h3 className="text-[15px] font-medium tracking-[-0.01em]">Loss waterfall</h3>
@@ -876,12 +758,12 @@ export function EarnDashboard() {
           <div className="px-[22px] pb-[22px] pt-2">
             {waterfall.map((w, i) => (
               <div key={w.n} className={`grid grid-cols-[28px_1fr_auto] items-center gap-3.5 py-3 ${i ? "border-t border-line" : ""}`}>
-                <span className="grid size-[26px] place-items-center bg-s3 text-xs font-semibold text-t2">{w.n}</span>
+                <span className="grid size-[26px] place-items-center rounded-md bg-s3 text-xs font-semibold text-t2">{w.n}</span>
                 <div>
                   <div className="font-medium">{w.name}</div>
-                  <div className="mt-2 flex h-1 overflow-hidden bg-s3">
+                  <div className="mt-2 flex h-1 overflow-hidden rounded-full bg-s3">
                     <motion.i
-                      className="block h-full min-w-1.5 "
+                      className="block h-full min-w-1.5 rounded-full"
                       style={{ background: w.color }}
                       initial={{ width: 0 }}
                       whileInView={{ width: w.width }}
@@ -911,10 +793,8 @@ export function EarnDashboard() {
             </div>
           </div>
         </div>
-      </section>
-
-      <section className="mt-4">
-        <LendingHistory live={live} />
+        </div>
+        </Fold>
       </section>
     </main>
   );
