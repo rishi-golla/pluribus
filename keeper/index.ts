@@ -23,10 +23,12 @@ import {
   type CreditAccount,
   type Deployment,
   type HealthView,
+  type LpLocation,
   type Pool,
   KIND_LP,
   KIND_TOKEN,
   MAX_U64,
+  RAYDIUM_CLMM_PROGRAM_IDS,
   buildTransaction,
   decodeError,
   fetchAllCredits,
@@ -35,6 +37,7 @@ import {
   fetchPool,
   getProgram,
   ix,
+  locateLps,
   pda,
 } from "../sdk/index.ts";
 
@@ -177,12 +180,45 @@ async function watchDebt(pool: Pool, owner: PublicKey, now: number) {
 
 const lastFeeCheck = new Map<string, number>();
 
+// Raydium has no quote for what a position has earned, so the harvest is run without being sent
+// What it would add to the program's base and USDC vaults is what the fees are, and nothing is sent when that is nothing
+async function autopayRaydium(account: CreditAccount, positionMint: PublicKey, where: LpLocation) {
+  const owner = account.owner;
+  const ixs = await ix.autopayRaydium(program, d, me, owner, positionMint, where.pool);
+  const vaults = [pda.vault(where.baseMint), pda.vault(usdcMint)];
+  const latest = await connection.getLatestBlockhash();
+  const tx = await buildTransaction(connection, d, me, ixs, latest.blockhash);
+  const [before, run] = await Promise.all([
+    connection.getMultipleAccountsInfo(vaults),
+    connection.simulateTransaction(tx, {
+      sigVerify: false,
+      replaceRecentBlockhash: true,
+      accounts: { encoding: "base64", addresses: vaults.map((v) => v.toBase58()) },
+    }),
+  ]);
+  if (run.value.err) {
+    throw Object.assign(new Error(`The harvest failed in simulation: ${JSON.stringify(run.value.err)}`), { logs: run.value.logs });
+  }
+  // A token account holds its balance as eight bytes at offset 64
+  const balance = (data: Buffer) => data.readBigUInt64LE(64);
+  const fees = vaults.map((_, i) => {
+    const [was, now] = [before[i], run.value.accounts?.[i]];
+    return was && now ? balance(Buffer.from(now.data[0], "base64")) - balance(was.data) : 0n;
+  });
+  if (fees.every((f) => f === 0n)) return;
+  const [base, usdcFee] = [d.assets[where.baseMint.toBase58()], Number(fees[1]) / 1e6];
+  const owed = `${Number(fees[0]) / 10 ** (base?.decimals ?? 9)} ${symbol(where.baseMint)} and ${usdcFee.toFixed(2)} USDC`;
+  await send(`Autopay for ${owner}: ${owed} of fees from Raydium LP position ${positionMint.toBase58()}`, ixs);
+}
+
 async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicKey) {
   const owner = account.owner;
   const id = positionMint.toBase58();
   if (Date.now() - (lastFeeCheck.get(id) ?? 0) < autopayMs) return;
   lastFeeCheck.set(id, Date.now());
-  // Only Orca positions in the main whirlpool are harvested, Raydium positions keep their fees until withdrawn
+  const where = (await locateLps(connection, d, account)).get(id);
+  if (where && RAYDIUM_CLMM_PROGRAM_IDS.some((k) => k.equals(where.dexProgram))) return autopayRaydium(account, positionMint, where);
+  // Orca positions are harvested only in the main whirlpool, where the fees can be quoted
   const position = await orca.getPosition(pda.orcaPosition(positionMint), IGNORE_CACHE).catch(() => null);
   if (!position?.getData().whirlpool.equals(new PublicKey(d.whirlpool))) return;
   // The pool's tokens are classic SPL tokens, which the program requires of every asset, so no transfer fee applies
