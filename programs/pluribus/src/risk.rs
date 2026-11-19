@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{clmm, constants::*, error::PluribusError, math::*, oracle::*, state::*, token2022};
+use crate::{clmm, constants::*, error::PluribusError, events::PremiumBooked, math::*, oracle::*, state::*, token2022};
 
 /// An account's collateral valued under every scenario
 #[derive(Default)]
@@ -17,6 +17,10 @@ pub struct Health {
     pub price: [u128; MAX_POSITIONS],
     /// A token whose price is unclear right now, around a corporate action, which can't be seized until it is clear
     pub unclear: [bool; MAX_POSITIONS],
+    /// Each position's draw value per scenario, paused or not, which weighs its risk premium
+    pub pos_init: [[u128; MAX_SCENARIOS]; MAX_POSITIONS],
+    /// Risk premium of each position's asset, or of an LP's base asset
+    pub premium: [u16; MAX_POSITIONS],
 }
 
 /// The worst scenario for the whole portfolio
@@ -38,6 +42,20 @@ impl Health {
 
     pub fn scenarios(&self) -> usize {
         self.scenarios
+    }
+
+    /// The collateral's risk premium in bps a year: each position's premium weighted by its draw value
+    /// in the scenario where the whole portfolio is worth least, so collateral worth little in a crash adds little
+    /// Only filled by a health check that values draws
+    pub fn premium_bps(&self) -> u16 {
+        let total = |s: usize| self.pos_init.iter().fold(0u128, |sum, p| sum.saturating_add(p[s]));
+        let Some(s) = (0..self.scenarios).min_by_key(|&s| total(s)) else { return 0 };
+        let all = total(s);
+        if all == 0 {
+            return 0;
+        }
+        let weighted = self.pos_init.iter().zip(self.premium).fold(0u128, |sum, (p, b)| sum.saturating_add(p[s].saturating_mul(b as u128)));
+        (weighted / all).min(MAX_RISK_PREMIUM_BPS as u128) as u16
     }
 }
 
@@ -109,7 +127,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
     let mut next = || accs.next().ok_or_else(|| error!(PluribusError::MissingAccount));
 
     for (i, pos) in credit.positions.iter().enumerate() {
-        let (valuer, group, cost, paused, d) = match pos.kind {
+        let (valuer, group, cost, paused, d, premium) = match pos.kind {
             KIND_TOKEN => {
                 let asset: Asset = load(next()?)?;
                 require_keys_eq!(asset.mint, pos.mint, PluribusError::AccountMismatch);
@@ -168,7 +186,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let paused = asset.params.paused || now < pool.effective_at(asset.active_at) || halted || moving || !fresh;
                 h.unclear[i] = moving;
                 let d = asset.dynamic_shocks(params);
-                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, paused, d)
+                (valuer, asset.params.group, asset.params.liq_cost_bps as u128, paused, d, asset.premium_bps)
             }
             KIND_LP => {
                 let market: LpMarket = load(next()?)?;
@@ -186,11 +204,13 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let valuer = Valuer::Lp { liquidity: lp.liquidity, lower, upper, decimals: asset.decimals };
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
                 let d = asset.dynamic_shocks(params);
-                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d)
+                // An LP carries its base token's premium, since that is the side a crash takes down
+                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d, asset.premium_bps)
             }
             _ => continue,
         };
 
+        h.premium[i] = premium;
         if want_maint {
             h.market[i] = valuer.at(h.price[i], 0, &mut roots)?;
         }
@@ -205,23 +225,40 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 h.pos_maint[i][s] = maint;
                 h.maint[s] += maint;
             }
-            // Paused collateral, and a listing still in its activation delay, backs no new debt but keeps protecting what is already drawn
-            if want_init && !paused {
+            // Paused collateral, and a listing still in its activation delay, backs no new debt but keeps protecting what is already drawn,
+            // so it still weighs the premium
+            if want_init {
                 let shocked = cut(h.price[i], init_shocks[s])?;
-                h.init[s] += cut(valuer.at(shocked, params.shock(true, s, pool.usdc_group), &mut roots)?, cost)?;
+                let init = cut(valuer.at(shocked, params.shock(true, s, pool.usdc_group), &mut roots)?, cost)?;
+                h.pos_init[i][s] = init;
+                if !paused {
+                    h.init[s] += init;
+                }
             }
         }
     }
     Ok(h)
 }
 
-/// Runs after anything that can lower health
+/// Runs after anything that can lower health, and resets the account's risk premium to its collateral as valued here
 /// No debt means nothing to check, so prices are not needed
-pub fn require_within_limit(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64) -> Result<()> {
+pub fn require_within_limit(pool: &Pool, credit: &mut CreditAccount, rem: &[AccountInfo], now: i64) -> Result<()> {
     let debt = pool.debt_of(credit)?;
     if debt == 0 {
         return Ok(());
     }
-    require!(debt <= evaluate(pool, credit, rem, now, Scope::Draw)?.credit_limit(), PluribusError::ExceedsCreditLimit);
+    let h = evaluate(pool, credit, rem, now, Scope::Draw)?;
+    require!(debt <= h.credit_limit(), PluribusError::ExceedsCreditLimit);
+    credit.premium_bps = h.premium_bps();
+    Ok(())
+}
+
+/// Books the account's risk premium as debt before anything reads or changes its debt or tier
+pub fn book_premium(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i64) -> Result<()> {
+    let amount = pool.book_premium(credit, now)?;
+    if amount > 0 {
+        let rate_bps = pool.premium_rate_bps(credit).min(u16::MAX as u128) as u16;
+        emit!(PremiumBooked { account: credit.key(), amount, rate_bps, debt: to_u64(pool.debt_of(credit)?)? });
+    }
     Ok(())
 }

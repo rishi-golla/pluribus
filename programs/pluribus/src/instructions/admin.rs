@@ -98,6 +98,10 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         senior_reserved: 0,
         senior_next_ticket: 0,
         senior_head: 0,
+        premium_tier_bps: [0; TIERS],
+        pending_premium_tier_bps: [0; TIERS],
+        premium_tier_pending_at: 0,
+        premium_booked: 0,
     });
     Ok(())
 }
@@ -134,6 +138,201 @@ pub fn handle_migrate_pool(ctx: Context<MigratePool>) -> Result<()> {
         anchor_lang::system_program::transfer(CpiContext::new(a.system_program.key(), accounts), rent)?;
     }
     pool.resize(size)?;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct MigrateAccount<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: Read raw, since an account from before the last layout change cannot be deserialized; owner and discriminator are checked in the handler
+    #[account(mut)]
+    pub account: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Permissionless: grows an asset or credit account created before fields were appended to it, the payer covering the extra rent
+/// The new bytes start at zero, which every appended field takes as its starting value, so growing one changes nothing it holds,
+/// and one already at size is left alone
+pub fn handle_migrate_account(ctx: Context<MigrateAccount>) -> Result<()> {
+    let a = ctx.accounts;
+    let account = a.account.to_account_info();
+    require_keys_eq!(*account.owner, crate::ID, PluribusError::WrongOwner);
+    let size = {
+        let data = account.try_borrow_data()?;
+        require!(data.len() >= 8, PluribusError::AccountMismatch);
+        if data[..8] == *Asset::DISCRIMINATOR {
+            8 + Asset::INIT_SPACE
+        } else if data[..8] == *CreditAccount::DISCRIMINATOR {
+            8 + CreditAccount::INIT_SPACE
+        } else {
+            return err!(PluribusError::AccountMismatch);
+        }
+    };
+    if account.data_len() >= size {
+        return Ok(());
+    }
+    let rent = Rent::get()?.minimum_balance(size).saturating_sub(account.lamports());
+    if rent > 0 {
+        let accounts = anchor_lang::system_program::Transfer { from: a.payer.to_account_info(), to: account.clone() };
+        anchor_lang::system_program::transfer(CpiContext::new(a.system_program.key(), accounts), rent)?;
+    }
+    account.resize(size)?;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct SetAssetPremium<'info> {
+    pub admin: Signer<'info>,
+    #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+}
+
+/// A lower premium applies at once and drops a waiting raise; a higher one waits out the activation delay,
+/// so borrowers have time to repay or move collateral before they pay more
+/// Accounts pay a new premium from their next refresh, which the keeper runs
+pub fn handle_set_asset_premium(ctx: Context<SetAssetPremium>, premium_bps: u16) -> Result<()> {
+    require!(premium_bps <= MAX_RISK_PREMIUM_BPS, PluribusError::InvalidParams);
+    let now = Clock::get()?.unix_timestamp;
+    let delay = ctx.accounts.pool.params.activation_delay_secs as i64;
+    let asset = &mut ctx.accounts.asset;
+    if premium_bps <= asset.premium_bps || delay == 0 {
+        asset.premium_bps = premium_bps;
+        asset.premium_pending_at = 0;
+        emit!(ChangeApplied { target: asset.key() });
+    } else {
+        asset.pending_premium_bps = premium_bps;
+        asset.premium_pending_at = now + delay;
+        emit!(ChangeQueued { target: asset.key(), effective_at: asset.premium_pending_at });
+    }
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ApplyAssetPremium<'info> {
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+}
+
+/// Permissionless: puts a waiting premium raise into effect once its delay has passed
+pub fn handle_apply_asset_premium(ctx: Context<ApplyAssetPremium>) -> Result<()> {
+    let asset = &mut ctx.accounts.asset;
+    require!(asset.premium_pending_at != 0, PluribusError::NoPendingChange);
+    require!(Clock::get()?.unix_timestamp >= asset.premium_pending_at, PluribusError::ChangeNotDue);
+    asset.premium_bps = asset.pending_premium_bps;
+    asset.premium_pending_at = 0;
+    emit!(ChangeApplied { target: asset.key() });
+    Ok(())
+}
+
+/// Sets the share of each asset's premium charged in each loyalty tier: the full premium at most, never rising with loyalty
+/// Cuts apply at once and drop a waiting raise, a raise waits out the activation delay
+pub fn handle_set_premium_tiers(ctx: Context<AdminPool>, tier_bps: [u16; TIERS]) -> Result<()> {
+    require!(
+        tier_bps.iter().all(|b| *b as u128 <= BPS) && tier_bps.windows(2).all(|w| w[0] >= w[1]),
+        PluribusError::InvalidParams
+    );
+    let now = Clock::get()?.unix_timestamp;
+    let pool = &mut ctx.accounts.pool;
+    let delay = pool.params.activation_delay_secs as i64;
+    if tier_bps.iter().zip(pool.premium_tier_bps).all(|(new, old)| *new <= old) || delay == 0 {
+        pool.premium_tier_bps = tier_bps;
+        pool.premium_tier_pending_at = 0;
+        emit!(ChangeApplied { target: pool.key() });
+    } else {
+        pool.pending_premium_tier_bps = tier_bps;
+        pool.premium_tier_pending_at = now + delay;
+        emit!(ChangeQueued { target: pool.key(), effective_at: pool.premium_tier_pending_at });
+    }
+    Ok(())
+}
+
+/// Permissionless: puts waiting tier shares into effect once their delay has passed
+pub fn handle_apply_premium_tiers(ctx: Context<ApplyParams>) -> Result<()> {
+    let pool = &mut ctx.accounts.pool;
+    require!(pool.premium_tier_pending_at != 0, PluribusError::NoPendingChange);
+    require!(Clock::get()?.unix_timestamp >= pool.premium_tier_pending_at, PluribusError::ChangeNotDue);
+    pool.premium_tier_bps = pool.pending_premium_tier_bps;
+    pool.premium_tier_pending_at = 0;
+    emit!(ChangeApplied { target: pool.key() });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct DemoAsset<'info> {
+    pub admin: Signer<'info>,
+    #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin, constraint = pool.demo_mode @ PluribusError::DemoDisabled)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+}
+
+/// Demo mode only: prices this asset from its Pyth feed instead of the admin's demo account, or back again
+/// An admin who writes prices already decides every value, so switching sources needs no delay
+pub fn handle_demo_set_live_price(ctx: Context<DemoAsset>, live: bool) -> Result<()> {
+    let asset = &mut ctx.accounts.asset;
+    // A fixed-price asset has no feed, and a live one needs a feed to read
+    require!(!live || (asset.params.oracle == ORACLE_PYTH && asset.params.pyth_feed_id != [0; 32]), PluribusError::InvalidParams);
+    asset.live_price = live;
+    emit!(ChangeApplied { target: asset.key() });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct DemoActivate<'info> {
+    pub admin: Signer<'info>,
+    #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin, constraint = pool.demo_mode @ PluribusError::DemoDisabled)]
+    pub pool: Box<Account<'info, Pool>>,
+}
+
+/// Demo mode only: puts every waiting change into effect now, for the pool and for the assets and LP markets passed as
+/// writable remaining accounts, and ends their listings' activation delay
+/// The delays give juniors time to leave before risk changes, but an admin who writes prices can already move every account
+/// wherever it likes, so in demo mode they protect nobody and only stall a demo; with demo mode off this is unavailable for good
+pub fn handle_demo_activate(ctx: Context<DemoActivate>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let pool = &mut ctx.accounts.pool;
+    if pool.pending_at != 0 {
+        let params = pool.pending_params;
+        require!(params.bonus_fits(pool.min_liq_cost_bps), PluribusError::InvalidParams);
+        apply_params(pool, params, now)?;
+    }
+    if pool.premium_tier_pending_at != 0 {
+        pool.premium_tier_bps = pool.pending_premium_tier_bps;
+        pool.premium_tier_pending_at = 0;
+    }
+    for acc in ctx.remaining_accounts {
+        require!(acc.is_writable, PluribusError::AccountMismatch);
+        require_keys_eq!(*acc.owner, crate::ID, PluribusError::WrongOwner);
+        let is_asset = acc.try_borrow_data()?.get(..8) == Some(Asset::DISCRIMINATOR);
+        if is_asset {
+            let mut asset: Asset = crate::oracle::load(acc)?;
+            if asset.pending_at != 0 {
+                record_asset(pool, &asset.mint, &asset.pending)?;
+                asset.params = asset.pending;
+                asset.pending_at = 0;
+            }
+            if asset.premium_pending_at != 0 {
+                asset.premium_bps = asset.pending_premium_bps;
+                asset.premium_pending_at = 0;
+            }
+            asset.active_at = asset.active_at.min(now);
+            asset.try_serialize(&mut &mut acc.try_borrow_mut_data()?[..])?;
+        } else {
+            let mut market: LpMarket = crate::oracle::load(acc)?;
+            if market.pending_at != 0 {
+                record_lp_cost(pool, market.pending_liq_cost_bps)?;
+                market.liq_cost_bps = market.pending_liq_cost_bps;
+                market.paused = market.pending_paused;
+                market.pending_at = 0;
+            }
+            market.active_at = market.active_at.min(now);
+            market.try_serialize(&mut &mut acc.try_borrow_mut_data()?[..])?;
+        }
+        emit!(ChangeApplied { target: acc.key() });
+    }
     Ok(())
 }
 
@@ -355,7 +554,11 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         jump_since: 0,
         jump_price: 0,
         jump_seen: 0,
-        reserved: [0; 7],
+        live_price: false,
+        reserved: [0; 6],
+        premium_bps: 0,
+        pending_premium_bps: 0,
+        premium_pending_at: 0,
     });
     Ok(())
 }

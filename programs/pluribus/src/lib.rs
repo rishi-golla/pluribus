@@ -210,4 +210,32 @@ pub mod pluribus {
     pub fn cancel_senior_exit(ctx: Context<CancelSeniorExit>) -> Result<()> {
         senior::handle_cancel_senior_exit(ctx)
     }
+
+    pub fn migrate_account(ctx: Context<MigrateAccount>) -> Result<()> {
+        admin::handle_migrate_account(ctx)
+    }
+
+    pub fn set_asset_premium(ctx: Context<SetAssetPremium>, premium_bps: u16) -> Result<()> {
+        admin::handle_set_asset_premium(ctx, premium_bps)
+    }
+
+    pub fn apply_asset_premium(ctx: Context<ApplyAssetPremium>) -> Result<()> {
+        admin::handle_apply_asset_premium(ctx)
+    }
+
+    pub fn set_premium_tiers(ctx: Context<AdminPool>, tier_bps: [u16; TIERS]) -> Result<()> {
+        admin::handle_set_premium_tiers(ctx, tier_bps)
+    }
+
+    pub fn apply_premium_tiers(ctx: Context<ApplyParams>) -> Result<()> {
+        admin::handle_apply_premium_tiers(ctx)
+    }
+
+    pub fn demo_set_live_price(ctx: Context<DemoAsset>, live: bool) -> Result<()> {
+        admin::handle_demo_set_live_price(ctx, live)
+    }
+
+    pub fn demo_activate(ctx: Context<DemoActivate>) -> Result<()> {
+        admin::handle_demo_activate(ctx)
+    }
 }

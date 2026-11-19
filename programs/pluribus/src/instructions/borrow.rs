@@ -22,13 +22,16 @@ pub struct OpenAccount<'info> {
 }
 
 pub fn handle_open_account(ctx: Context<OpenAccount>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
     ctx.accounts.credit.set_inner(CreditAccount {
         owner: ctx.accounts.owner.key(),
         bump: ctx.bumps.credit,
         tier: 0,
-        healthy_since: Clock::get()?.unix_timestamp,
+        healthy_since: now,
         debt_shares: 0,
         positions: [Position::default(); MAX_POSITIONS],
+        premium_bps: 0,
+        premium_since: now,
     });
     emit!(AccountOpened { account: ctx.accounts.credit.key(), owner: ctx.accounts.owner.key() });
     Ok(())
@@ -96,11 +99,12 @@ pub fn handle_withdraw_token(ctx: Context<MoveToken>, amount: u64) -> Result<()>
     let a = ctx.accounts;
     require!(amount > 0, PluribusError::ZeroAmount);
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     let sent = pro_rata(amount, a.vault.amount, a.asset.total_deposited)?;
     a.credit.remove_token(&a.mint.key(), amount)?;
     a.asset.total_deposited = a.asset.total_deposited.saturating_sub(amount);
     push(&a.token_program, &a.mint, &a.vault, &a.owner_token, &a.pool, sent)?;
-    require_within_limit(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
+    require_within_limit(&a.pool, &mut a.credit, ctx.remaining_accounts, now)?;
     emit!(CollateralChanged { account: a.credit.key(), mint: a.mint.key(), kind: KIND_TOKEN, amount, deposit: false });
     Ok(())
 }
@@ -182,9 +186,10 @@ pub fn handle_withdraw_lp(ctx: Context<WithdrawLp>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let a = ctx.accounts;
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     a.credit.remove_lp(&a.position_mint.key())?;
     release_nft(&a.token_program, &a.position_mint, &a.vault_nft, &a.owner_nft, &a.pool, a.owner.to_account_info())?;
-    require_within_limit(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
+    require_within_limit(&a.pool, &mut a.credit, ctx.remaining_accounts, now)?;
     emit!(CollateralChanged { account: a.credit.key(), mint: a.position_mint.key(), kind: KIND_LP, amount: 1, deposit: false });
     Ok(())
 }
@@ -234,13 +239,14 @@ pub fn handle_draw(ctx: Context<Draw>, amount: u64) -> Result<()> {
     require!(amount > 0, PluribusError::ZeroAmount);
     require!(!a.pool.paused, PluribusError::Paused);
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     // The loyalty clock only runs while something is owed
     if a.credit.debt_shares == 0 {
         a.credit.healthy_since = now;
     }
     a.pool.borrow(&mut a.credit, amount)?;
     push(&a.token_program, &a.usdc_mint, &a.usdc_vault, &a.owner_usdc, &a.pool, amount)?;
-    require_within_limit(&a.pool, &a.credit, ctx.remaining_accounts, now)?;
+    require_within_limit(&a.pool, &mut a.credit, ctx.remaining_accounts, now)?;
     emit!(Drawn { account: a.credit.key(), amount, debt: to_u64(a.pool.debt_of(&a.credit)?)? });
     Ok(())
 }
@@ -264,7 +270,9 @@ pub struct Repay<'info> {
 pub fn handle_repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
     let a = ctx.accounts;
     require!(amount > 0, PluribusError::ZeroAmount);
-    a.pool.accrue(Clock::get()?.unix_timestamp)?;
+    let now = Clock::get()?.unix_timestamp;
+    a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     require!(a.pool.retires_debt(&a.credit, amount)?, PluribusError::ZeroAmount);
     let paid = a.pool.repay(&mut a.credit, amount)?;
     pull(&a.token_program, &a.usdc_mint, &a.payer_usdc, &a.usdc_vault, &a.payer, paid)?;

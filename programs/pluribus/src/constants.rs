@@ -83,3 +83,5 @@ pub const WHIRLPOOL_PROGRAM_ID: Pubkey = pubkey!("whirLbMiicVdio4qvUfM5KAg6Ct8Vw
 pub const RAYDIUM_CLMM_PROGRAMS: [Pubkey; 2] =
     [pubkey!("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"), pubkey!("DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH")];
 pub const PYTH_RECEIVER_ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
+/// Ceiling on an asset's risk premium, the extra yearly rate charged on debt it backs: 30%
+pub const MAX_RISK_PREMIUM_BPS: u16 = 3_000;

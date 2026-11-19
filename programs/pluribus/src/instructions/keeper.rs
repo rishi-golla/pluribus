@@ -118,16 +118,20 @@ pub struct RefreshTier<'info> {
 
 /// Permissionless: moves an account up a loyalty tier once it has stayed healthy long enough
 /// Drops it to the base tier as soon as its health is under the warning level
+/// Also books the risk premium and resets it to the collateral held now, so the keeper keeps both current
 // Shortcut: health is only sampled when this runs so a dip between calls goes unseen, run it from the keeper
 pub fn handle_refresh_tier(ctx: Context<RefreshTier>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let a = ctx.accounts;
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     let debt = a.pool.debt_of(&a.credit)?;
     let from = a.credit.tier;
     let mut to = from;
     if debt > 0 {
-        let limit = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?.liquidation_limit();
+        let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::All)?;
+        a.credit.premium_bps = h.premium_bps();
+        let limit = h.liquidation_limit();
         if limit * BPS < debt * a.pool.params.warn_health_bps as u128 {
             to = 0;
             a.credit.healthy_since = now;
@@ -165,25 +169,33 @@ pub struct HealthView {
     pub position_price: [u64; MAX_POSITIONS],
     /// Positions whose price is unclear around a corporate action, which can't be seized yet
     pub position_unclear: [bool; MAX_POSITIONS],
+    /// Part of `borrow_rate_bps` that is the collateral's risk premium after the tier's share
+    pub premium_rate_bps: u16,
 }
 
 /// Read-only: clients simulate this so the dashboard and keeper use the program's own numbers
 pub fn handle_health(ctx: Context<ViewHealth>) -> Result<HealthView> {
     let now = Clock::get()?.unix_timestamp;
-    let credit = &ctx.accounts.credit;
+    let mut credit = CreditAccount::clone(&ctx.accounts.credit);
     let mut pool = Pool::clone(&ctx.accounts.pool);
     pool.accrue(now)?;
-    let h = evaluate(&pool, credit, ctx.remaining_accounts, now, Scope::All)?;
+    // The debt as the next instruction will see it, premium owed so far included
+    pool.book_premium(&mut credit, now)?;
+    let h = evaluate(&pool, &credit, ctx.remaining_accounts, now, Scope::All)?;
+    // The premium the collateral held now carries, which the next refresh puts into effect
+    credit.premium_bps = h.premium_bps();
+    let premium = pool.premium_rate_bps(&credit);
     let mut view = HealthView {
-        debt: to_u64(pool.debt_of(credit)?)?,
+        debt: to_u64(pool.debt_of(&credit)?)?,
         credit_limit: to_u64(h.credit_limit())?,
         liquidation_limit: to_u64(h.liquidation_limit())?,
         collateral_value: to_u64(h.market.iter().sum())?,
-        borrow_rate_bps: pool.tier_rate_bps(credit.tier as usize)?.min(u16::MAX as u128) as u16,
+        borrow_rate_bps: (pool.tier_rate_bps(credit.tier as usize)? + premium).min(u16::MAX as u128) as u16,
         tier: credit.tier,
         position_value: [0; MAX_POSITIONS],
         position_price: [0; MAX_POSITIONS],
         position_unclear: h.unclear,
+        premium_rate_bps: premium.min(u16::MAX as u128) as u16,
     };
     for i in 0..MAX_POSITIONS {
         view.position_value[i] = to_u64(h.market[i])?;

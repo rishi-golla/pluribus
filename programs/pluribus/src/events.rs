@@ -195,3 +195,12 @@ pub struct SeniorExitCancelled {
     pub shares: u64,
     pub returned: u64,
 }
+
+/// Risk premium charged as new debt: `amount` at `rate_bps` a year, the collateral's premium after the tier's share
+#[event]
+pub struct PremiumBooked {
+    pub account: Pubkey,
+    pub amount: u64,
+    pub rate_bps: u16,
+    pub debt: u64,
+}

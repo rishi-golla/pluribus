@@ -7,7 +7,7 @@ use anchor_lang::{
 };
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{constants::*, error::PluribusError, events::*, math::to_u64, orca::read_position, state::*, token::push};
+use crate::{constants::*, error::PluribusError, events::*, math::to_u64, orca::read_position, risk::book_premium, state::*, token::push};
 
 /// First 8 bytes of sha256("global:update_fees_and_rewards")
 const UPDATE_FEES_AND_REWARDS: [u8; 8] = [0x9a, 0xe6, 0xfa, 0x0d, 0xec, 0xd1, 0x4b, 0xdf];
@@ -63,7 +63,9 @@ pub struct Autopay<'info> {
 /// The USDC part repays debt and the rest stays in the account as collateral
 pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
     let a = ctx.accounts;
-    a.pool.accrue(Clock::get()?.unix_timestamp)?;
+    let now = Clock::get()?.unix_timestamp;
+    a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     let mint = a.position_mint.key();
     a.credit.find(KIND_LP, &mint)?;
     // Fees are collected through Orca with the base token in vault A, so other markets keep their fees in the position

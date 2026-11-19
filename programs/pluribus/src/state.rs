@@ -252,6 +252,14 @@ pub struct Pool {
     /// Ticket the next queued senior exit gets, and the ticket the queue pays next
     pub senior_next_ticket: u64,
     pub senior_head: u64,
+    /// Share of each asset's risk premium charged in each loyalty tier, so the premium fades while an account stays healthy
+    /// Added after launch: a pool grown by `migrate_pool` charges no premium until these are set
+    pub premium_tier_bps: [u16; TIERS],
+    /// Higher shares waiting out the activation delay, live from `premium_tier_pending_at` when that is not 0
+    pub pending_premium_tier_bps: [u16; TIERS],
+    pub premium_tier_pending_at: i64,
+    /// Risk premium booked as debt to date
+    pub premium_booked: u64,
 }
 
 impl Pool {
@@ -603,6 +611,57 @@ impl Pool {
         Ok(())
     }
 
+    /// Yearly premium rate the account pays now: its collateral's premium times its tier's share
+    pub fn premium_rate_bps(&self, credit: &CreditAccount) -> u128 {
+        credit.premium_bps as u128 * self.premium_tier_bps[credit.tier as usize] as u128 / BPS
+    }
+
+    /// Premium owed since the last booking, not yet part of the debt
+    pub fn premium_due(&self, credit: &CreditAccount, now: i64) -> Result<u128> {
+        let elapsed = now.saturating_sub(credit.premium_since);
+        let rate = self.premium_rate_bps(credit);
+        if credit.premium_since == 0 || elapsed <= 0 || rate == 0 || credit.debt_shares == 0 {
+            return Ok(0);
+        }
+        mul_div_wide(self.debt_of(credit)?, rate * elapsed as u128, BPS * SECONDS_PER_YEAR)
+    }
+
+    /// Books the account's risk premium as new debt, at the rate in force since the last booking, and returns it
+    /// Reserves and the protocol take their usual cut and junior lenders the rest, since they lose first when risky collateral fails;
+    /// with no junior money behind the pool it stays with senior lenders
+    /// It bypasses the yield buffer, so a junior who joins just before a booking still waits out the exit delay to take any of it
+    /// Runs before anything reads or changes the account's debt or tier
+    pub fn book_premium(&mut self, credit: &mut CreditAccount, now: i64) -> Result<u64> {
+        if now <= credit.premium_since {
+            return Ok(0);
+        }
+        let due = u64::try_from(self.premium_due(credit, now)?).unwrap_or(u64::MAX);
+        if due == 0 {
+            // A stretch that owes nothing restarts the clock, while one owing under a base unit keeps running until it adds up,
+            // so booking often rounds nothing away
+            if credit.premium_since == 0 || credit.debt_shares == 0 || self.premium_rate_bps(credit) == 0 {
+                credit.premium_since = now;
+            }
+            return Ok(0);
+        }
+        credit.premium_since = now;
+        let t = credit.tier as usize;
+        // Rounded against the borrower, like every other debt share
+        let shares = mul_div_wide_ceil(due as u128, INDEX_ONE, self.borrow_index[t])?;
+        credit.debt_shares = credit.debt_shares.saturating_add(shares);
+        self.debt_shares[t] = self.debt_shares[t].saturating_add(shares);
+        let to_reserves = to_u64(mul_div_floor(due as u128, self.params.reserve_factor_bps as u128, BPS)?)?;
+        let to_protocol = to_u64(mul_div_floor(due as u128, self.params.protocol_fee_bps as u128, BPS)?)?;
+        self.reserves = self.reserves.saturating_add(to_reserves);
+        self.protocol_fees = self.protocol_fees.saturating_add(to_protocol);
+        // A wiped-out junior tranche has nothing to protect, so the premium goes to senior lenders instead of its dead shares
+        if self.junior_assets > 0 {
+            self.junior_assets = self.junior_assets.saturating_add(due - to_reserves - to_protocol);
+        }
+        self.premium_booked = self.premium_booked.saturating_add(due);
+        Ok(due)
+    }
+
     /// Drops debt that no collateral backs and returns the loss with what the yield buffer, reserves, protocol fees and junior lenders absorbed
     /// Interest not yet paid out goes first, then reserves, then the protocol's uncollected cut, then junior lenders,
     /// and senior lenders take what is left
@@ -740,8 +799,16 @@ pub struct Asset {
     /// The latest far token price of that jump and its publish time
     pub jump_price: u64,
     pub jump_seen: i64,
+    /// In demo mode, read the Pyth feed instead of the admin's demo price, for assets that should show real prices
+    pub live_price: bool,
     /// Room for fields added later without moving the ones above
-    pub reserved: [u8; 7],
+    pub reserved: [u8; 6],
+    /// Extra yearly rate on debt this asset backs, paid to junior lenders, who lose first if it fails
+    /// Added after launch: `migrate_account` grows an asset listed before it, and the new bytes start at zero
+    pub premium_bps: u16,
+    /// A higher premium waiting out the activation delay, live from `premium_pending_at` when that is not 0
+    pub pending_premium_bps: u16,
+    pub premium_pending_at: i64,
 }
 
 impl Asset {
@@ -878,6 +945,11 @@ pub struct CreditAccount {
     pub healthy_since: i64,
     pub debt_shares: u128,
     pub positions: [Position; MAX_POSITIONS],
+    /// Risk premium of the collateral when last valued, before the tier's share, in bps a year
+    /// Added after launch: `migrate_account` grows an account opened before it, and the new bytes start at zero
+    pub premium_bps: u16,
+    /// When the premium was last booked as debt, 0 until the first booking starts the clock
+    pub premium_since: i64,
 }
 
 impl CreditAccount {

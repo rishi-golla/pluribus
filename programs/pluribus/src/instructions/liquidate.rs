@@ -65,6 +65,7 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     let now = Clock::get()?.unix_timestamp;
     let a = ctx.accounts;
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     let mint = a.collateral_mint.key();
     // USDC collateral is netted against debt with repay_from_collateral, at no bonus
     require_keys_neq!(mint, a.pool.usdc_mint, PluribusError::InvalidParams);
@@ -161,6 +162,7 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let a = ctx.accounts;
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     let mint = a.position_mint.key();
     let i = a.credit.find(KIND_LP, &mint)?;
     let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?;
@@ -229,6 +231,7 @@ pub fn handle_repay_from_collateral(ctx: Context<RepayFromCollateral>, amount: u
     let now = Clock::get()?.unix_timestamp;
     let a = ctx.accounts;
     a.pool.accrue(now)?;
+    book_premium(&mut a.pool, &mut a.credit, now)?;
     let usdc = a.usdc_mint.key();
     let held = a.credit.positions[a.credit.find(KIND_TOKEN, &usdc)?].amount;
     let debt = a.pool.debt_of(&a.credit)?;
