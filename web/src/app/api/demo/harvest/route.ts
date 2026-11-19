@@ -16,7 +16,7 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
-import { KIND_LP, WHIRLPOOL_PROGRAM_ID, decodeEvents, fetchCredit, getProgram, ix } from "@/lib/pluribus/sdk";
+import { KIND_LP, WHIRLPOOL_PROGRAM_ID, compound, decodeEvents, fetchCredit, getProgram, ix } from "@/lib/pluribus/sdk";
 
 // Dollars traded each way per harvest. Fees are what the pool earns on this, so a small swap would leave almost nothing to collect
 const SWAP_USD = 1_000;
@@ -106,7 +106,9 @@ export async function POST(request: Request) {
   const connection = getConnection();
   const program = getProgram(connection);
   const credit = await fetchCredit(program, owner);
-  const lps = (credit?.positions ?? []).filter((p) => p.kind === KIND_LP).map((p) => p.mint);
+  // A position set to compound is compounded instead, the faucet taking the bounty, since autopay would be refused
+  const positions = (credit?.positions ?? []).map((p, slot) => ({ ...p, compounds: (credit?.compoundSlippageBps[slot] ?? 0) > 0 })).filter((p) => p.kind === KIND_LP);
+  const lps = positions.map((p) => p.mint);
   if (!lps.length) return refuse("No LP position is deposited", 409);
 
   const whirlpool = new PublicKey(d.whirlpool);
@@ -154,9 +156,10 @@ export async function POST(request: Request) {
   }
 
   const totals = { repaid: 0, keptUsdc: 0, sol: 0 };
-  for (const mint of lps) {
+  for (const { mint, compounds } of positions) {
     // The SDK adds its own compute budget per call, and one autopay fits the default anyway
-    const ixs = (await ix.autopay(program, d, me, owner, mint)).filter((i) => !i.programId.equals(ComputeBudgetProgram.programId));
+    const built = compounds ? await compound.compoundOrca(program, d, me, owner, mint, me) : await ix.autopay(program, d, me, owner, mint);
+    const ixs = built.filter((i) => !i.programId.equals(ComputeBudgetProgram.programId));
     const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ...ixs);
     try {
       const signature = await sendAndConfirmTransaction(connection, tx, [signer], { commitment: "confirmed" });
