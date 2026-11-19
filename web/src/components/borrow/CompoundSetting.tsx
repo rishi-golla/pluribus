@@ -10,9 +10,6 @@ import { MAX_TOLERANCE_BPS, TOLERANCES, percent } from "@/lib/compound";
 
 /** The bounty the sample figures use when no wallet is connected */
 const SAMPLE_BOUNTY_BPS = 200;
-// The Meteora compounder is not in the keeper and the SDK yet, so a Meteora position set to compound keeps its fees in place
-// Remove this when it is
-const DLMM_COMPOUNDER_PENDING = true;
 
 type Mode = "Repay debt" | "Compound";
 /** A position whose fees can be set: its id (the NFT mint, or the Meteora position account), its name and what it does now */
@@ -134,11 +131,6 @@ function Form({ live, target, onClose }: { live: Live | null; target: CompoundTa
           <p className="mt-1 text-[12.5px] leading-[1.55] text-t3">
             The rest goes back into the position, anything its range cannot take stays as collateral, and compounding can only raise your health. While it is on, autopay leaves this position alone.
           </p>
-          {target.dlmm && DLMM_COMPOUNDER_PENDING && (
-            <p className="mt-2 text-[12.5px] leading-[1.55] text-orange">
-              Compounding for Meteora positions is still rolling out. Until it is live, fees on this position stay in it instead of repaying debt.
-            </p>
-          )}
         </>
       )}
       <motion.button
