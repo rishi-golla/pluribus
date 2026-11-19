@@ -327,6 +327,8 @@ pub fn handle_dlmm_add<'info>(
     let position = a.position.key();
     a.credit.find(KIND_DLMM, &position)?;
     let held = read_position(&a.position, &a.pool.key())?;
+    // The market checked above must be the position's own, not another that happens to be open
+    require_keys_eq!(held.pair, a.lb_pair.key(), PluribusError::PoolNotWhitelisted);
     let v = venue!(a, owner_token_x, owner_token_y);
     let before = (balance(&v.token_x)?, balance(&v.token_y)?);
 
