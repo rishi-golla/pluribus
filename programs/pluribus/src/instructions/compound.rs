@@ -80,7 +80,10 @@ pub(crate) struct Compounder<'a, 'info> {
     pub usdc_collateral_vault: &'a mut InterfaceAccount<'info, TokenAccount>,
     pub bounty_base: &'a InterfaceAccount<'info, TokenAccount>,
     pub bounty_usdc: &'a InterfaceAccount<'info, TokenAccount>,
+    /// USDC's token program
     pub token_program: &'a Interface<'info, TokenInterface>,
+    /// The base token's, which differs from USDC's for a token the dex trades through Token-2022
+    pub base_token_program: &'a Interface<'info, TokenInterface>,
 }
 
 impl Compounder<'_, '_> {
@@ -95,7 +98,7 @@ impl Compounder<'_, '_> {
         let bounty_base = to_u64(mul_div_floor(base as u128, share, BPS)?)?;
         let bounty_usdc = to_u64(mul_div_floor(usdc as u128, share, BPS)?)?;
         if bounty_base > 0 {
-            push(self.token_program, self.base_mint, self.base_vault, self.bounty_base, self.pool, bounty_base)?;
+            push(self.base_token_program, self.base_mint, self.base_vault, self.bounty_base, self.pool, bounty_base)?;
         }
         if bounty_usdc > 0 {
             push(self.token_program, self.usdc_mint, self.usdc_collateral_vault, self.bounty_usdc, self.pool, bounty_usdc)?;
@@ -258,6 +261,7 @@ pub fn handle_compound_orca(ctx: Context<CompoundOrca>) -> Result<()> {
         bounty_base: &a.bounty_base,
         bounty_usdc: &a.bounty_usdc,
         token_program: &a.token_program,
+        base_token_program: &a.token_program,
     }
     .take_bounty(before)?;
 
@@ -315,6 +319,7 @@ pub fn handle_compound_orca(ctx: Context<CompoundOrca>) -> Result<()> {
         bounty_base: &a.bounty_base,
         bounty_usdc: &a.bounty_usdc,
         token_program: &a.token_program,
+        base_token_program: &a.token_program,
     }
     .finish(before, fees, mint)
 }

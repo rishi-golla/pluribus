@@ -15,6 +15,8 @@ use crate::{clmm::read_position, constants::*, error::PluribusError, risk::book_
 
 /// First 8 bytes of sha256("global:decrease_liquidity_v2")
 const DECREASE_LIQUIDITY_V2: [u8; 8] = [0x3a, 0x7f, 0xbc, 0x3e, 0x4f, 0x52, 0xc4, 0x60];
+/// First 8 bytes of sha256("global:increase_liquidity_v2")
+const INCREASE_LIQUIDITY_V2: [u8; 8] = [0x85, 0x1d, 0x59, 0xdf, 0x45, 0xee, 0xb0, 0x0a];
 
 #[derive(Accounts)]
 pub struct AutopayRaydium<'info> {
@@ -95,70 +97,27 @@ pub fn handle_autopay_raydium<'info>(ctx: Context<'info, AutopayRaydium<'info>>)
     let position = read_position(&a.lp_market, &a.position)?;
     require_keys_eq!(position.mint, mint, PluribusError::AccountMismatch);
 
-    // A reward the position has earned is paid out in the same call, so it can only go to the account's owner
-    let extension = Pubkey::find_program_address(&[b"pool_tick_array_bitmap_extension", a.clmm_pool.key().as_ref()], &a.dex_program.key()).0;
-    let rewards: Vec<&AccountInfo> = rem.iter().filter(|r| *r.key != extension).collect();
-    require!(rewards.len() % 3 == 0, PluribusError::AccountMismatch);
-    for group in rewards.chunks(3) {
-        let recipient = InterfaceAccount::<TokenAccount>::try_from(group[1])?;
-        require_keys_eq!(recipient.owner, a.credit.owner, PluribusError::AccountMismatch);
-    }
-
-    // Raydium has no fee collection of its own: taking out no liquidity pays out what the position has earned
-    // Its tokens come in the pool's own order, so base and USDC swap places when USDC is token 0
-    let base_first = a.lp_market.base_first;
-    let (recipient_0, recipient_1) =
-        if base_first { (&a.base_vault, &a.usdc_collateral_vault) } else { (&a.usdc_collateral_vault, &a.base_vault) };
-    let (mint_0, mint_1) = if base_first { (a.base_mint.key(), a.usdc_mint.key()) } else { (a.usdc_mint.key(), a.base_mint.key()) };
-    let mut accounts = vec![
-        // The pool PDA holds the NFT, so it signs as the position owner and fees land in our own vaults
-        AccountMeta::new_readonly(a.pool.key(), true),
-        AccountMeta::new_readonly(a.vault_nft.key(), false),
-        AccountMeta::new(a.position.key(), false),
-        AccountMeta::new(a.clmm_pool.key(), false),
-        AccountMeta::new(a.protocol_position.key(), false),
-        AccountMeta::new(a.clmm_vault_0.key(), false),
-        AccountMeta::new(a.clmm_vault_1.key(), false),
-        AccountMeta::new(a.tick_array_lower.key(), false),
-        AccountMeta::new(a.tick_array_upper.key(), false),
-        AccountMeta::new(recipient_0.key(), false),
-        AccountMeta::new(recipient_1.key(), false),
-        AccountMeta::new_readonly(a.token_program.key(), false),
-        AccountMeta::new_readonly(a.token_program_2022.key(), false),
-        AccountMeta::new_readonly(a.memo_program.key(), false),
-        AccountMeta::new_readonly(mint_0, false),
-        AccountMeta::new_readonly(mint_1, false),
-    ];
-    let mut infos = vec![
-        a.pool.to_account_info(),
-        a.vault_nft.to_account_info(),
-        a.position.to_account_info(),
-        a.clmm_pool.to_account_info(),
-        a.protocol_position.to_account_info(),
-        a.clmm_vault_0.to_account_info(),
-        a.clmm_vault_1.to_account_info(),
-        a.tick_array_lower.to_account_info(),
-        a.tick_array_upper.to_account_info(),
-        recipient_0.to_account_info(),
-        recipient_1.to_account_info(),
-        a.token_program.to_account_info(),
-        a.token_program_2022.to_account_info(),
-        a.memo_program.to_account_info(),
-        if base_first { a.base_mint.to_account_info() } else { a.usdc_mint.to_account_info() },
-        if base_first { a.usdc_mint.to_account_info() } else { a.base_mint.to_account_info() },
-        a.dex_program.to_account_info(),
-    ];
-    for r in rem {
-        accounts.push(AccountMeta { pubkey: r.key(), is_signer: false, is_writable: r.is_writable });
-        infos.push(r.clone());
-    }
-    // liquidity, amount 0 min and amount 1 min, all zero
-    let mut data = DECREASE_LIQUIDITY_V2.to_vec();
-    data.extend_from_slice(&[0u8; 32]);
-
+    let raydium = RaydiumPosition {
+        base_first: a.lp_market.base_first,
+        clmm_pool: a.clmm_pool.to_account_info(),
+        position: a.position.to_account_info(),
+        vault_nft: a.vault_nft.to_account_info(),
+        protocol_position: a.protocol_position.to_account_info(),
+        clmm_vault_0: a.clmm_vault_0.to_account_info(),
+        clmm_vault_1: a.clmm_vault_1.to_account_info(),
+        tick_array_lower: a.tick_array_lower.to_account_info(),
+        tick_array_upper: a.tick_array_upper.to_account_info(),
+        base_vault: a.base_vault.to_account_info(),
+        base_mint: a.base_mint.to_account_info(),
+        usdc_vault: a.usdc_collateral_vault.to_account_info(),
+        usdc_mint: a.usdc_mint.to_account_info(),
+        token_program: a.token_program.to_account_info(),
+        token_program_2022: a.token_program_2022.to_account_info(),
+        memo_program: a.memo_program.to_account_info(),
+        dex_program: a.dex_program.to_account_info(),
+    };
     let before = (a.base_vault.amount, a.usdc_collateral_vault.amount);
-    let seeds = a.pool.signer_seeds();
-    invoke_signed(&Instruction { program_id: a.lp_market.dex_program, accounts, data }, &infos, &[&seeds])?;
+    collect_raydium_fees(&raydium, &a.pool, &a.credit.owner, rem)?;
 
     Harvest {
         caller: a.caller.key(),
@@ -173,4 +132,183 @@ pub fn handle_autopay_raydium<'info>(ctx: Context<'info, AutopayRaydium<'info>>)
         token_program: &a.token_program,
     }
     .book(before)
+}
+
+/// A held Raydium position's accounts, as every instruction of Raydium's on it takes them, with our own collateral vaults
+/// beside the pool's
+pub(crate) struct RaydiumPosition<'info> {
+    pub base_first: bool,
+    pub clmm_pool: AccountInfo<'info>,
+    pub position: AccountInfo<'info>,
+    pub vault_nft: AccountInfo<'info>,
+    pub protocol_position: AccountInfo<'info>,
+    pub clmm_vault_0: AccountInfo<'info>,
+    pub clmm_vault_1: AccountInfo<'info>,
+    pub tick_array_lower: AccountInfo<'info>,
+    pub tick_array_upper: AccountInfo<'info>,
+    pub base_vault: AccountInfo<'info>,
+    pub base_mint: AccountInfo<'info>,
+    pub usdc_vault: AccountInfo<'info>,
+    pub usdc_mint: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
+    pub token_program_2022: AccountInfo<'info>,
+    pub memo_program: AccountInfo<'info>,
+    pub dex_program: AccountInfo<'info>,
+}
+
+impl<'info> RaydiumPosition<'info> {
+    /// Our vault and mint for each of the pool's tokens, in the pool's own order, so base and USDC swap places when USDC is
+    /// token 0
+    fn pool_order(&self) -> [(&AccountInfo<'info>, &AccountInfo<'info>); 2] {
+        let (base, usdc) = ((&self.base_vault, &self.base_mint), (&self.usdc_vault, &self.usdc_mint));
+        if self.base_first {
+            [base, usdc]
+        } else {
+            [usdc, base]
+        }
+    }
+
+    /// Where Raydium keeps the bitmap of the pool's tick arrays that outgrow its own, which a far-out range needs
+    fn bitmap_extension(&self) -> Pubkey {
+        Pubkey::find_program_address(&[b"pool_tick_array_bitmap_extension", self.clmm_pool.key.as_ref()], self.dex_program.key).0
+    }
+}
+
+/// Collects a held Raydium position's trading fees into our own collateral vaults, which Raydium has no instruction for:
+/// taking out no liquidity pays out what the position has earned
+/// `rem` are what Raydium wants besides the fees, as it takes them: the tick array bitmap extension when the position needs
+/// it, and a group of reward vault, recipient and reward mint for each reward the pool runs
+pub(crate) fn collect_raydium_fees<'info>(
+    c: &RaydiumPosition<'info>,
+    pool: &Account<'info, Pool>,
+    owner: &Pubkey,
+    rem: &'info [AccountInfo<'info>],
+) -> Result<()> {
+    // A reward the position has earned is paid out in the same call, so it can only go to the account's owner
+    let rewards: Vec<&AccountInfo> = if rem.is_empty() {
+        vec![]
+    } else {
+        let extension = c.bitmap_extension();
+        rem.iter().filter(|r| *r.key != extension).collect()
+    };
+    require!(rewards.len() % 3 == 0, PluribusError::AccountMismatch);
+    for group in rewards.chunks(3) {
+        let recipient = InterfaceAccount::<TokenAccount>::try_from(group[1])?;
+        require_keys_eq!(recipient.owner, *owner, PluribusError::AccountMismatch);
+    }
+
+    let [(recipient_0, mint_0), (recipient_1, mint_1)] = c.pool_order();
+    let mut accounts = vec![
+        // The pool PDA holds the NFT, so it signs as the position owner and fees land in our own vaults
+        AccountMeta::new_readonly(pool.key(), true),
+        AccountMeta::new_readonly(c.vault_nft.key(), false),
+        AccountMeta::new(c.position.key(), false),
+        AccountMeta::new(c.clmm_pool.key(), false),
+        AccountMeta::new(c.protocol_position.key(), false),
+        AccountMeta::new(c.clmm_vault_0.key(), false),
+        AccountMeta::new(c.clmm_vault_1.key(), false),
+        AccountMeta::new(c.tick_array_lower.key(), false),
+        AccountMeta::new(c.tick_array_upper.key(), false),
+        AccountMeta::new(recipient_0.key(), false),
+        AccountMeta::new(recipient_1.key(), false),
+        AccountMeta::new_readonly(c.token_program.key(), false),
+        AccountMeta::new_readonly(c.token_program_2022.key(), false),
+        AccountMeta::new_readonly(c.memo_program.key(), false),
+        AccountMeta::new_readonly(mint_0.key(), false),
+        AccountMeta::new_readonly(mint_1.key(), false),
+    ];
+    let mut infos = vec![
+        pool.to_account_info(),
+        c.vault_nft.clone(),
+        c.position.clone(),
+        c.clmm_pool.clone(),
+        c.protocol_position.clone(),
+        c.clmm_vault_0.clone(),
+        c.clmm_vault_1.clone(),
+        c.tick_array_lower.clone(),
+        c.tick_array_upper.clone(),
+        recipient_0.clone(),
+        recipient_1.clone(),
+        c.token_program.clone(),
+        c.token_program_2022.clone(),
+        c.memo_program.clone(),
+        mint_0.clone(),
+        mint_1.clone(),
+        c.dex_program.clone(),
+    ];
+    for r in rem {
+        accounts.push(AccountMeta { pubkey: r.key(), is_signer: false, is_writable: r.is_writable });
+        infos.push(r.clone());
+    }
+    // liquidity, amount 0 min and amount 1 min, all zero
+    let mut data = DECREASE_LIQUIDITY_V2.to_vec();
+    data.extend_from_slice(&[0u8; 32]);
+
+    let seeds = pool.signer_seeds();
+    invoke_signed(&Instruction { program_id: c.dex_program.key(), accounts, data }, &infos, &[&seeds])?;
+    Ok(())
+}
+
+/// Adds `liquidity` to a held Raydium position, paid out of our own collateral vaults, which take at most `max_0` and `max_1`
+/// of the pool's two tokens, in the pool's own order
+/// `rem` may hold the tick array bitmap extension, which Raydium wants when the position's range needs it
+pub(crate) fn increase_raydium_liquidity<'info>(
+    c: &RaydiumPosition<'info>,
+    pool: &Account<'info, Pool>,
+    rem: &[AccountInfo<'info>],
+    liquidity: u128,
+    max_0: u64,
+    max_1: u64,
+) -> Result<()> {
+    let [(payer_0, mint_0), (payer_1, mint_1)] = c.pool_order();
+    let mut accounts = vec![
+        // The pool PDA holds the NFT and both vaults, so it signs as the position owner and as the tokens' owner
+        AccountMeta::new_readonly(pool.key(), true),
+        AccountMeta::new_readonly(c.vault_nft.key(), false),
+        AccountMeta::new(c.clmm_pool.key(), false),
+        AccountMeta::new(c.protocol_position.key(), false),
+        AccountMeta::new(c.position.key(), false),
+        AccountMeta::new(c.tick_array_lower.key(), false),
+        AccountMeta::new(c.tick_array_upper.key(), false),
+        AccountMeta::new(payer_0.key(), false),
+        AccountMeta::new(payer_1.key(), false),
+        AccountMeta::new(c.clmm_vault_0.key(), false),
+        AccountMeta::new(c.clmm_vault_1.key(), false),
+        AccountMeta::new_readonly(c.token_program.key(), false),
+        AccountMeta::new_readonly(c.token_program_2022.key(), false),
+        AccountMeta::new_readonly(mint_0.key(), false),
+        AccountMeta::new_readonly(mint_1.key(), false),
+    ];
+    let mut infos = vec![
+        pool.to_account_info(),
+        c.vault_nft.clone(),
+        c.clmm_pool.clone(),
+        c.protocol_position.clone(),
+        c.position.clone(),
+        c.tick_array_lower.clone(),
+        c.tick_array_upper.clone(),
+        payer_0.clone(),
+        payer_1.clone(),
+        c.clmm_vault_0.clone(),
+        c.clmm_vault_1.clone(),
+        c.token_program.clone(),
+        c.token_program_2022.clone(),
+        mint_0.clone(),
+        mint_1.clone(),
+        c.dex_program.clone(),
+    ];
+    // Raydium reads the extension from the first remaining account, and nothing else is wanted there
+    if !rem.is_empty() {
+        let extension = c.bitmap_extension();
+        if let Some(r) = rem.iter().find(|r| *r.key == extension) {
+            accounts.push(AccountMeta { pubkey: r.key(), is_signer: false, is_writable: r.is_writable });
+            infos.push(r.clone());
+        }
+    }
+    // The liquidity is given, so there is no base flag
+    let data = [&INCREASE_LIQUIDITY_V2[..], &liquidity.to_le_bytes(), &max_0.to_le_bytes(), &max_1.to_le_bytes(), &[0u8]].concat();
+
+    let seeds = pool.signer_seeds();
+    invoke_signed(&Instruction { program_id: c.dex_program.key(), accounts, data }, &infos, &[&seeds])?;
+    Ok(())
 }

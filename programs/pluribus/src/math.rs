@@ -78,6 +78,8 @@ pub fn sqrt_prices_within(sqrt_price: u128, reference_sqrt: u128, tolerance_bps:
 /// Liquidity that up to `amount_a` and `amount_b` add to the range `tick_lower..tick_upper` of a concentrated liquidity
 /// pool at `sqrt_price`, and the tokens it takes: in range both sides limit it, outside it only the one token the range holds
 /// The pool rounds what it asks for up, so the liquidity is trimmed until that fits inside what is there
+/// Ticks and amounts are the pool's own, token A being its first token, which for a Raydium pool with USDC first is USDC;
+/// the tick math is the same Q64.64 table Raydium's CLMM uses
 pub fn liquidity_for_amounts(sqrt_price: u128, tick_lower: i32, tick_upper: i32, amount_a: u64, amount_b: u64) -> Result<(u128, u64, u64)> {
     let core = |_| error!(PluribusError::MathOverflow);
     let (lower, upper) = range_sqrt_prices(tick_lower, tick_upper)?;

@@ -260,6 +260,10 @@ pub mod pluribus {
         compound::handle_compound_orca(ctx)
     }
 
+    pub fn compound_raydium<'info>(ctx: Context<'info, CompoundRaydium<'info>>) -> Result<()> {
+        compound_raydium::handle_compound_raydium(ctx)
+    }
+
     pub fn dlmm_open(ctx: Context<DlmmOpen>, lower_bin_id: i32, width: i32) -> Result<()> {
         instructions::dlmm::handle_dlmm_open(ctx, lower_bin_id, width)
     }

@@ -15,6 +15,18 @@ pub struct LpPosition {
     pub tick_upper: i32,
 }
 
+impl LpPosition {
+    /// The range as the pool itself numbers its ticks, which is what the dex takes and what liquidity is priced in
+    /// With USDC first `read_position` turned the range around, so this turns it back
+    pub fn pool_ticks(&self, base_first: bool) -> (i32, i32) {
+        if base_first {
+            (self.tick_lower, self.tick_upper)
+        } else {
+            (-self.tick_upper, -self.tick_lower)
+        }
+    }
+}
+
 fn key(d: &[u8], at: usize) -> Pubkey {
     Pubkey::new_from_array(d[at..at + 32].try_into().unwrap())
 }
@@ -36,6 +48,16 @@ pub fn read_pool(acc: &AccountInfo) -> Result<(Pubkey, Pubkey, Pubkey)> {
     // Layout (packed): disc 8 | bump 1 | amm config 32 | creator 32 | token mint 0 at 73 | token mint 1 at 105
     require!(d.len() >= 137 && d[..8] == RAYDIUM_POOL_DISCRIMINATOR, PluribusError::PoolNotWhitelisted);
     Ok((*acc.owner, key(&d, 73), key(&d, 105)))
+}
+
+/// The market's Raydium pool's current Q64.64 sqrt price, token 1 per token 0 in base units, as the pool itself quotes it
+pub fn read_sqrt_price(market: &LpMarket, acc: &AccountInfo) -> Result<u128> {
+    require_keys_eq!(*acc.owner, market.dex_program, PluribusError::PoolNotWhitelisted);
+    let d = acc.try_borrow_data()?;
+    // Layout (packed): disc 8 | bump 1 | amm config 32 | creator 32 | mints 64 | vaults 64 | observation 32 | decimals 2 |
+    // tick spacing u16 | liquidity u128 | sqrt price u128 at 253
+    require!(d.len() >= 269 && d[..8] == RAYDIUM_POOL_DISCRIMINATOR, PluribusError::PoolNotWhitelisted);
+    Ok(u128::from_le_bytes(d[253..269].try_into().unwrap()))
 }
 
 /// Where the market's dex keeps the one position an NFT controls
