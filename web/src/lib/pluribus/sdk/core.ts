@@ -71,6 +71,8 @@ export type Deployment = {
       backing?: { solPriceAccount: string; solPythAccount?: string; stakePool?: string; fixedRate?: number };
       // Token-2022 assets, like xStocks: their mint is read in every health check
       tokenProgram?: string;
+      // The program quotes this asset per 10^priceExponent whole tokens, for a token worth a fraction of a cent
+      priceExponent?: number;
     }
   >;
 };
@@ -181,14 +183,16 @@ export async function fetchSeniorHead(program: PluribusProgram) {
 // Dollar price per whole token for every asset, as the program reads it
 // Shortcut: demo price accounts only, add a Pyth decoder when a deployment leaves demo mode
 // What the program reads from a Pyth receiver price update, scaled like `oracle.rs` does:
-// dollars per whole token with 6 decimals, the price rounded down and its confidence band up
+// dollars per 10^exponent whole tokens with 6 decimals, the price rounded down and its confidence band up
 export type PythQuote = { feedId: string; price: BN; conf: BN; publishTime: number };
 
 const PRICE_UPDATE_DISCRIMINATOR = Buffer.from("22f123639d7ef4cd", "hex");
 const E6 = new BN(1_000_000);
+const unit = (exponent: number) => new BN(10).pow(new BN(exponent));
 
 // A fully verified PriceUpdateV2 account, or null when the program would not accept the data
-export function decodePriceUpdate(data: Uint8Array): PythQuote | null {
+// `exponent` is the asset's price exponent, which quotes a token worth a fraction of a cent per 10^exponent tokens
+export function decodePriceUpdate(data: Uint8Array, exponent = 0): PythQuote | null {
   const d = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   // Layout: disc 8 | write authority 32 | verification 1 (1 is full) | feed id 32 | price i64 | conf u64 | expo i32 | publish time i64
   if (d.length < 101 || !d.subarray(0, 8).equals(PRICE_UPDATE_DISCRIMINATOR) || d[40] !== 1) return null;
@@ -199,8 +203,8 @@ export function decodePriceUpdate(data: Uint8Array): PythQuote | null {
   const scale = new BN(10).pow(new BN(-expo));
   return {
     feedId: d.subarray(41, 73).toString("hex"),
-    price: price.mul(E6).div(scale),
-    conf: conf.mul(E6).add(scale).subn(1).div(scale),
+    price: price.mul(E6).mul(unit(exponent)).div(scale),
+    conf: conf.mul(E6).mul(unit(exponent)).add(scale).subn(1).div(scale),
     publishTime: new BN(d.subarray(93, 101), 10, "le").fromTwos(64).toNumber(),
   };
 }
@@ -263,22 +267,22 @@ export async function fetchPrices(program: PluribusProgram, d: Deployment): Prom
   const infos = await program.provider.connection.getMultipleAccountsInfo(keys.map((k) => new PublicKey(k)));
   const info = new Map(keys.map((k, i) => [k, infos[i]]));
 
-  // A demo account holds the price as written, a Pyth one as the program rescales it
-  const low = (key: string | undefined, live: boolean): number | undefined => {
+  // A demo account holds the price as written, a Pyth one as the program rescales it, both per the asset's priced unit
+  const low = (key: string | undefined, live: boolean, exponent = 0): number | undefined => {
     const data = key ? info.get(key)?.data : undefined;
     if (!data) return undefined;
     try {
-      const q = live ? decodePriceUpdate(data) : program.coder.accounts.decode("demoPrice", data);
-      return q ? quoteLow(q) : undefined;
+      const q = live ? decodePriceUpdate(data, exponent) : program.coder.accounts.decode("demoPrice", data);
+      return q ? quoteLow(q) / 10 ** exponent : undefined;
     } catch {
       return undefined;
     }
   };
   const prices: Record<string, number> = { [d.usdcMint]: 1 };
   for (const m of mints) {
-    let price = low(ownAccount(d, m, sources), isLive(sources, m));
-    if (price === undefined) continue;
     const asset = sources.assets[m];
+    let price = low(ownAccount(d, m, sources), isLive(sources, m), asset?.priceExponent ?? 0);
+    if (price === undefined) continue;
     // A per-share feed on a scaled token is multiplied by the mint's corporate-action multiplier, in tokens per share scaled by 1e9
     if (asset?.params.uiMultiplier) price = (price * asset.mult.toNumber()) / 1e9;
     // A staking token is worth no more than its SOL backing, as the program values it

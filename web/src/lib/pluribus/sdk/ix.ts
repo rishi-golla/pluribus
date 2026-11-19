@@ -783,6 +783,11 @@ export async function setAssetPremium(program: PluribusProgram, admin: PublicKey
   ];
 }
 
+// Quotes an asset per 10^exponent whole tokens, for a token worth a fraction of a cent; only before anything is deposited
+export async function setPriceExponent(program: PluribusProgram, admin: PublicKey, mint: PublicKey, exponent: number): Ixs {
+  return [await program.methods.setPriceExponent(exponent).accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) }).instruction()];
+}
+
 // The share of each asset's premium charged per loyalty tier in bps, never rising with loyalty
 export async function setPremiumTiers(program: PluribusProgram, admin: PublicKey, tierBps: number[]): Ixs {
   return [await program.methods.setPremiumTiers(tierBps).accountsStrict({ admin, pool: pda.pool() }).instruction()];
