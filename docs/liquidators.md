@@ -1,6 +1,6 @@
 # Liquidating on Pluribus
 
-Anyone can liquidate. No registration or allow-list exists. The only deployment is on Solana devnet, with mock tokens and prices written by the admin key.
+Anyone can liquidate. No registration or allow-list exists. The only deployment is on Solana devnet, with mock tokens. Prices are written by the admin key, except for JitoSOL and JupSOL, which read live Pyth feeds.
 
 Every figure below is a setting. The values in force are in [Numbers on devnet](#numbers-on-devnet).
 
@@ -26,12 +26,13 @@ const liquidatable = health.debt.gt(health.liquidationLimit);
 
 Amounts are USDC with 6 decimals. `fetchAllCredits(program)` lists every credit account.
 
-## The three instructions
+## The four instructions
 
 | Collateral | Instruction | You pay | You receive |
 |---|---|---|---|
 | A token other than USDC | `liquidate(repay_amount)` | USDC, up to the close factor × debt | tokens worth your payment × (1 + bonus) |
-| A liquidity position | `liquidate_lp()` | its value ÷ (1 + bonus), in one payment | the position NFT |
+| An Orca or Raydium liquidity position | `liquidate_lp()` | its value ÷ (1 + bonus), in one payment | the position NFT |
+| A Meteora DLMM position | `dlmm_liquidate(repay_amount)` | USDC, up to the close factor × debt | that share of every bin, worth your payment × (1 + bonus) |
 | USDC in the account | `repay_from_collateral(amount)` | nothing | nothing |
 
 ### liquidate
@@ -52,6 +53,18 @@ Amounts are USDC with 6 decimals. `fetchAllCredits(program)` lists every credit 
 - You receive the NFT. Closing the position on Orca or Raydium is up to you.
 - The rent of the NFT's vault account goes to the borrower.
 - Raydium's admin can turn off `decrease_liquidity` for a pool, which would leave you holding an NFT you cannot redeem.
+
+### dlmm_liquidate
+
+A Meteora position has no NFT and is sold in part, like a token.
+
+- `repay_amount` is in USDC base units and is cut down to the close factor × debt, so `u64::MAX` is valid.
+- The share taken is `repay × (1 + bonus) ÷ value`, at most 100%. You pay value × share ÷ (1 + bonus), rounded up.
+- The pool removes that share of every bin straight into your two token accounts. You receive the pair's real mix of tokens, which at the oracle price is worth at least what the position was valued at.
+- Sold whole, the position's unclaimed fees go with it, the position is closed and its rent returns to the borrower.
+- A position valued at nothing is handed over whole for no payment, so an empty one cannot keep bad debt from being written off.
+- A pair Meteora has disabled still lets liquidity out.
+- It needs a raised compute limit. The SDK builder sets one.
 
 ### repay_from_collateral
 
@@ -85,7 +98,7 @@ A liquidation that breaks it fails with `HealthNotImproved`.
 ## After a liquidation
 
 - The account returns to the base rate tier.
-- A `Liquidated` event carries `account`, `liquidator`, `mint`, `kind` (1 token, 2 liquidity position), `repaid`, `seized` and the remaining `debt`.
+- A `Liquidated` event carries `account`, `liquidator`, `mint`, `kind` (1 token, 2 liquidity position, 3 Meteora position), `repaid`, `seized` and the remaining `debt`. For a Meteora position `seized` is the share taken, in basis points of the position.
 - When no collateral is left and debt remains, the debt is written off at once. A `BadDebt` event shows how much the yield buffer, the reserve, the protocol fees and the junior tranche each absorbed.
 - An account whose debt is above the value of its collateral stays liquidatable after every step, until the collateral is gone.
 
@@ -94,9 +107,10 @@ A liquidation that breaks it fails with `HealthNotImproved`.
 Each instruction takes the health-check accounts as remaining accounts, in the order of the account's position slots:
 
 - **Token:** its asset account. For a Token-2022 token, its mint and vault next. Then its price account, unless the asset is fixed at $1. For staked SOL, the SOL price account, and for a stake-pool backing the stake pool account.
-- **Liquidity position:** the LP market, the position account on Orca or Raydium, the base asset, the base price account.
+- **Orca or Raydium liquidity position:** the LP market, the position account on Orca or Raydium, the base asset, the base price account.
+- **Meteora position:** the LP market, the pair, the position account, the base asset, the base price account. The bin arrays the position covers come first, before all the health-check accounts.
 
-The SDK builders `ix.liquidate`, `ix.liquidateLp` and `ix.repayFromCollateral` add them, set a compute budget and create your token account.
+The SDK builders `ix.liquidate`, `ix.liquidateLp`, `ix.dlmmLiquidate` and `ix.repayFromCollateral` add them, set a compute budget and create your token accounts.
 
 Send a v0 transaction through the deployment's lookup table with `buildTransaction`. A legacy transaction for an account with several Token-2022, staking or liquidity positions passes the 1232-byte limit.
 
@@ -108,7 +122,7 @@ Save as `liquidate.ts` in the repository root.
 // takes one liquidation step on every account that is past its liquidation limit
 import fs from "node:fs";
 import { Connection, Keypair } from "@solana/web3.js";
-import { type Deployment, KIND_LP, MAX_U64, buildTransaction, decodeEvents, fetchAllCredits, fetchHealth, fetchPool, getProgram, ix } from "./sdk/index.ts";
+import { type Deployment, KIND_DLMM, KIND_LP, MAX_U64, buildTransaction, decodeEvents, fetchAllCredits, fetchHealth, fetchPool, getProgram, ix } from "./sdk/index.ts";
 
 const d: Deployment = JSON.parse(fs.readFileSync(`deployments/${process.env.CLUSTER ?? "devnet"}.json`, "utf8"));
 const me = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(process.env.KEYPAIR!, "utf8"))));
@@ -130,9 +144,11 @@ for (const { account: credit } of await fetchAllCredits(program)) {
   const ixs =
     kind === KIND_LP
       ? await ix.liquidateLp(program, d, me.publicKey, owner, mint)
-      : mint.toBase58() === d.usdcMint
-        ? await ix.repayFromCollateral(program, d, me.publicKey, owner, MAX_U64)
-        : await ix.liquidate(program, d, me.publicKey, owner, mint, maxRepay);
+      : kind === KIND_DLMM
+        ? await ix.dlmmLiquidate(program, d, me.publicKey, owner, mint, maxRepay)
+        : mint.toBase58() === d.usdcMint
+            ? await ix.repayFromCollateral(program, d, me.publicKey, owner, MAX_U64)
+            : await ix.liquidate(program, d, me.publicKey, owner, mint, maxRepay);
 
   const latest = await connection.getLatestBlockhash();
   const tx = await buildTransaction(connection, d, me.publicKey, ixs, latest.blockhash);
@@ -168,15 +184,16 @@ Run twice on a local chain on 18 Nov 2026, against a borrower holding 50 NVDAx w
 | `KEEPER_KEYPAIR` | `~/.config/solana/id.json` | signer, and the wallet whose USDC pays |
 | `INTERVAL_MS` | 5000 | time between passes |
 | `AUTOPAY_INTERVAL_MS` | 600000 | time between fee harvests per position |
+| `PREMIUM_INTERVAL_MS` | 600000 | time between refreshes of an account that pays a risk premium |
 | `DRY_RUN` | unset | `1` logs each action and sends nothing |
 
 On each pass, for every account past its limit, it takes one step at a time:
 
 1. It nets the account's own USDC against the debt.
 2. It liquidates token positions, largest first.
-3. It buys liquidity positions.
+3. It buys Orca and Raydium positions whole, and takes part of a Meteora position.
 
-It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, harvests Orca fees, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. On a demo deployment it re-sends prices when it holds the admin key.
+It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, harvests the fees of Orca, Raydium and Meteora positions, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. On a demo deployment it re-sends prices when it holds the admin key.
 
 ## Numbers on devnet
 
@@ -186,7 +203,7 @@ As deployed on 18 Nov 2026. `doc_and_refs/TUNES.md` lists every setting with its
 |---|---|
 | Liquidation bonus (`liq_bonus_bps`) | 5%, the same for every asset and liquidity position |
 | Close factor (`close_factor_bps`) | 50% of the debt per transaction |
-| Liquidation cost (`liq_cost_bps`) | SOL 5%, staked SOL 6%, stocks 10%, USDC 0%, liquidity positions 5% |
+| Liquidation cost (`liq_cost_bps`) | SOL 5%, staked SOL 6%, stocks 10%, BONK 15%, USDC 0%, liquidity positions 5% |
 | Oldest price for a liquidation (`liq_price_age_secs`) | 1 day, 4 days for AAPLx |
 | Widest oracle band (`max_conf_bps`) | 2% |
 | Liquidation shocks | see the shock table in [users.md](users.md#shocks) |
@@ -204,7 +221,10 @@ Mock USDC on devnet comes only from the team's faucet wallet.
 | AAPLx (mock, Token-2022) | `HDgRzeChz6fKBY1P5Ytdie3JigAteiq2eqphD5xeMEcm` |
 | JitoSOL (mock) | `2FpbByvzXNwxQrq5cqDoGLf2bx8nHdMWx3dcugayk4er` |
 | JupSOL (mock) | `F1FZjjvG7DRRvF3tnUVp9N8y6a46i7rH2qfYLhnA1dK6` |
+| BONK (mock, priced per million tokens) | `CSAKKN1szfgwzr8KohREVtTB7GGdc9NdG4YCMU6KYZPM` |
 | Orca SOL/USDC pool | `EHXKciegvkuBAm2P2TUChpkTvRNm4ewwaBa6JmfN8357` |
+| Raydium SOL/USDC pool | `5ZnKViaNwjT2iCZsgAchihmUurnaKTau4MWPUj1MQSnP` |
+| Meteora SOL/USDC pair | `Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi` |
 
 `deployments/devnet.json` holds the full list, including each price account.
 
