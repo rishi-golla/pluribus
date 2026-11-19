@@ -173,9 +173,11 @@ Every DLMM instruction needs a raised compute limit, and so does any health chec
 
 ## Not implemented
 
-- SDK instruction builders, `healthAccounts` for `KIND_DLMM`, and the off-chain mirror of the valuation in `sdk/math.ts`.
-- Keeper liquidation and fee harvesting for DLMM positions. The keeper's health view fails for an account that holds one until the SDK lists its accounts.
-- Web UI.
 - `dlmm_autopay` repeats the fee split of `autopay.rs` instead of sharing it. Fold them together when the Raydium autopay refactor lands.
 - Positions wider than 70 bins, Token-2022 pairs, and collecting farming rewards.
-- A devnet listing. DLMM has the same program id on devnet but a different build and upgrade authority there (2,198,048 bytes, deployed in slot 466305525), and nothing here was run against it.
+
+## Off chain and devnet
+
+- **SDK:** `sdk/dlmm.ts` reads pairs and positions; `locateLps` and `healthAccounts` list a position's five health accounts; `fetchPositions` values it bin by bin, mirrored by `math.dlmmValue`, which matched the program's health view to the cent on devnet. `ix.dlmmOpen/Add/Remove/Close/Liquidate/Autopay` build the instructions with raised compute limits; `dlmmAdd` creates missing bin arrays and wraps SOL.
+- **Keeper:** sells Meteora positions in part through `dlmm_liquidate` and harvests their fees when a simulated `dlmm_autopay` shows any.
+- **Devnet:** DLMM has the same program id there but an older build (2,198,048 bytes, slot 466305525) and its own upgrade authority. All 13 tests pass against it (`DLMM_SO=lb_clmm_devnet.so`). `npm run dlmm:market` created the SOL/mock-USDC pair `Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi` from the 10 bps preset and listed it; open, add, draw, remove, autopay, repay and close were run there. Measured: `dlmm_add` over 30 bins 206k units, removal 213k–239k, close 119k, autopay 123k; every transaction fits through the lookup table.
