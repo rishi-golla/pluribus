@@ -400,6 +400,12 @@ export async function migratePool(program: PluribusProgram, admin: PublicKey): I
   return [await program.methods.migratePool().accountsStrict({ admin, pool: pda.pool(), systemProgram }).instruction()];
 }
 
+// Permissionless: grows an asset or credit account created before the last layout change, the payer covering the extra rent
+// Every old account needs this once after an upgrade, and one already at size is left alone
+export async function migrateAccount(program: PluribusProgram, payer: PublicKey, account: PublicKey): Ixs {
+  return [await program.methods.migrateAccount().accountsStrict({ payer, account, systemProgram }).instruction()];
+}
+
 // Moves junior shares into the exit queue, one exit per owner at a time
 export async function requestJuniorExit(program: PluribusProgram, owner: PublicKey, shares: Amount): Ixs {
   return [
@@ -780,6 +786,16 @@ export async function setAssetPremium(program: PluribusProgram, admin: PublicKey
 // The share of each asset's premium charged per loyalty tier in bps, never rising with loyalty
 export async function setPremiumTiers(program: PluribusProgram, admin: PublicKey, tierBps: number[]): Ixs {
   return [await program.methods.setPremiumTiers(tierBps).accountsStrict({ admin, pool: pda.pool() }).instruction()];
+}
+
+// Permissionless: puts a waiting premium raise of an asset into effect once its delay has passed
+export async function applyAssetPremium(program: PluribusProgram, mint: PublicKey): Ixs {
+  return [await program.methods.applyAssetPremium().accountsStrict({ asset: pda.asset(mint) }).instruction()];
+}
+
+// Permissionless: puts waiting premium tier shares into effect once their delay has passed
+export async function applyPremiumTiers(program: PluribusProgram): Ixs {
+  return [await program.methods.applyPremiumTiers().accountsStrict({ pool: pda.pool() }).instruction()];
 }
 
 export async function initLpMarket(

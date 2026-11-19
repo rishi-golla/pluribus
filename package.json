@@ -12,6 +12,7 @@
     "sdk:sync": "mkdir -p deployments web/src/lib/pluribus && rsync -a --delete sdk deployments web/src/lib/pluribus/",
     "localnet": "tsx scripts/localnet.ts",
     "setup": "tsx scripts/setup.ts",
+    "migrate:accounts": "tsx scripts/migrate-accounts.ts",
     "faucet": "tsx scripts/faucet.ts",
     "faucet:stock": "tsx scripts/faucet-stock.ts",
     "price": "tsx scripts/price.ts",
