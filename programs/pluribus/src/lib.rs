@@ -248,6 +248,18 @@ pub mod pluribus {
         admin::handle_demo_activate(ctx)
     }
 
+    pub fn set_compound(ctx: Context<SetCompound>, position: Pubkey, slippage_bps: u16) -> Result<()> {
+        compound::handle_set_compound(ctx, position, slippage_bps)
+    }
+
+    pub fn set_compound_bounty(ctx: Context<AdminPool>, bounty_bps: u16) -> Result<()> {
+        compound::handle_set_compound_bounty(ctx, bounty_bps)
+    }
+
+    pub fn compound_orca(ctx: Context<CompoundOrca>) -> Result<()> {
+        compound::handle_compound_orca(ctx)
+    }
+
     pub fn dlmm_open(ctx: Context<DlmmOpen>, lower_bin_id: i32, width: i32) -> Result<()> {
         instructions::dlmm::handle_dlmm_open(ctx, lower_bin_id, width)
     }

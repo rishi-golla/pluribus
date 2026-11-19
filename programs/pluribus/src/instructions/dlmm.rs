@@ -624,7 +624,9 @@ pub fn handle_dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Re
     a.pool.accrue(now)?;
     book_premium(&mut a.pool, &mut a.credit, now)?;
     let position = a.position.key();
-    a.credit.find(KIND_DLMM, &position)?;
+    let slot = a.credit.find(KIND_DLMM, &position)?;
+    // A position set to compound keeps its fees for that, which only its owner can switch off
+    require!(a.credit.compound_slippage_bps[slot] == 0, PluribusError::CompoundOn);
     require_keys_eq!(a.lp_market.dex_program, METEORA_DLMM_PROGRAM_ID, PluribusError::NotDlmmMarket);
     let held = read_position(&a.position, &a.pool.key())?;
     require_keys_eq!(held.pair, a.lb_pair.key(), PluribusError::PoolNotWhitelisted);

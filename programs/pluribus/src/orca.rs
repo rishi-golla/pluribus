@@ -36,6 +36,15 @@ pub fn read_position(acc: &AccountInfo) -> Result<OrcaPosition> {
     })
 }
 
+/// The Whirlpool's current Q64.64 sqrt price, token B per token A in base units
+pub fn read_sqrt_price(acc: &AccountInfo) -> Result<u128> {
+    require_keys_eq!(*acc.owner, WHIRLPOOL_PROGRAM_ID, PluribusError::PoolNotWhitelisted);
+    let d = acc.try_borrow_data()?;
+    // Layout: disc 8 | config 32 | bump 1 | tick spacing u16 | fee tier seed 2 | fee rate u16 | protocol fee rate u16 | liquidity u128 | sqrt price u128 at 65
+    require!(d.len() >= 81 && d[..8] == WHIRLPOOL_DISCRIMINATOR, PluribusError::PoolNotWhitelisted);
+    Ok(u128::from_le_bytes(d[65..81].try_into().unwrap()))
+}
+
 /// Token mints A and B of a Whirlpool
 pub fn read_whirlpool_mints(acc: &AccountInfo) -> Result<(Pubkey, Pubkey)> {
     require_keys_eq!(*acc.owner, WHIRLPOOL_PROGRAM_ID, PluribusError::PoolNotWhitelisted);

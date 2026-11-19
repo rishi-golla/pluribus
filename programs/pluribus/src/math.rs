@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
-use orca_whirlpools_core::{tick_index_to_sqrt_price, try_get_amount_delta_a, try_get_amount_delta_b};
+use orca_whirlpools_core::{
+    increase_liquidity_quote, increase_liquidity_quote_a, increase_liquidity_quote_b, tick_index_to_sqrt_price, try_get_amount_delta_a,
+    try_get_amount_delta_b,
+};
 
 use crate::{constants::*, error::PluribusError};
 
@@ -58,6 +61,46 @@ pub fn sqrt_price_x64(price: u128, base_decimals: u8) -> Result<u128> {
     let k = q.leading_zeros() & !1;
     let r = (q << k).isqrt();
     Ok(if k / 2 <= 32 { r << (32 - k / 2) } else { r >> (k / 2 - 32) })
+}
+
+/// Whether two Q64.64 sqrt prices are within `tolerance_bps` of each other as prices, the first measured against the second
+pub fn sqrt_prices_within(sqrt_price: u128, reference_sqrt: u128, tolerance_bps: u16) -> Result<bool> {
+    const ONE: u128 = 1_000_000_000_000;
+    require!(reference_sqrt > 0, PluribusError::MathOverflow);
+    let r = mul_div_floor(sqrt_price, ONE, reference_sqrt)?;
+    // Past twice the root the prices are four times apart, far outside any allowed tolerance
+    if r > 2 * ONE {
+        return Ok(false);
+    }
+    Ok((r * r / ONE).abs_diff(ONE) <= ONE / BPS * tolerance_bps as u128)
+}
+
+/// Liquidity that up to `amount_a` and `amount_b` add to the range `tick_lower..tick_upper` of a concentrated liquidity
+/// pool at `sqrt_price`, and the tokens it takes: in range both sides limit it, outside it only the one token the range holds
+/// The pool rounds what it asks for up, so the liquidity is trimmed until that fits inside what is there
+pub fn liquidity_for_amounts(sqrt_price: u128, tick_lower: i32, tick_upper: i32, amount_a: u64, amount_b: u64) -> Result<(u128, u64, u64)> {
+    let core = |_| error!(PluribusError::MathOverflow);
+    let (lower, upper) = range_sqrt_prices(tick_lower, tick_upper)?;
+    let from_a = increase_liquidity_quote_a(amount_a, 0, sqrt_price, tick_lower, tick_upper, None, None).map_err(core)?.liquidity_delta;
+    let from_b = increase_liquidity_quote_b(amount_b, 0, sqrt_price, tick_lower, tick_upper, None, None).map_err(core)?.liquidity_delta;
+    let mut liquidity = if sqrt_price <= lower {
+        from_a
+    } else if sqrt_price >= upper {
+        from_b
+    } else {
+        from_a.min(from_b)
+    };
+    for _ in 0..4 {
+        if liquidity == 0 {
+            return Ok((0, 0, 0));
+        }
+        let q = increase_liquidity_quote(liquidity, 0, sqrt_price, tick_lower, tick_upper, None, None).map_err(core)?;
+        if q.token_est_a <= amount_a && q.token_est_b <= amount_b {
+            return Ok((liquidity, q.token_est_a, q.token_est_b));
+        }
+        liquidity -= liquidity / 1_000_000 + 1;
+    }
+    Ok((0, 0, 0))
 }
 
 /// An LP value with a part per billion and a base unit taken off, since Orca's tick table can price a Raydium range a

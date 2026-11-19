@@ -89,7 +89,9 @@ pub fn handle_autopay_raydium<'info>(ctx: Context<'info, AutopayRaydium<'info>>)
     a.pool.accrue(now)?;
     book_premium(&mut a.pool, &mut a.credit, now)?;
     let mint = a.position_mint.key();
-    a.credit.find(KIND_LP, &mint)?;
+    let slot = a.credit.find(KIND_LP, &mint)?;
+    // A position set to compound keeps its fees for that, which only its owner can switch off
+    require!(a.credit.compound_slippage_bps[slot] == 0, PluribusError::CompoundOn);
     let position = read_position(&a.lp_market, &a.position)?;
     require_keys_eq!(position.mint, mint, PluribusError::AccountMismatch);
 

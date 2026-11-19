@@ -102,6 +102,7 @@ pub fn handle_initialize(ctx: Context<Initialize>, params: PoolParams, demo_mode
         pending_premium_tier_bps: [0; TIERS],
         premium_tier_pending_at: 0,
         premium_booked: 0,
+        compound_bounty_bps: 0,
     });
     Ok(())
 }

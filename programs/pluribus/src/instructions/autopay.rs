@@ -67,67 +67,28 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
     a.pool.accrue(now)?;
     book_premium(&mut a.pool, &mut a.credit, now)?;
     let mint = a.position_mint.key();
-    a.credit.find(KIND_LP, &mint)?;
+    let slot = a.credit.find(KIND_LP, &mint)?;
+    // A position set to compound keeps its fees for that, which only its owner can switch off
+    require!(a.credit.compound_slippage_bps[slot] == 0, PluribusError::CompoundOn);
     // Fees are collected through Orca with the base token in vault A, and Raydium markets have autopay_raydium
     require!(a.lp_market.dex_program == WHIRLPOOL_PROGRAM_ID && a.lp_market.base_first, PluribusError::UnsupportedDex);
     let orca = read_position(&a.position)?;
     require_keys_eq!(orca.position_mint, mint, PluribusError::AccountMismatch);
     require_keys_eq!(orca.whirlpool, a.whirlpool.key(), PluribusError::PoolNotWhitelisted);
 
-    // Fees only show up as owed after the position is synced with the pool
-    let update = Instruction {
-        program_id: WHIRLPOOL_PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(a.whirlpool.key(), false),
-            AccountMeta::new(a.position.key(), false),
-            AccountMeta::new_readonly(a.tick_array_lower.key(), false),
-            AccountMeta::new_readonly(a.tick_array_upper.key(), false),
-        ],
-        data: UPDATE_FEES_AND_REWARDS.to_vec(),
-    };
-    invoke(
-        &update,
-        &[
-            a.whirlpool.to_account_info(),
-            a.position.to_account_info(),
-            a.tick_array_lower.to_account_info(),
-            a.tick_array_upper.to_account_info(),
-        ],
-    )?;
-
-    // The pool PDA holds the NFT, so it signs as the position authority and fees land in our own vaults
     let before = (a.base_vault.amount, a.usdc_collateral_vault.amount);
-    let collect = Instruction {
-        program_id: WHIRLPOOL_PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new_readonly(a.whirlpool.key(), false),
-            AccountMeta::new_readonly(a.pool.key(), true),
-            AccountMeta::new(a.position.key(), false),
-            AccountMeta::new_readonly(a.vault_nft.key(), false),
-            AccountMeta::new(a.base_vault.key(), false),
-            AccountMeta::new(a.whirlpool_vault_a.key(), false),
-            AccountMeta::new(a.usdc_collateral_vault.key(), false),
-            AccountMeta::new(a.whirlpool_vault_b.key(), false),
-            AccountMeta::new_readonly(a.token_program.key(), false),
-        ],
-        data: COLLECT_FEES.to_vec(),
-    };
-    let seeds = a.pool.signer_seeds();
-    invoke_signed(
-        &collect,
-        &[
-            a.whirlpool.to_account_info(),
-            a.pool.to_account_info(),
-            a.position.to_account_info(),
-            a.vault_nft.to_account_info(),
-            a.base_vault.to_account_info(),
-            a.whirlpool_vault_a.to_account_info(),
-            a.usdc_collateral_vault.to_account_info(),
-            a.whirlpool_vault_b.to_account_info(),
-            a.token_program.to_account_info(),
-        ],
-        &[&seeds],
-    )?;
+    collect_orca_fees(OrcaCollect {
+        whirlpool: a.whirlpool.to_account_info(),
+        position: a.position.to_account_info(),
+        tick_array_lower: a.tick_array_lower.to_account_info(),
+        tick_array_upper: a.tick_array_upper.to_account_info(),
+        vault_nft: a.vault_nft.to_account_info(),
+        base_vault: a.base_vault.to_account_info(),
+        whirlpool_vault_a: a.whirlpool_vault_a.to_account_info(),
+        usdc_vault: a.usdc_collateral_vault.to_account_info(),
+        whirlpool_vault_b: a.whirlpool_vault_b.to_account_info(),
+        token_program: a.token_program.to_account_info(),
+    }, &a.pool)?;
 
     Harvest {
         caller: a.caller.key(),
@@ -142,6 +103,59 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
         token_program: &a.token_program,
     }
     .book(before)
+}
+
+/// The accounts an Orca fee collect touches, with the base token in vault A and USDC in vault B
+pub(crate) struct OrcaCollect<'info> {
+    pub whirlpool: AccountInfo<'info>,
+    pub position: AccountInfo<'info>,
+    pub tick_array_lower: AccountInfo<'info>,
+    pub tick_array_upper: AccountInfo<'info>,
+    pub vault_nft: AccountInfo<'info>,
+    pub base_vault: AccountInfo<'info>,
+    pub whirlpool_vault_a: AccountInfo<'info>,
+    pub usdc_vault: AccountInfo<'info>,
+    pub whirlpool_vault_b: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
+}
+
+/// Syncs a held Orca position with its pool and collects its fees into our own vaults
+/// The pool PDA holds the NFT, so it signs as the position authority
+pub(crate) fn collect_orca_fees<'info>(c: OrcaCollect<'info>, pool: &Account<'info, Pool>) -> Result<()> {
+    // Fees only show up as owed after the position is synced with the pool
+    let update = Instruction {
+        program_id: WHIRLPOOL_PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(c.whirlpool.key(), false),
+            AccountMeta::new(c.position.key(), false),
+            AccountMeta::new_readonly(c.tick_array_lower.key(), false),
+            AccountMeta::new_readonly(c.tick_array_upper.key(), false),
+        ],
+        data: UPDATE_FEES_AND_REWARDS.to_vec(),
+    };
+    invoke(&update, &[c.whirlpool.clone(), c.position.clone(), c.tick_array_lower.clone(), c.tick_array_upper.clone()])?;
+    let collect = Instruction {
+        program_id: WHIRLPOOL_PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(c.whirlpool.key(), false),
+            AccountMeta::new_readonly(pool.key(), true),
+            AccountMeta::new(c.position.key(), false),
+            AccountMeta::new_readonly(c.vault_nft.key(), false),
+            AccountMeta::new(c.base_vault.key(), false),
+            AccountMeta::new(c.whirlpool_vault_a.key(), false),
+            AccountMeta::new(c.usdc_vault.key(), false),
+            AccountMeta::new(c.whirlpool_vault_b.key(), false),
+            AccountMeta::new_readonly(c.token_program.key(), false),
+        ],
+        data: COLLECT_FEES.to_vec(),
+    };
+    let seeds = pool.signer_seeds();
+    invoke_signed(
+        &collect,
+        &[c.whirlpool, pool.to_account_info(), c.position, c.vault_nft, c.base_vault, c.whirlpool_vault_a, c.usdc_vault, c.whirlpool_vault_b, c.token_program],
+        &[&seeds],
+    )?;
+    Ok(())
 }
 
 /// The accounts a harvest pays into, the same whichever dex the fees came from

@@ -92,4 +92,12 @@ pub enum PluribusError {
     NotDlmmMarket,
     #[msg("Not a Meteora DLMM position the pool alone controls")]
     InvalidDlmmPosition,
+    #[msg("This position does not compound its fees")]
+    CompoundOff,
+    #[msg("This position compounds its fees, so autopay leaves it alone")]
+    CompoundOn,
+    #[msg("The pool's price is too far from the oracle's to compound this position")]
+    PoolPriceOff,
+    #[msg("The dex took more than the position's fees")]
+    CompoundOverdrawn,
 }

@@ -32,6 +32,7 @@ pub fn handle_open_account(ctx: Context<OpenAccount>) -> Result<()> {
         positions: [Position::default(); MAX_POSITIONS],
         premium_bps: 0,
         premium_since: now,
+        compound_slippage_bps: [0; MAX_POSITIONS],
     });
     emit!(AccountOpened { account: ctx.accounts.credit.key(), owner: ctx.accounts.owner.key() });
     Ok(())

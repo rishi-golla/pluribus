@@ -93,3 +93,7 @@ pub const PYTH_RECEIVER_ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH
 pub const MAX_RISK_PREMIUM_BPS: u16 = 3_000;
 /// Largest price exponent: a price per 10^12 whole tokens covers anything worth more than 10^-18 dollars
 pub const MAX_PRICE_EXPONENT: u8 = 12;
+/// Widest gap between a pool's price and the oracle's a borrower can let a position compound at: 10%
+pub const MAX_COMPOUND_SLIPPAGE_BPS: u16 = 1_000;
+/// Largest share of a position's fees the caller who compounds it can be paid: 5%
+pub const MAX_COMPOUND_BOUNTY_BPS: u16 = 500;

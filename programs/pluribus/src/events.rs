@@ -214,3 +214,26 @@ pub struct DlmmLiquidityChanged {
     pub amount_y: u64,
     pub deposit: bool,
 }
+
+/// A position's fees went back into it: the caller's bounty to its recipient, `added_*` into the position,
+/// and what the position's price range could not take kept as collateral
+#[event]
+pub struct Compounded {
+    pub account: Pubkey,
+    pub position: Pubkey,
+    pub recipient: Pubkey,
+    pub fee_base: u64,
+    pub fee_usdc: u64,
+    pub bounty_base: u64,
+    pub bounty_usdc: u64,
+    pub added_base: u64,
+    pub added_usdc: u64,
+}
+
+/// How far the pool's price may sit from the oracle's for the position to compound, 0 when its fees repay debt instead
+#[event]
+pub struct CompoundSet {
+    pub account: Pubkey,
+    pub position: Pubkey,
+    pub slippage_bps: u16,
+}

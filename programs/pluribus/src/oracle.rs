@@ -45,6 +45,16 @@ pub fn read_quote(pool: &Pool, asset: &Asset, acc: &AccountInfo) -> Result<Quote
     quote_for(demo_priced(pool, asset), &asset.mint, &asset.params.pyth_feed_id, asset.price_exponent, acc)
 }
 
+/// The middle of the asset's quote, fresh enough for a draw and certain enough, to compare a pool's own price against
+pub fn read_mid(pool: &Pool, asset: &Asset, acc: &AccountInfo, now: i64) -> Result<u128> {
+    let q = read_quote(pool, asset, acc)?;
+    let p = &asset.params;
+    require!(q.price > 0, PluribusError::InvalidPriceAccount);
+    require!(now.saturating_sub(q.publish_time) <= p.max_price_age_secs as i64, PluribusError::StalePrice);
+    require!(q.conf * BPS <= q.price * p.max_conf_bps as u128, PluribusError::PriceTooUncertain);
+    Ok(q.price)
+}
+
 /// Whether `asset` reads the admin's demo price: only in demo mode, and only until the admin switches it to its live feed
 pub fn demo_priced(pool: &Pool, asset: &Asset) -> bool {
     pool.demo_mode && !asset.live_price

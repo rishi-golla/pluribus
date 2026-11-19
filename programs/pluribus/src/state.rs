@@ -260,6 +260,9 @@ pub struct Pool {
     pub premium_tier_pending_at: i64,
     /// Risk premium booked as debt to date
     pub premium_booked: u64,
+    /// Share of a position's fees paid to whoever compounds it, up to MAX_COMPOUND_BOUNTY_BPS
+    /// Added after launch: a pool grown by `migrate_pool` pays no bounty until it is set
+    pub compound_bounty_bps: u16,
 }
 
 impl Pool {
@@ -958,6 +961,10 @@ pub struct CreditAccount {
     pub premium_bps: u16,
     /// When the premium was last booked as debt, 0 until the first booking starts the clock
     pub premium_since: i64,
+    /// Per position slot: how far the pool's price may sit from the oracle's, in bps, for anyone to compound the position's
+    /// fees back into it; 0 has its fees repay debt through autopay instead. Cleared whenever the slot changes hands
+    /// Added after launch: `migrate_account` grows an account opened before it, and the new bytes start at zero
+    pub compound_slippage_bps: [u16; MAX_POSITIONS],
 }
 
 impl CreditAccount {
@@ -1001,25 +1008,38 @@ impl CreditAccount {
     pub fn add_lp(&mut self, mint: &Pubkey, bump: u8) -> Result<()> {
         let i = self.free_slot()?;
         self.positions[i] = Position { kind: KIND_LP, mint: *mint, amount: 1, bump };
+        // A new position starts with its fees repaying debt, whatever the slot held before
+        self.compound_slippage_bps[i] = 0;
         Ok(())
     }
 
     pub fn remove_lp(&mut self, mint: &Pubkey) -> Result<()> {
         let i = self.find(KIND_LP, mint)?;
         self.positions[i] = Position::default();
+        self.compound_slippage_bps[i] = 0;
         Ok(())
+    }
+
+    /// The slot of an LP or Meteora position, the only kinds whose fees can compound
+    pub fn lp_slot(&self, mint: &Pubkey) -> Result<usize> {
+        self.positions
+            .iter()
+            .position(|p| (p.kind == KIND_LP || p.kind == KIND_DLMM) && p.mint == *mint)
+            .ok_or_else(|| error!(PluribusError::PositionNotFound))
     }
 
     /// A Meteora position has no NFT, so its slot names the position account the pool owns
     pub fn add_dlmm(&mut self, position: &Pubkey) -> Result<()> {
         let i = self.free_slot()?;
         self.positions[i] = Position { kind: KIND_DLMM, mint: *position, amount: 1, bump: 0 };
+        self.compound_slippage_bps[i] = 0;
         Ok(())
     }
 
     pub fn remove_dlmm(&mut self, position: &Pubkey) -> Result<()> {
         let i = self.find(KIND_DLMM, position)?;
         self.positions[i] = Position::default();
+        self.compound_slippage_bps[i] = 0;
         Ok(())
     }
 }
