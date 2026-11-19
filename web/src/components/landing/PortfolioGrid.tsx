@@ -61,24 +61,26 @@ export function PortfolioGrid() {
   const states = useMemo(() => cellStates(board.owner, DIM), [board.owner]);
 
   // Cells sized as a fraction of the width land between pixels, and the browser then draws some a pixel wider than others.
-  // So the cell and the gap are each a whole number of device pixels, and the board is as wide as those add up to.
-  // At a 125% or 150% display a whole device pixel is not a round css length, so the board is zoomed by 1 / ratio
-  // and laid out in device pixels, where whole numbers stay whole. Text inside is scaled back up by --scale.
+  // So the cell and the gap are each a whole number of pixels, and the board is as wide as those add up to.
+  // At a 1x, 2x or 3x display whole css pixels are whole device pixels too, and they are used as they are: a half css
+  // pixel there can still be drawn a device pixel off. At a 125% or 150% display a whole device pixel is not a round
+  // css length, so the board is zoomed by 1 / ratio and laid out in device pixels. Text inside is scaled back up by --scale.
   useEffect(() => {
     const [box, el] = [ref.current, boardRef.current];
     if (!box || !el) return;
     const fit = () => {
       const dpr = window.devicePixelRatio || 1;
-      const zoomed = CSS.supports("zoom", "0.5");
-      // css pixels per unit of the lengths set below
-      const unit = zoomed ? 1 : 1 / dpr;
-      const gap = Math.max(1, Math.round(2 * dpr));
-      const cell = Math.floor((box.clientWidth * dpr + gap) / SIDE);
+      const zoomed = !Number.isInteger(dpr) && CSS.supports("zoom", "0.5");
+      // layout units per css pixel: device pixels when zoomed, css pixels otherwise
+      const per = zoomed ? dpr : 1;
+      // one css pixel between cells: enough to read as a grid, thin enough to leave the shapes in charge
+      const gap = Math.max(1, Math.round(per));
+      const cell = Math.floor((box.clientWidth * per + gap) / SIDE);
       el.style.zoom = zoomed ? String(1 / dpr) : "";
-      el.style.setProperty("--gap", `${gap * unit}px`);
-      el.style.setProperty("--pitch", `${cell * unit}px`);
-      el.style.setProperty("--scale", String(zoomed ? dpr : 1));
-      setPitch(cell / dpr);
+      el.style.setProperty("--gap", `${gap}px`);
+      el.style.setProperty("--pitch", `${cell}px`);
+      el.style.setProperty("--scale", String(per));
+      setPitch(cell / per);
     };
     // fires once on observe, then on every resize; a browser zoom changes the pixel ratio and fires resize
     const observer = new ResizeObserver(fit);

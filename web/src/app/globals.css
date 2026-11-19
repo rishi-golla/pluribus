@@ -61,7 +61,7 @@
     container-type: inline-size;
   }
   .grid-board {
-    --gap: 2px;
+    --gap: 1px;
     --pitch: round(down, calc(100cqw / 32), 1px);
     width: calc(var(--pitch) * 32 - var(--gap));
     height: calc(var(--pitch) * 32 - var(--gap));
