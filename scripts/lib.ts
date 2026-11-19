@@ -128,8 +128,10 @@ export const MEME = {
   sigmaSeedBps: 15_000,
   initShocks: [6000, 3000, 5000],
   maintShocks: [4500, 2000, 3800],
-  // Dollars per whole token with 6 decimals, about what Pyth quotes, written to the demo account until the feed is used
-  demoPrice: 2,
+  // Priced per million tokens, since six decimals per token would round BONK's price to a few units
+  priceExponent: 6,
+  // Dollars per million tokens with 6 decimals, about what Pyth quotes, written to the demo account until the feed is used
+  demoPrice: 2_400_000,
 };
 
 export async function chainNow() {
@@ -258,12 +260,20 @@ export async function listMeme(d: Deployment): Promise<PublicKey> {
     await send(await ix.initAsset(program, me, mint, params, MEME.sigmaSeedBps));
     console.log(`Listed ${MEME.symbol} in shock group ${MEME.group}`);
   }
-  if (!(await exists(pda.demoPrice(mint)))) await send(await ix.setDemoPrice(program, me, mint, MEME.demoPrice));
+  const listed = await program.account.asset.fetch(pda.asset(mint));
+  // The unit can only change while nothing is deposited, and a demo price written for the old unit is written again
+  const rescaled = listed.priceExponent !== MEME.priceExponent && listed.totalDeposited.isZero();
+  if (rescaled) {
+    await send(await ix.setPriceExponent(program, me, mint, MEME.priceExponent));
+    console.log(`${MEME.symbol} is now priced per ${10 ** MEME.priceExponent} tokens`);
+  }
+  if (rescaled || !(await exists(pda.demoPrice(mint)))) await send(await ix.setDemoPrice(program, me, mint, MEME.demoPrice));
   d.assets[mint.toBase58()] = {
     symbol: MEME.symbol,
     name: MEME.name,
     decimals: MEME.decimals,
     priceAccount: pda.demoPrice(mint).toBase58(),
+    priceExponent: rescaled ? MEME.priceExponent : listed.priceExponent,
   };
   return mint;
 }
@@ -302,11 +312,14 @@ export async function ensureLookupTable(d: Deployment): Promise<PublicKey> {
 // Why the program could not use the feeds of `asset` right now, or null when it can
 // It rescales a Pyth price to 6 decimals before it checks the confidence band, so a price of a few millionths of a dollar
 // can fail a band that is a tiny share of it
-function unreadable(asset: Asset, feeds: Map<string, PythQuote | null>, now: number): string | null {
+function unreadable(asset: Asset, feeds: Map<string, Uint8Array | null>, now: number): string | null {
   const p = asset.params;
-  for (const id of [hexOf(p.pythFeedId), p.rateSource !== 0 ? hexOf(p.rateFeedId) : null]) {
+  const own = hexOf(p.pythFeedId);
+  for (const id of [own, p.rateSource !== 0 ? hexOf(p.rateFeedId) : null]) {
     if (!id) continue;
-    const q = feeds.get(id);
+    // The asset's own feed is scaled to its priced unit, a staking token's SOL leg never is
+    const data = feeds.get(id);
+    const q = data ? decodePriceUpdate(data, id === own ? asset.priceExponent : 0) : null;
     if (!q) return `feed ${id.slice(0, 8)} has no fully verified update on chain`;
     // Draws need a price within the asset's own limit, which is the least a live asset has to meet
     if (now - q.publishTime > p.maxPriceAgeSecs) return `feed ${id.slice(0, 8)} was last posted ${now - q.publishTime} s ago, over its ${p.maxPriceAgeSecs} s limit`;
@@ -335,7 +348,7 @@ export async function goLive(d: Deployment, symbols: string[]) {
     console.warn(`Could not post Pyth updates: ${(e as Error).message}`);
   }
   const infos = await connection.getMultipleAccountsInfo(feeds.map((f) => pda.pythFeed(f)));
-  const quotes = new Map(feeds.map((f, i) => [f, infos[i] ? decodePriceUpdate(infos[i].data) : null]));
+  const quotes = new Map(feeds.map((f, i) => [f, infos[i]?.data ?? null]));
   const now = await chainNow();
   for (const { mint, asset } of todo) {
     const name = d.assets[mint.toBase58()].symbol;
