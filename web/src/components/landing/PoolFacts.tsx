@@ -9,19 +9,20 @@ import { SCENARIO_NAMES, fetchStats } from "@/lib/live";
 import { type Asset, type Pool, type PluribusProgram, fetchAsset, fetchLpMarket, fetchPool, fetchPrices, getProgram, math } from "@/lib/pluribus/sdk";
 
 /** The example portfolio the hero draws and the product tour borrows against, in dollars */
-export const EXAMPLE_USD = { sol: 3_750, lp: 3_750, stock: 3_000, usdc: 1_500 } as const;
+export const EXAMPLE_USD = { sol: 3_000, lst: 2_000, lp: 3_000, stock: 1_800, meme: 1_000, usdc: 1_200 } as const;
 export type ExampleKey = keyof typeof EXAMPLE_USD;
 
 /** The example portfolio valued with the pool's own crash tables, liquidation costs and prices */
 export type Example = {
-  /** What each part still backs in the scenario that sets the credit limit */
-  survived: Record<ExampleKey, number>;
+  /** What each holding still backs for a draw and against liquidation, in the scenario that sets the credit limit */
+  credit: Record<ExampleKey, number>;
+  liquidation: Record<ExampleKey, number>;
   creditLimit: number;
   liquidationLimit: number;
-  /** How many crash scenarios the pool runs, the one that sets the credit limit, and how far it drops SOL and stocks for a draw, 0 to 1 */
+  /** How many crash scenarios the pool runs, the one that sets the credit limit, and how far it drops each holding's price for a draw, 0 to 1 */
   scenarios: number;
   scenario: string;
-  falls: { sol: number; stock: number };
+  falls: Record<ExampleKey, number>;
   /** Each tier above the base one: its rate discount, 0 to 1, and the healthy days it takes */
   tiers: { discount: number; days: number }[];
 };
@@ -40,10 +41,18 @@ export type PoolFacts = {
 async function valueExample(program: PluribusProgram, pool: Pool): Promise<Example> {
   const d = deployment!;
   const key = (k: string) => new PublicKey(k);
-  const [prices, sol, stock, usdc, market] = await Promise.all([
+  const mintOf = (symbol: string) => {
+    const mint = Object.keys(d.assets).find((m) => d.assets[m].symbol === symbol);
+    if (!mint) throw new Error(`${symbol} is not in the ${CLUSTER} deployment`);
+    return mint;
+  };
+  const [lstMint, memeMint] = [mintOf("JitoSOL"), mintOf("BONK")];
+  const [prices, sol, lst, stock, meme, usdc, market] = await Promise.all([
     fetchPrices(program, d),
     fetchAsset(program, key(d.solMint)),
+    fetchAsset(program, key(lstMint)),
     fetchAsset(program, key(d.stockMint)),
+    fetchAsset(program, key(memeMint)),
     fetchAsset(program, key(d.usdcMint)),
     fetchLpMarket(program, key(d.whirlpool)),
   ]);
@@ -62,6 +71,7 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
   const [lower, upper] = [tick(solPrice * 0.8), tick(solPrice * 1.2)];
   const parts: Record<ExampleKey, math.RiskPosition> = {
     sol: token(d.solMint, sol, EXAMPLE_USD.sol),
+    lst: token(lstMint, lst, EXAMPLE_USD.lst),
     lp: {
       mint: d.solMint,
       group: sol.params.group,
@@ -74,6 +84,7 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
       usdcGroup: pool.usdcGroup,
     },
     stock: token(d.stockMint, stock, EXAMPLE_USD.stock),
+    meme: token(memeMint, meme, EXAMPLE_USD.meme),
     usdc: token(d.usdcMint, usdc, EXAMPLE_USD.usdc),
   };
   const all = Object.values(parts);
@@ -82,13 +93,18 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
   const worst = { ...shock, only: binding };
   const total = math.limits(all, shock, prices);
   const fall = (asset: Asset) => math.shockFor(shock, true, binding, asset.params.group, math.dynamicShocks(asset, p).init) / 1e4;
+  const each = (f: (k: ExampleKey, r: math.RiskPosition) => number) =>
+    Object.fromEntries(Object.entries(parts).map(([k, r]) => [k, f(k as ExampleKey, r)])) as Record<ExampleKey, number>;
+  // the LP falls with SOL, its base token
+  const assets: Record<ExampleKey, Asset> = { sol, lst, lp: sol, stock, meme, usdc };
   return {
-    survived: Object.fromEntries(Object.entries(parts).map(([k, r]) => [k, math.limits([r], worst, prices).creditLimit])) as Record<ExampleKey, number>,
+    credit: each((_, r) => math.limits([r], worst, prices).creditLimit),
+    liquidation: each((_, r) => math.limits([r], worst, prices).liquidationLimit),
     creditLimit: total.creditLimit,
     liquidationLimit: total.liquidationLimit,
     scenarios: shock.numScenarios,
     scenario: SCENARIO_NAMES[binding] ?? `Scenario ${binding + 1}`,
-    falls: { sol: fall(sol), stock: fall(stock) },
+    falls: each((k) => fall(assets[k])),
     tiers: p.tierDiscountBps.slice(1).map((bps, i) => ({ discount: bps / 1e4, days: Math.round(p.tierMinHealthySecs[i + 1].toNumber() / 86_400) })),
   };
 }
@@ -220,8 +236,8 @@ export function PoolStats() {
   ];
   return cells.map((c, i) => (
     <div key={c.label} className={i === 0 ? "py-7" : "border-l border-line py-7 pl-7"}>
-      <div className="text-[12.5px] text-t3">{c.label}</div>
-      <div className="mt-2 text-[40px] font-medium tracking-[-0.045em]">
+      <div className="text-[11.5px] uppercase tracking-[0.04em] text-t3">{c.label}</div>
+      <div className="mt-2 text-[38px] font-medium tracking-[-0.04em]">
         {c.count !== undefined ? <Num value={c.count} countUp /> : c.usd === undefined ? "—" : <Num {...compact(c.usd)} prefix="$" countUp />}
       </div>
     </div>

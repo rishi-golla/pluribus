@@ -56,45 +56,125 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
   }
 
+  /* The landing page's look: neutral black, one lime accent, mono type. Scoped here until the app takes it too */
+  .theme-terminal {
+    --color-bg: #0c0c0c;
+    --color-s1: #121212;
+    --color-s2: #181818;
+    --color-s3: #222222;
+    --color-line: rgb(255 255 255 / 0.1);
+    --color-line-2: rgb(255 255 255 / 0.22);
+    --color-t1: #f0f0f0;
+    --color-t2: #a3a3a3;
+    --color-t3: #6e6e6e;
+    --color-brand: #c6f432;
+    --color-brand-dim: rgb(198 244 50 / 0.12);
+    /* healthy reads as the accent here */
+    --color-green: #c6f432;
+    --color-green-dim: rgb(198 244 50 / 0.12);
+    background: var(--color-bg);
+    color: var(--color-t1);
+    font-family: var(--font-mono);
+    font-feature-settings: normal;
+  }
+  .theme-terminal :focus-visible {
+    outline-color: var(--color-brand);
+  }
+
+  /* The hero grid's cells: borrowable, the buffer before liquidation, the crash haircut, and not read yet */
+  .grid-cell {
+    transition:
+      background-color 0.5s,
+      box-shadow 0.5s,
+      opacity 0.25s;
+  }
+  .grid-cell[data-state="pending"] {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  }
+  .grid-cell[data-state="0"] {
+    background-color: var(--color-brand);
+  }
+  .grid-cell[data-state="1"] {
+    background-color: rgb(255 255 255 / 0.42);
+  }
+  .grid-cell[data-state="2"] {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.45);
+  }
+  .grid-cell[data-flash] {
+    animation: grid-flash 0.9s ease both;
+    animation-delay: calc(var(--col) * 60ms);
+  }
+  .grid-cell-in {
+    animation: grid-cell-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .grid-scan {
+    animation: grid-scan 1.3s linear both;
+    box-shadow: 0 0 12px var(--color-brand);
+  }
+  @keyframes grid-cell-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+  }
+  @keyframes grid-flash {
+    30% {
+      background-color: rgb(198 244 50 / 0.2);
+      box-shadow: inset 0 0 0 1px var(--color-brand);
+    }
+  }
+  @keyframes grid-scan {
+    from {
+      left: 0;
+      opacity: 1;
+    }
+    90% {
+      opacity: 1;
+    }
+    to {
+      left: 100%;
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grid-cell-in,
+    .grid-cell[data-flash],
+    .grid-scan {
+      animation: none;
+    }
+    .grid-cell {
+      transition: none;
+    }
+  }
+
   /* The sliders in the landing page's product tour */
   .tour-range {
     appearance: none;
-    height: 6px;
-    border-radius: 999px;
+    height: 4px;
     cursor: pointer;
   }
   .tour-range::-webkit-slider-thumb {
     appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 999px;
-    background: #f4f4f5;
-    box-shadow: 0 0 0 4px rgb(158 140 255 / 0.25), 0 2px 6px rgb(0 0 0 / 0.5);
+    width: 14px;
+    height: 14px;
+    background: var(--color-brand);
+    box-shadow: 0 0 0 3px rgb(198 244 50 / 0.2);
     transition: transform 0.15s;
   }
   .tour-range:active::-webkit-slider-thumb {
     transform: scale(1.15);
   }
   .tour-range::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     border: 0;
-    border-radius: 999px;
-    background: #f4f4f5;
-    box-shadow: 0 0 0 4px rgb(158 140 255 / 0.25), 0 2px 6px rgb(0 0 0 / 0.5);
+    border-radius: 0;
+    background: var(--color-brand);
+    box-shadow: 0 0 0 3px rgb(198 244 50 / 0.2);
   }
   .tour-range:disabled {
     cursor: default;
     opacity: 0.5;
-  }
-
-  /* The landing page's background: the usual near-black with a faint purple cast, a touch stronger at the top and bottom */
-  .landing-bg {
-    background:
-      radial-gradient(1400px 800px at 50% -10%, rgb(158 140 255 / 0.06), transparent 70%),
-      radial-gradient(1200px 700px at 50% 105%, rgb(158 140 255 / 0.045), transparent 70%),
-      linear-gradient(rgb(158 140 255 / 0.02), rgb(158 140 255 / 0.02)),
-      var(--color-bg);
   }
 
   .app-ambient {
@@ -103,13 +183,6 @@
 
   .text-fade {
     background: linear-gradient(180deg, #ededef 0%, #7d828a 100%);
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  /* The hero's second line, in the brand purple: lavender at the top deepening to violet */
-  .text-brand-fade {
-    background: linear-gradient(180deg, #d9d1ff 0%, #9e8cff 55%, #6d58e0 100%);
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }

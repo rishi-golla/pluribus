@@ -8,11 +8,11 @@ import { AutopayRepaid, ExampleApy, ExampleNote } from "./PoolFacts";
  */
 function Column({ index, title, body, delay, children }: { index: number; title: string; body: string; delay: number; children: ReactNode }) {
   return (
-    <FadeUp delay={delay} y={20} className="group relative flex flex-col border-l border-line px-7 pb-8 pt-7 first:border-l-0 first:pl-0 last:pr-0">
-      {/* A purple rule that runs across the top of the column on hover */}
+    <FadeUp delay={delay} y={20} className="group relative flex flex-col border-t border-line pb-8 pt-7 first:border-t-0 md:border-l md:border-t-0 md:px-7 md:first:border-l-0 md:first:pl-0 md:last:pr-0">
+      {/* A rule in the accent that runs across the top of the column on hover */}
       <span className="absolute -top-px left-0 h-[2px] w-0 bg-brand transition-[width] duration-300 ease-out group-hover:w-full" />
       <div className="font-mono text-[12px] text-brand">0{index}</div>
-      <h3 className="mt-4 text-[22px] font-medium leading-[1.15] tracking-[-0.03em]">{title}</h3>
+      <h3 className="mt-4 text-[20px] font-semibold leading-[1.2] tracking-[-0.03em]">{title}</h3>
       <p className="mt-3 text-[14px] leading-[1.6] text-t2">{body}</p>
       <div className="mt-auto pt-8">{children}</div>
     </FadeUp>
@@ -27,7 +27,7 @@ const ltvRows = [
 
 export function Features() {
   return (
-    <div className="mt-14 grid grid-cols-3 border-y border-line">
+    <div className="mt-14 grid border-y border-line md:grid-cols-3">
       <Column
         index={1}
         delay={0}
