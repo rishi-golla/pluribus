@@ -67,8 +67,7 @@ export default function Home() {
             </FadeUp>
             <FadeUp onMount delay={0.2}>
               <p className="mt-6 max-w-[540px] text-lg leading-[1.55] text-t2">
-                One credit line for your SOL, LSTs, LP positions and tokenized stocks. Every asset is valued under one crash scenario, there&apos;s no maturity, and
-                your LP fees pay the loan down.
+                Basket your SOL, LSTs, LPs, stocks and memecoins into one USDC loan. No maturity, and your LP fees pay it down.
               </p>
             </FadeUp>
             <FadeUp onMount delay={0.28} className="mt-9 flex gap-3">
@@ -121,9 +120,9 @@ export default function Home() {
               <h2 className="text-[44px] font-medium leading-[1.05] tracking-[-0.045em]">
                 Credit that understands
                 <br />
-                what you actually hold.
+                what you hold.
               </h2>
-              <p className="mt-3.5 text-base text-t2">Built from the ground up for concentrated liquidity and multi-asset portfolios.</p>
+              <p className="mt-3.5 text-base text-t2">Built for LP positions and mixed portfolios.</p>
             </FadeUp>
           </div>
 

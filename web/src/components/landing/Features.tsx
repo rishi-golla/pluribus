@@ -31,8 +31,8 @@ export function Features() {
       <Column
         index={1}
         delay={0}
-        title="Crash-tested, not snapshot"
-        body="LP positions are valued at the crash price using only their range, liquidity and oracle prices, so manipulating a pool can't raise your limit."
+        title="Crash-tested, not snapshotted"
+        body="LPs are valued at the crash price from range, liquidity and oracle price alone, so pool manipulation can't raise your limit."
       >
         <div className="font-mono text-[12.5px]">
           <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 border-b border-line pb-2 text-t3">
@@ -54,7 +54,7 @@ export function Features() {
         index={2}
         delay={0.08}
         title="Autopay from LP fees"
-        body="Keepers harvest your concentrated-liquidity fees on a schedule and repay debt with the USDC part. Stay healthy and your rate keeps dropping."
+        body="Keepers harvest your LP fees to repay debt, or compound them back in. Stay healthy and your rate drops."
       >
         <AutopayRepaid />
       </Column>
@@ -63,7 +63,7 @@ export function Features() {
         index={3}
         delay={0.16}
         title="Pick your risk as a lender"
-        body="Seniors are protected by the insurance fund and the junior tranche. Juniors take first loss and earn every risk premium."
+        body="Seniors sit behind the insurance fund and juniors. Juniors take first loss and earn every risk premium."
       >
         <div className="grid grid-cols-2 border-t border-line">
           <div className="pr-4 pt-4">

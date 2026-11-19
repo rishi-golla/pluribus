@@ -186,7 +186,7 @@ export function AutopayRepaid() {
       <div className="mt-4">
         <FeeBars days={days ?? null} />
       </div>
-      <div className="mt-3 font-mono text-[11.5px] text-t3">{days === null ? "Shown once an indexer is connected" : "\u00a0"}</div>
+      <div className="mt-3 font-mono text-[11.5px] text-t3">{days === null ? "Needs the indexer" : "\u00a0"}</div>
     </>
   );
 }
@@ -201,7 +201,7 @@ export function ExampleApy({ tranche, className }: { tranche: "senior" | "junior
 export function ExampleNote({ className }: { className?: string }) {
   const facts = usePoolFacts();
   if (facts === undefined) return <div className={className}>&nbsp;</div>;
-  return <div className={className}>{facts ? `Example at ${facts.kink}% utilization, from the on-chain rate curve` : `Could not read the ${CLUSTER} pool`}</div>;
+  return <div className={className}>{facts ? `At ${facts.kink}% utilization, from the on-chain rate curve` : `Could not read the ${CLUSTER} pool`}</div>;
 }
 
 const compact = (v: number) =>

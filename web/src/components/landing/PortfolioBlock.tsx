@@ -48,26 +48,26 @@ export function PortfolioBlock() {
     ? {
         label: `${part.name} backs`,
         value: ex?.survived[part.key],
-        note: ex ? `${dollars(EXAMPLE_USD[part.key])} held, ${pct(cut(part.key))} taken in the ${ex.scenario.toLowerCase()}` : `${dollars(EXAMPLE_USD[part.key])} held`,
+        note: ex ? `${dollars(EXAMPLE_USD[part.key])} held, ${pct(cut(part.key))} lost in a ${ex.scenario.toLowerCase()}` : `${dollars(EXAMPLE_USD[part.key])} held`,
       }
     : {
-        label: `Credit line from this ${dollars(TOTAL)} portfolio`,
+        label: "Borrow up to",
         value: ex?.creditLimit,
         note:
           ex === null
-            ? `Could not read the ${CLUSTER} pool, so no figures are shown.`
+            ? `Couldn't read the ${CLUSTER} pool.`
             : ex
-              ? `Hatched: what the worst of ${ex.scenarios} crash scenarios takes, a ${ex.scenario.toLowerCase()} with SOL down ${pct(ex.falls.sol)}`
-              : "Crash-testing it with the pool's settings",
+              ? `Hatched: lost in the worst of ${ex.scenarios} crashes, a ${ex.scenario.toLowerCase()} with SOL down ${pct(ex.falls.sol)}`
+              : "Crash-testing with the pool's settings",
       };
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between text-[12.5px] text-t3">
-        <span>Example portfolio</span>
+        <span>Example {dollars(TOTAL)} portfolio</span>
         <span className="flex items-center gap-2">
           <span className="size-2.5 rounded-[2px] border border-white/25 [background:repeating-linear-gradient(135deg,rgb(255_255_255/0.5)_0_1px,transparent_1px_3px)]" />
-          Taken in a crash
+          Lost in a crash
         </span>
       </div>
 

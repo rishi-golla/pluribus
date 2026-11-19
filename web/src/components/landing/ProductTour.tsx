@@ -236,7 +236,7 @@ function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits |
         </div>
       </div>
       <div className="mt-2 text-[11.5px] text-t3">
-        {limits ? "Example account: the portfolio above, limits from the on-chain crash tables" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
+        {limits ? "Example: the portfolio above, with on-chain crash limits" : limits === null ? `Could not read the ${CLUSTER} pool` : "\u00a0"}
       </div>
 
       <ActionButton stage={tx.stage} disabled={amount <= 0} onClick={() => tx.run(() => onCommit(mode, amount))} done={`${mode === "draw" ? "Drawn" : "Repaid"}, added to your statement`}>
@@ -451,7 +451,7 @@ function StatementCard({ today }: { today: Row[] }) {
           ))}
           {shown.length === 0 && (
             <motion.li key="none" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="py-6 text-center text-[13px] text-t3">
-              Nothing of this kind this month
+              Nothing this month
             </motion.li>
           )}
         </AnimatePresence>
@@ -481,8 +481,8 @@ const TABS = [
     key: "borrow",
     label: "Borrow",
     title: "Draw USDC in one step.",
-    body: "Slide to an amount and watch your health factor before you sign. Try a draw, then open Statements to see it booked.",
-    points: ["No maturity date", "Repay any time, from your wallet or your collateral", "LP fees pay the debt down on their own"],
+    body: "Pick an amount and see your health factor before you sign. Try a draw, then check Statements.",
+    points: ["No maturity", "Repay anytime, from your wallet or collateral", "LP fees repay debt automatically"],
     href: "/borrow",
     cta: "Open a credit line",
   },
@@ -490,8 +490,8 @@ const TABS = [
     key: "earn",
     label: "Earn",
     title: "Lend at the risk you choose.",
-    body: "Seniors are paid first and protected by two layers of cover. Juniors take first loss for a much higher yield.",
-    points: ["Weekly yield, paid out evenly", "Seniors are covered by the insurance fund and juniors", "Juniors earn every risk premium"],
+    body: "Seniors are paid first, behind two layers of cover. Juniors take first loss for higher yield.",
+    points: ["Yield paid out evenly each week", "Seniors covered by the insurance fund and juniors", "Juniors earn every risk premium"],
     href: "/earn",
     cta: "Start earning",
   },
@@ -499,8 +499,8 @@ const TABS = [
     key: "statements",
     label: "Statements",
     title: "Every dollar, accounted for.",
-    body: "A monthly statement of each draw, repayment, autopay and risk premium, and how much of your interest your LP fees covered.",
-    points: ["Filter by kind of activity", "Track autopay against interest", "Export any month as CSV"],
+    body: "Every draw, repayment, autopay and premium by month, and how much interest your LP fees covered.",
+    points: ["Filter by activity", "Track autopay against interest", "Export any month as CSV"],
     href: "/statements",
     cta: "See statements",
   },
