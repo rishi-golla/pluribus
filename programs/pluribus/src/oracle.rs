@@ -40,13 +40,18 @@ pub fn read_price(pool: &Pool, asset: &Asset, acc: &AccountInfo, now: i64) -> Re
     checked_low(read_quote(pool, asset, acc)?, &asset.params, now)
 }
 
-/// The raw quote for `asset`, from its demo account in demo mode or its Pyth account otherwise, checked for the right feed
+/// The raw quote for `asset`, from its demo account while it is demo priced or its Pyth account otherwise, checked for the right feed
 pub fn read_quote(pool: &Pool, asset: &Asset, acc: &AccountInfo) -> Result<Quote> {
-    quote_for(pool, &asset.mint, &asset.params.pyth_feed_id, acc)
+    quote_for(demo_priced(pool, asset), &asset.mint, &asset.params.pyth_feed_id, acc)
 }
 
-fn quote_for(pool: &Pool, mint: &Pubkey, feed: &[u8; 32], acc: &AccountInfo) -> Result<Quote> {
-    if pool.demo_mode {
+/// Whether `asset` reads the admin's demo price: only in demo mode, and only until the admin switches it to its live feed
+pub fn demo_priced(pool: &Pool, asset: &Asset) -> bool {
+    pool.demo_mode && !asset.live_price
+}
+
+fn quote_for(demo: bool, mint: &Pubkey, feed: &[u8; 32], acc: &AccountInfo) -> Result<Quote> {
+    if demo {
         demo_quote(mint, acc)
     } else {
         pyth_quote(feed, acc)
@@ -57,7 +62,8 @@ fn quote_for(pool: &Pool, mint: &Pubkey, feed: &[u8; 32], acc: &AccountInfo) -> 
 /// `pool_acc` is the stake pool for RATE_STAKE_POOL and unused for RATE_FIXED
 pub fn backing_price(pool: &Pool, asset: &Asset, sol_acc: &AccountInfo, pool_acc: Option<&AccountInfo>, now: i64) -> Result<Priced> {
     let p = &asset.params;
-    let Priced { price: sol, fresh, publish_time } = checked_low(quote_for(pool, &p.rate_base_mint, &p.rate_feed_id, sol_acc)?, p, now)?;
+    // The SOL leg follows the staking token's own source, so a live token is never valued with a demo SOL price
+    let Priced { price: sol, fresh, publish_time } = checked_low(quote_for(demo_priced(pool, asset), &p.rate_base_mint, &p.rate_feed_id, sol_acc)?, p, now)?;
     // Lamports behind `units` base units of the token
     let (lamports, units) = match p.rate_source {
         RATE_FIXED => (p.fixed_rate as u128, pow10(asset.decimals)?),
