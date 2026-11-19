@@ -28,8 +28,21 @@ A credit account holds up to 5 positions. You borrow USDC against all of them to
 | AAPLx, a mock Token-2022 stock | yes |
 | BONK, a mock memecoin | yes |
 | Raydium SOL/USDC liquidity position | SDK only |
+| Meteora DLMM SOL/USDC liquidity position | yes, opened through the app |
 
 JitoSOL and JupSOL are priced from their live Pyth feeds. SOL, NVDAx, AAPLx and BONK use demo prices the admin sets, so the demo can crash them on purpose. BONK is priced per million tokens, since a single token is worth a tiny fraction of a cent.
+
+### Meteora DLMM
+
+A Meteora position can never change owner, so one your wallet already holds cannot be deposited. The pool has to own it from the start, so you open a new position through Pluribus and put liquidity into it.
+
+- **Opening:** on the Borrow page press **Deposit**, pick **Meteora DLMM**, enter SOL and USDC, and choose a width of 1 to 70 bins. The range is centred on the pair's active bin and the form shows its price range. The app opens the position in one transaction and adds the tokens in a second, so your wallet asks twice. If the second fails the empty position stays in your account and you can add to it from its row. Opening costs about 0.06 SOL of rent, returned when you close the position, plus about 0.07 SOL for each bin array nobody has created yet.
+- **Adding:** **Add** on the position's row puts more SOL and USDC into the same range. A range entirely above or below the active price takes only one of the two.
+- **Withdrawing:** **Withdraw** takes back any share of the liquidity, to your wallet, as long as the debt stays within the credit limit. A withdrawal does not need the market to be live.
+- **Closing:** once a position is empty, **Close** pays out its unclaimed fees and its rent and frees the slot.
+- **Value:** counted from the position's own liquidity and the oracle price, never the pair's price, so trades in the pair cannot move it. Each bin counts as whichever of its two tokens is worth less at the price being tested.
+- **Liquidation:** unlike an NFT position, a Meteora position is sold in part. The liquidator repays part of the debt and the pool pays out that share of every bin, plus the bonus, straight to the liquidator. A position taken whole is closed and its rent returns to you.
+- **Paused or not yet active:** a paused market, a pair Meteora has disabled or a listing inside its activation delay takes no new positions and no added liquidity. The Deposit list shows it greyed out.
 
 ### Credit limit
 
@@ -85,7 +98,7 @@ Anyone can collect the trading fees of a deposited Orca position in the main SOL
 An account can be liquidated when its debt is above its liquidation limit. That limit is worked out like the credit limit, with smaller shocks.
 
 - A liquidator repays part of your debt, up to the close factor per transaction, and takes collateral worth that amount plus the bonus.
-- A liquidity position is sold whole. The liquidator pays its value less the bonus, and what the close factor does not let through to your debt stays in your account as USDC.
+- An Orca or Raydium liquidity position is sold whole. The liquidator pays its value less the bonus, and what the close factor does not let through to your debt stays in your account as USDC. A Meteora position is sold in part, see [Meteora DLMM](#meteora-dlmm).
 - Anyone can pay your debt down with USDC that is in your account. No bonus is charged for that.
 - The account returns to the base rate tier.
 - Liquidations repeat while the debt is above the limit.

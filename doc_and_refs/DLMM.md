@@ -10,7 +10,7 @@ Research, design and what is built. Everything stated as fact below was read fro
 - **Fees:** `claim_fee2` by CPI into the protocol's own vaults, then the same split as Orca autopay.
 - **Listing:** a DLMM pair is an `LpMarket` like any other, listed with `init_lp_market`, so pause, cost, timelock and guardian work unchanged.
 
-All of it is implemented in the program and tested. The SDK, keeper and web are not (see the end).
+All of it is implemented in the program and tested, with SDK builders, a keeper and a web UI on top (see the end).
 
 ## Sources
 
@@ -179,5 +179,6 @@ Every DLMM instruction needs a raised compute limit, and so does any health chec
 ## Off chain and devnet
 
 - **SDK:** `sdk/dlmm.ts` reads pairs and positions; `locateLps` and `healthAccounts` list a position's five health accounts; `fetchPositions` values it bin by bin, mirrored by `math.dlmmValue`, which matched the program's health view to the cent on devnet. `ix.dlmmOpen/Add/Remove/Close/Liquidate/Autopay` build the instructions with raised compute limits; `dlmmAdd` creates missing bin arrays and wraps SOL.
+- **Web:** on the Borrow page, **Deposit** lists each listed pair as a new Meteora position (SOL and USDC amounts, a width of 1 to 70 bins centred on the pair's active bin, shown as a price range) and each held position as an add-liquidity option. A position's row has **Add**, **Withdraw** (any percentage) and, once empty, **Close**. A paused, not yet active or Meteora-disabled pair is greyed out for new money and still lets liquidity out. The open and the first add are two transactions, because `dlmmAdd` reads the position from the chain and so cannot be built before `dlmmOpen` has landed; if the second fails the empty position stays in the account with an **Add** button. The new position's keypair signs the first transaction next to the wallet (`sendInstructions` takes extra signers).
 - **Keeper:** sells Meteora positions in part through `dlmm_liquidate` and harvests their fees when a simulated `dlmm_autopay` shows any.
 - **Devnet:** DLMM has the same program id there but an older build (2,198,048 bytes, slot 466305525) and its own upgrade authority. All 13 tests pass against it (`DLMM_SO=lb_clmm_devnet.so`). `npm run dlmm:market` created the SOL/mock-USDC pair `Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi` from the 10 bps preset and listed it; open, add, draw, remove, autopay, repay and close were run there. Measured: `dlmm_add` over 30 bins 206k units, removal 213k–239k, close 119k, autopay 123k; every transaction fits through the lookup table.
