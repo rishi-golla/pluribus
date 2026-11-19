@@ -40,6 +40,11 @@ export type Collateral = {
   /** This position's part of the credit limit */
   power: number;
   risk: Risk;
+  /**
+   * An LP or Meteora position: how far the pool's price may sit from the oracle's, in bps, for anyone to compound its fees back
+   * into it, or 0 when its fees repay debt through autopay. Always 0 for a token
+   */
+  compoundBps: number;
   /** Price range, payout at the current price, and the limit a flat per-token discount would give */
   lp?: { lower: number; upper: number; sol: number; usdc: number; naive: number };
   /** The same for a Meteora position, whose `mint` is the position account the pool owns, with its pair, bin range and whether it holds no liquidity */
@@ -209,6 +214,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       value,
       power: math.limits([p.risk], worst, prices).creditLimit * scale,
       risk: p.risk,
+        // Kept per position slot on the account, and only an LP or Meteora position can have one
+      compoundBps: p.kind === "token" ? 0 : (credit?.compoundSlippageBps[p.slot] ?? 0),
     };
     if ("amount" in p.risk) return { ...base, symbol: d.assets[base.mint]?.symbol ?? "Token" };
     if ("bins" in p.risk) {
@@ -364,6 +371,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       /** This week's payout: a budget fixed when the epoch opened on Friday, paid out evenly until `end` (unix seconds) */
       epoch: params.epochSecs > 0 ? { end: pool.epochEnd.toNumber(), budget: num(pool.epochBudget), buffer: stats.yieldBuffer } : null,
       kink: params.kinkBps / 1e4,
+      /** The share of a compounded position's fees paid to whoever compounds it, in bps */
+      compoundBountyBps: pool.compoundBountyBps,
       badDebt: num(pool.badDebt),
       // Borrower interest to date, implied by the insurance reserve's fixed cut of it
       interest: params.reserveFactorBps ? (stats.reserves * 1e4) / params.reserveFactorBps : 0,
