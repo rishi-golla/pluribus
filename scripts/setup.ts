@@ -15,14 +15,32 @@ import {
   getMint,
   getMintLen,
 } from "@solana/spl-token";
-import { AddressLookupTableProgram, PublicKey, SystemProgram } from "@solana/web3.js";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import BN from "bn.js";
-import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, lookupAddresses, math, pda } from "../sdk/index.ts";
-import { deploymentFile, exists, faucet, program, send } from "./lib.ts";
+import { type AssetParams, type Deployment, type PoolParams, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID, ix, math, pda } from "../sdk/index.ts";
+import {
+  FEEDS,
+  FEED_OF,
+  LIVE_SYMBOLS,
+  MEME,
+  addFeeds,
+  demoActivateNow,
+  deploymentFile,
+  ensureFeedIds,
+  ensureLookupTable,
+  ensurePremiums,
+  ensureShockColumn,
+  exists,
+  faucet,
+  feedParam,
+  goLive,
+  listMeme,
+  program,
+  send,
+} from "./lib.ts";
 import { cluster, connection, key, me, root, url, wallet } from "./orca-common.ts";
 
 const DAY = 86_400;
-const SOL_FEED = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
 const SEED_USDC = { senior: 1_000_000, junior: 100_000 };
 // A local validator cannot skip days, so localnet runs the same rules on seconds, with the shortest claim window allowed
 // The program requires activation >= exit wait + claim window, and a gap >= exit wait + 3 days (the longest window) and >= activation
@@ -84,14 +102,14 @@ if (!(await exists(xstock))) {
 
 // Scenarios are crypto crash, equity crash and broad selloff, with columns for the SOL, stock and USDC groups
 // The small USDC shock keeps a gap between the draw limit and the liquidation line for USDC collateral
-// Six columns per scenario: SOL, stock, USDC, LST and two spare, then a fourth unused scenario
+// Six columns per scenario: SOL, stock, USDC, LST, memecoin and one spare, then a fourth unused scenario
 // Staking tokens fall with SOL plus a depeg, `depeg` bps deeper than the SOL column
 const shocks = (rows: number[][], usdc: number, depeg: number) =>
-  rows.flatMap(([sol, equity]) => [sol, equity, usdc, sol + depeg, 0, 0]).concat(Array(math.MAX_GROUPS).fill(0));
+  rows.flatMap(([sol, equity, meme]) => [sol, equity, usdc, sol + depeg, meme, 0]).concat(Array(math.MAX_GROUPS).fill(0));
 const params: PoolParams = {
   numScenarios: 3,
-  initShockBps: shocks([[3000, 1500], [1500, 3500], [2500, 2500]], 300, 500),
-  maintShockBps: shocks([[2000, 1000], [1000, 2500], [1700, 1700]], 100, 300),
+  initShockBps: shocks([[3000, 1500, MEME.initShocks[0]], [1500, 3500, MEME.initShocks[1]], [2500, 2500, MEME.initShocks[2]]], 300, 500),
+  maintShockBps: shocks([[2000, 1000, MEME.maintShocks[0]], [1000, 2500, MEME.maintShocks[1]], [1700, 1700, MEME.maintShocks[2]]], 100, 300),
   liqBonusBps: 500,
   closeFactorBps: 5000,
   warnHealthBps: 11_000,
@@ -158,28 +176,28 @@ const asset = (group: number, oracle: number, feed: string, liqCostBps: number, 
   uiMultiplier: false,
   jumpHoldSecs: 0,
 });
-// A staking token's own price comes from its demo account, its backing from SOL's at a fixed rate
-function staked(rate: number): AssetParams {
+// A staking token's own price is its Pyth feed or demo account, and its backing is SOL's price at a fixed rate
+function staked(rate: number, symbol: string): AssetParams {
   return {
-    ...asset(3, 1, "", 600, DAY),
+    ...asset(3, 1, FEED_OF[symbol], 600, DAY),
     rateSource: 2,
     rateAccount: PublicKey.default,
     fixedRate: new BN(Math.round(rate * 1e9)),
     rateBaseMint: NATIVE_MINT,
-    rateFeedId: [...Buffer.from(SOL_FEED, "hex")],
+    rateFeedId: feedParam(FEEDS.SOL),
   };
 }
-// The stock feed id is a placeholder, since demo mode never reads it
+// Every feed id is the asset's real Pyth feed, which is only read while the asset is priced from Pyth
 // The last column is the annual volatility each dynamic shock starts from: 80% for SOL, 50% for the stock
 for (const [mint, assetParams, sigma] of [
   [usdc, asset(2, 0, "", 0), 0],
-  [NATIVE_MINT, asset(0, 1, SOL_FEED, 500, DAY), 8_000],
-  [stock, asset(1, 1, "", 1000, 3 * DAY), 5_000],
+  [NATIVE_MINT, asset(0, 1, FEED_OF.SOL, 500, DAY), 8_000],
+  [stock, asset(1, 1, FEED_OF.NVDAx, 1000, 3 * DAY), 5_000],
   // Staking tokens in the LST group, priced at the lower of their own price and their SOL backing, a point more to sell than SOL
-  ...LSTS.map((l) => [l.mint, staked(l.rate), 8_000] as const),
+  ...LSTS.map((l) => [l.mint, staked(l.rate, l.symbol), 8_000] as const),
   // The xStock in the stock group: per-share price times the mint's multiplier, and four days of last price for liquidations
   // A price jump has to hold a day before it counts, longer than an issuer could lag the feed on a split
-  [xstock, { ...asset(1, 1, "", 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true, jumpHoldSecs: DAY }, 4_000],
+  [xstock, { ...asset(1, 1, FEED_OF.AAPLx, 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true, jumpHoldSecs: DAY }, 4_000],
 ] as const) {
   if (!(await exists(pda.asset(mint)))) {
     const tokenProgram = mint.equals(xstock) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
@@ -258,6 +276,16 @@ const d: Deployment = {
   },
 };
 
+// The memecoin has a shock column of its own, which a pool set up before it may not have yet
+await ensureShockColumn(d, MEME.group, MEME.initShocks, MEME.maintShocks);
+await listMeme(d);
+addFeeds(d);
+// Feed ids, premiums and new listings wait out the activation delay, which only protects juniors from an admin who sets
+// every price anyway, so a demo pool applies them at once
+await ensureFeedIds(d);
+await ensurePremiums(d);
+await demoActivateNow(d);
+
 for (const junior of [false, true]) {
   const dollars = junior ? SEED_USDC.junior : SEED_USDC.senior;
   if ((await getMint(connection, junior ? pda.juniorMint() : pda.shareMint())).supply > 0n) continue;
@@ -267,32 +295,12 @@ for (const junior of [false, true]) {
 
 // A lookup table of the addresses every transaction reuses, so liquidating an account with many positions fits in one
 // A rerun extends the table it made before with whatever is new
-const previous = fs.existsSync(deploymentFile) ? (JSON.parse(fs.readFileSync(deploymentFile, "utf8")) as Deployment).lookupTable : undefined;
-const old = previous ? (await connection.getAddressLookupTable(new PublicKey(previous))).value : null;
-let table = old?.isActive() && old.state.authority?.equals(me) ? old.key : null;
-if (!table) {
-  // The slot must already be in the slot hashes of the bank that runs the transaction, so a finalized one, and a
-  // load-balanced RPC can still run it on a node that disagrees, so a few tries with a fresh slot
-  for (let attempt = 1; !table; attempt++) {
-    // Some way back from the confirmed tip, further on each try, so it is an ancestor of whichever node runs it
-    const recentSlot = (await connection.getSlot("confirmed")) - [2, 10, 40, 100, 200][attempt - 1];
-    const [create, address] = AddressLookupTableProgram.createLookupTable({ authority: me, payer: me, recentSlot });
-    try {
-      await send([create]);
-      table = address;
-    } catch (e) {
-      if (attempt >= 5) throw e;
-      await new Promise((r) => setTimeout(r, 3_000));
-    }
-  }
-}
-const listed = new Set(((await connection.getAddressLookupTable(table)).value?.state.addresses ?? []).map((k) => k.toBase58()));
-const missing = lookupAddresses(d).filter((k) => !listed.has(k.toBase58()));
-for (let i = 0; i < missing.length; i += 20) {
-  await send([AddressLookupTableProgram.extendLookupTable({ lookupTable: table, authority: me, payer: me, addresses: missing.slice(i, i + 20) })]);
-}
-d.lookupTable = table.toBase58();
+await ensureLookupTable(d);
 
 fs.mkdirSync(path.dirname(deploymentFile), { recursive: true });
 fs.writeFileSync(deploymentFile, JSON.stringify(d, null, 2) + "\n");
 console.log(`Wrote ${deploymentFile}`);
+
+// Off a local chain, which has no Pyth, the assets whose feeds are fresh read them instead of their demo prices
+// The rest stay on demo prices, and running setup again, or list:meme, switches them once their feeds are posted
+if (d.demoMode && cluster !== "localnet") await goLive(d, LIVE_SYMBOLS);
