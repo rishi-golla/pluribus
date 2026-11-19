@@ -896,6 +896,57 @@ impl Env {
         )
     }
 
+    pub fn set_asset_premium_ix(&self, admin: &Pubkey, mint: &Pubkey, premium_bps: u16) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetAssetPremium { premium_bps }.data(),
+            pluribus::accounts::SetAssetPremium { admin: *admin, pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn apply_asset_premium_ix(&self, mint: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::ApplyAssetPremium {}.data(),
+            pluribus::accounts::ApplyAssetPremium { asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn set_premium_tiers_ix(&self, admin: &Pubkey, tier_bps: [u16; TIERS]) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetPremiumTiers { tier_bps }.data(),
+            pluribus::accounts::AdminPool { admin: *admin, pool: self.pool }.to_account_metas(None),
+            None,
+        )
+    }
+
+    pub fn apply_premium_tiers_ix(&self) -> Instruction {
+        self.ix(pluribus::instruction::ApplyPremiumTiers {}.data(), pluribus::accounts::ApplyParams { pool: self.pool }.to_account_metas(None), None)
+    }
+
+    pub fn demo_set_live_price_ix(&self, admin: &Pubkey, mint: &Pubkey, live: bool) -> Instruction {
+        self.ix(
+            pluribus::instruction::DemoSetLivePrice { live }.data(),
+            pluribus::accounts::DemoAsset { admin: *admin, pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
+    /// `targets` are the asset and LP market accounts whose waits end now
+    pub fn demo_activate_ix(&self, admin: &Pubkey, targets: &[Pubkey]) -> Instruction {
+        let mut metas = pluribus::accounts::DemoActivate { admin: *admin, pool: self.pool }.to_account_metas(None);
+        metas.extend(targets.iter().map(|t| AccountMeta::new(*t, false)));
+        Instruction::new_with_bytes(pluribus::ID, &pluribus::instruction::DemoActivate {}.data(), metas)
+    }
+
+    pub fn migrate_account_ix(&self, payer: &Pubkey, account: &Pubkey) -> Instruction {
+        self.ix(
+            pluribus::instruction::MigrateAccount {}.data(),
+            pluribus::accounts::MigrateAccount { payer: *payer, account: *account, system_program: system_program::ID }.to_account_metas(None),
+            None,
+        )
+    }
+
     pub fn apply_params_ix(&self) -> Instruction {
         self.ix(pluribus::instruction::ApplyParams {}.data(), pluribus::accounts::ApplyParams { pool: self.pool }.to_account_metas(None), None)
     }
