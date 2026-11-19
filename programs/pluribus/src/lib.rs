@@ -290,4 +290,8 @@ pub mod pluribus {
     pub fn dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Result<()> {
         instructions::dlmm::handle_dlmm_autopay(ctx)
     }
+
+    pub fn compound_dlmm<'info>(ctx: Context<'info, CompoundDlmm<'info>>) -> Result<()> {
+        instructions::dlmm::handle_compound_dlmm(ctx)
+    }
 }

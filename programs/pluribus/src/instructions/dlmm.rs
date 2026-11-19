@@ -9,10 +9,13 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::{
     constants::*,
-    dlmm::{read_position, MAX_BINS},
+    dlmm::{read_pair, read_position, MAX_BINS},
     error::PluribusError,
     events::*,
-    instructions::liquidate::{require_not_worse, settle},
+    instructions::{
+        compound::{require_fair_bin, Compounder},
+        liquidate::{require_not_worse, settle},
+    },
     math::*,
     risk::*,
     state::*,
@@ -33,6 +36,9 @@ const CLAIM_FEE: [u8; 8] = [0x70, 0xbf, 0x65, 0xab, 0x1c, 0x90, 0x7f, 0xbb];
 const CLOSE_POSITION: [u8; 8] = [0xae, 0x5a, 0x23, 0x73, 0xba, 0x28, 0x93, 0xe2];
 /// Borsh for no transfer-hook accounts, which every `2` instruction takes last
 const NO_HOOKS: [u8; 4] = [0; 4];
+/// Meteora's strategy that spreads whatever it is given evenly, token Y under the active bin and token X over it,
+/// in any mix of the two
+const SPOT_IMBALANCED: u8 = 6;
 
 const WRITABLE: u8 = 1;
 const SIGNER: u8 = 2;
@@ -61,6 +67,14 @@ fn call<'info>(
         None => invoke(&ix, &infos)?,
     }
     Ok(())
+}
+
+/// Who signs for the tokens an add takes
+enum Sender<'a, 'info> {
+    /// A wallet that signed the transaction, whose own token accounts are spent
+    Wallet(&'a AccountInfo<'info>),
+    /// The pool PDA, which signs by its seeds for the position it owns and for the vaults it owns
+    Pool(&'a Account<'info, Pool>),
 }
 
 /// The Meteora accounts a liquidity instruction passes through, with the two token accounts the pair pays into or draws from
@@ -101,6 +115,33 @@ macro_rules! venue {
     };
 }
 
+/// The venue of an accounts struct whose token accounts are the protocol's own base token and USDC collateral vaults,
+/// put in the order the pair keeps its two tokens, with `$bitmap` as the pair's bitmap extension
+macro_rules! vault_venue {
+    ($a:expr, $bitmap:expr) => {{
+        let (base_vault, usdc_vault) = ($a.base_vault.to_account_info(), $a.usdc_collateral_vault.to_account_info());
+        let (base_mint, usdc_mint) = ($a.base_mint.to_account_info(), $a.usdc_mint.to_account_info());
+        let (token_x, token_y) = if $a.lp_market.base_first { (base_vault, usdc_vault) } else { (usdc_vault, base_vault) };
+        let (mint_x, mint_y) = if $a.lp_market.base_first { (base_mint, usdc_mint) } else { (usdc_mint, base_mint) };
+        Venue {
+            program: $a.dlmm_program.to_account_info(),
+            event_authority: $a.event_authority.to_account_info(),
+            position: $a.position.to_account_info(),
+            lb_pair: $a.lb_pair.to_account_info(),
+            bitmap: $bitmap.to_account_info(),
+            token_x,
+            token_y,
+            reserve_x: $a.reserve_x.to_account_info(),
+            reserve_y: $a.reserve_y.to_account_info(),
+            mint_x,
+            mint_y,
+            // Both of a listed pair's tokens are classic tokens
+            program_x: $a.token_program.to_account_info(),
+            program_y: $a.token_program.to_account_info(),
+        }
+    }};
+}
+
 impl<'info> Venue<'info> {
     /// The accounts adding and removing liquidity share, up to the one that signs
     fn liquidity<'a>(&'a self, sender: &'a AccountInfo<'info>) -> [(&'a AccountInfo<'info>, u8); 10] {
@@ -127,8 +168,12 @@ impl<'info> Venue<'info> {
     }
 
     /// Adds `sender`'s tokens across the position's whole range, in the shape `strategy` names
-    fn add(&self, sender: &AccountInfo<'info>, amounts: (u64, u64), active: (i32, i32), range: (i32, i32), strategy: u8, bins: &[AccountInfo<'info>]) -> Result<()> {
-        let mut accounts = self.liquidity(sender).to_vec();
+    fn add(&self, sender: Sender<'_, 'info>, amounts: (u64, u64), active: (i32, i32), range: (i32, i32), strategy: u8, bins: &[AccountInfo<'info>]) -> Result<()> {
+        let (sender, pool) = match sender {
+            Sender::Wallet(wallet) => (wallet.clone(), None),
+            Sender::Pool(pool) => (pool.to_account_info(), Some(pool)),
+        };
+        let mut accounts = self.liquidity(&sender).to_vec();
         accounts.extend([(&self.program_x, 0), (&self.program_y, 0), (&self.event_authority, 0), (&self.program, 0)]);
         let data = [
             &ADD_LIQUIDITY_BY_STRATEGY[..],
@@ -145,7 +190,7 @@ impl<'info> Venue<'info> {
             &NO_HOOKS,
         ]
         .concat();
-        call(&self.program, data, &accounts, bins, None)
+        call(&self.program, data, &accounts, bins, pool)
     }
 
     /// Takes `bps` of every bin's liquidity out to the venue's token accounts, signed by the pool PDA as owner
@@ -336,7 +381,7 @@ pub fn handle_dlmm_add<'info>(
     // So the owner is made operator for this one call and dropped again, which leaves the pool alone in control:
     // an operator left in place could pull the liquidity out from under the debt
     v.set_operator(&a.pool, a.owner.key())?;
-    v.add(a.owner.as_ref(), (amount_x, amount_y), (active_id, max_active_bin_slippage), (held.lower, held.upper), strategy, ctx.remaining_accounts)?;
+    v.add(Sender::Wallet(a.owner.as_ref()), (amount_x, amount_y), (active_id, max_active_bin_slippage), (held.lower, held.upper), strategy, ctx.remaining_accounts)?;
     v.set_operator(&a.pool, Pubkey::default())?;
     read_position(&a.position, &a.pool.key())?;
 
@@ -633,26 +678,8 @@ pub fn handle_dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Re
 
     // The pool PDA owns the position, so it signs for the fees and they land in our own vaults,
     // the base token on whichever side the pair keeps it
-    let base_first = a.lp_market.base_first;
-    let side = |base: AccountInfo<'info>, usdc: AccountInfo<'info>| if base_first { (base, usdc) } else { (usdc, base) };
-    let (token_x, token_y) = side(a.base_vault.to_account_info(), a.usdc_collateral_vault.to_account_info());
-    let (mint_x, mint_y) = side(a.base_mint.to_account_info(), a.usdc_mint.to_account_info());
-    let v = Venue {
-        program: a.dlmm_program.to_account_info(),
-        event_authority: a.event_authority.to_account_info(),
-        position: a.position.to_account_info(),
-        lb_pair: a.lb_pair.to_account_info(),
-        // Collecting fees never reads the bitmap extension
-        bitmap: a.dlmm_program.to_account_info(),
-        token_x,
-        token_y,
-        reserve_x: a.reserve_x.to_account_info(),
-        reserve_y: a.reserve_y.to_account_info(),
-        mint_x,
-        mint_y,
-        program_x: a.token_program.to_account_info(),
-        program_y: a.token_program.to_account_info(),
-    };
+    // Collecting fees never reads the bitmap extension
+    let v = vault_venue!(a, a.dlmm_program);
     v.claim(&a.pool, a.memo_program.as_ref(), (held.lower, held.upper), ctx.remaining_accounts)?;
 
     // What arrived is measured from the vault balances, not taken from Meteora's word
@@ -690,4 +717,113 @@ pub fn handle_dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Re
         emit!(CollateralChanged { account: a.credit.key(), mint: usdc, kind: KIND_TOKEN, amount: kept, deposit: true });
     }
     Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CompoundDlmm<'info> {
+    pub caller: Signer<'info>,
+    #[account(mut, seeds = [CREDIT_SEED, credit.owner.as_ref()], bump = credit.bump)]
+    pub credit: Box<Account<'info, CreditAccount>>,
+    #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = usdc_mint)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(seeds = [LP_MARKET_SEED, lb_pair.key().as_ref()], bump = lp_market.bump)]
+    pub lp_market: Box<Account<'info, LpMarket>>,
+    /// CHECK: The market seeds above pin this to a whitelisted pair
+    #[account(mut)]
+    pub lb_pair: UncheckedAccount<'info>,
+    /// CHECK: Must be a position the account holds in this pair, which the handler checks
+    #[account(mut)]
+    pub position: UncheckedAccount<'info>,
+    #[account(mut, seeds = [ASSET_SEED, lp_market.base_mint.as_ref()], bump = base_asset.bump)]
+    pub base_asset: Box<Account<'info, Asset>>,
+    #[account(mut, address = base_asset.vault)]
+    pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(address = lp_market.base_mint)]
+    pub base_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// CHECK: The base token's price account, checked against the asset's feed or mint when read
+    pub base_price: UncheckedAccount<'info>,
+    #[account(mut, seeds = [ASSET_SEED, usdc_mint.key().as_ref()], bump = usdc_asset.bump)]
+    pub usdc_asset: Box<Account<'info, Asset>>,
+    #[account(mut, address = usdc_asset.vault)]
+    pub usdc_collateral_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// The caller's bounty in the base token, to any account it names, never one of the protocol's vaults
+    #[account(mut, token::mint = base_mint, constraint = bounty_base.key() != base_vault.key() @ PluribusError::AccountMismatch)]
+    pub bounty_base: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in USDC
+    #[account(mut, token::mint = usdc_mint, constraint = bounty_usdc.key() != usdc_collateral_vault.key() @ PluribusError::AccountMismatch)]
+    pub bounty_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// CHECK: The pair's bin array bitmap extension, or the DLMM program when it has none
+    pub bitmap_extension: UncheckedAccount<'info>,
+    /// CHECK: The DLMM program checks this is the pair's own token X reserve
+    #[account(mut)]
+    pub reserve_x: UncheckedAccount<'info>,
+    /// CHECK: The DLMM program checks this is the pair's own token Y reserve
+    #[account(mut)]
+    pub reserve_y: UncheckedAccount<'info>,
+    /// Both of a listed pair's tokens are classic tokens
+    #[account(address = anchor_spl::token::ID @ PluribusError::AccountMismatch)]
+    pub token_program: Interface<'info, TokenInterface>,
+    /// CHECK: The DLMM program checks this is the memo program
+    pub memo_program: UncheckedAccount<'info>,
+    /// CHECK: The DLMM program checks this is its own event authority
+    pub event_authority: UncheckedAccount<'info>,
+    /// CHECK: Pinned to the DLMM program id
+    #[account(address = METEORA_DLMM_PROGRAM_ID)]
+    pub dlmm_program: UncheckedAccount<'info>,
+}
+
+/// The accounts a compound pays out of and books into, from the accounts struct of one
+macro_rules! compounder {
+    ($a:expr) => {
+        Compounder {
+            pool: &$a.pool,
+            credit: &mut $a.credit,
+            base_asset: &mut $a.base_asset,
+            base_mint: &$a.base_mint,
+            base_vault: &mut $a.base_vault,
+            usdc_asset: &mut $a.usdc_asset,
+            usdc_mint: &$a.usdc_mint,
+            usdc_collateral_vault: &mut $a.usdc_collateral_vault,
+            bounty_base: &$a.bounty_base,
+            bounty_usdc: &$a.bounty_usdc,
+            token_program: &$a.token_program,
+        }
+    };
+}
+
+/// Permissionless: collects a held Meteora position's trading fees, pays the caller's recipient its share, and adds the rest
+/// back across the position's range at the pair's price, which must sit within the owner's tolerance of the oracle's
+/// The pool PDA owns the position and both vaults, so it signs for the add itself
+/// Whatever the range cannot take, or Meteora leaves unspent, stays in the account as collateral; no health check is needed,
+/// since fees never counted
+/// The bin arrays of the position's range are the remaining accounts
+pub fn handle_compound_dlmm<'info>(ctx: Context<'info, CompoundDlmm<'info>>) -> Result<()> {
+    let a = ctx.accounts;
+    let position = a.position.key();
+    a.credit.find(KIND_DLMM, &position)?;
+    require_keys_eq!(a.lp_market.dex_program, METEORA_DLMM_PROGRAM_ID, PluribusError::NotDlmmMarket);
+    let held = read_position(&a.position, &a.pool.key())?;
+    require_keys_eq!(held.pair, a.lb_pair.key(), PluribusError::PoolNotWhitelisted);
+    let pair = read_pair(&a.lb_pair)?;
+    let base_first = a.lp_market.base_first;
+    require_fair_bin(&a.pool, &a.credit, &position, &a.base_asset, &a.base_price, &pair, base_first)?;
+
+    let before = (a.base_vault.amount, a.usdc_collateral_vault.amount);
+    let range = (held.lower, held.upper);
+    let v = vault_venue!(a, a.bitmap_extension);
+    v.claim(&a.pool, a.memo_program.as_ref(), range, ctx.remaining_accounts)?;
+    let fees = compounder!(a).take_bounty(before)?;
+
+    let (left_base, left_usdc) = fees.left();
+    let (x, y) = if base_first { (left_base, left_usdc) } else { (left_usdc, left_base) };
+    // Bins above the active one hold only token X and bins below it only token Y, so a range wholly on one side of the
+    // price takes only that token, and the other stays behind as collateral
+    let x = if pair.active_id > held.upper { 0 } else { x };
+    let y = if pair.active_id < held.lower { 0 } else { y };
+    if x > 0 || y > 0 {
+        // The price guard above has already tied the pair's price to the oracle's, so the add takes the active bin as it is
+        v.add(Sender::Pool(&a.pool), (x, y), (pair.active_id, 0), range, SPOT_IMBALANCED, ctx.remaining_accounts)?;
+    }
+    compounder!(a).finish(before, fees, position)
 }

@@ -23,6 +23,8 @@ const FUNCTION_LIMIT_ORDER: u8 = 2;
 const ONE: u128 = 1 << 64;
 
 pub struct Pair {
+    /// The bin the pair trades in right now
+    pub active_id: i32,
     pub bin_step: u16,
     pub mint_x: Pubkey,
     pub mint_y: Pubkey,
@@ -51,7 +53,7 @@ pub fn read_pair(acc: &AccountInfo) -> Result<Pair> {
     // The pair keeps its bin step a second time as an address seed, and every price here hangs on it:
     // if an upgrade ever moved the fields, the two would stop agreeing and the pair would stop counting rather than misprice
     require!((1..=MAX_BIN_STEP).contains(&bin_step) && d[73..75] == d[80..82], PluribusError::PoolNotWhitelisted);
-    Ok(Pair { bin_step, mint_x: key(&d, 88), mint_y: key(&d, 120) })
+    Ok(Pair { active_id: i32::from_le_bytes(d[76..80].try_into().unwrap()), bin_step, mint_x: key(&d, 88), mint_y: key(&d, 120) })
 }
 
 /// Reads a pair that is fit to list
@@ -111,6 +113,26 @@ pub fn bin_price(id: i32, bin_step: u16) -> Result<u128> {
     }
     require!(result > 0, PluribusError::MathOverflow);
     Ok(if id > 0 { u128::MAX / result } else { result })
+}
+
+/// The oracle price the way the pair quotes it: base units of token Y per base unit of token X, in Q64.64
+/// `price` is in USDC base units per `unit` base units of the base token
+fn quote_of(price: u128, unit: u128, base_first: bool) -> u128 {
+    if base_first {
+        (price << 64) / unit
+    } else {
+        (unit << 64) / price
+    }
+}
+
+/// The oracle price of the base token, which has `decimals`, in the pair's own quote
+/// Comparing it with the price of the pair's active bin tells how far the pair has drifted from the market
+pub fn oracle_quote(price: u128, decimals: u8, base_first: bool) -> Result<u128> {
+    let unit = pow10(decimals)?;
+    require!(price > 0 && price < ONE && unit < ONE, PluribusError::MathOverflow);
+    let quoted = quote_of(price, unit, base_first);
+    require!(quoted > 0, PluribusError::MathOverflow);
+    Ok(quoted)
 }
 
 /// a * b / 2^64 rounded down for a 64-bit `b`, in two half-width products that cannot overflow
@@ -199,8 +221,7 @@ impl Curve {
             return Ok(0);
         }
         require!(price < ONE && self.unit < ONE, PluribusError::MathOverflow);
-        // The oracle price the way the pair quotes it: base units of token Y per base unit of token X
-        let quoted = if self.base_first { (price << 64) / self.unit } else { (self.unit << 64) / price };
+        let quoted = quote_of(price, self.unit, self.base_first);
         // Each bin counts as whichever of its two tokens is worth less in this scenario
         // With USDC at par that is token Y under the price and token X over it, and marking USDC down moves the line
         // between the two by the same factor, so a bin is never counted as base tokens worth more than its marked-down USDC
@@ -243,6 +264,19 @@ mod tests {
         assert_eq!(bin_price(0, 4).unwrap(), ONE);
         assert_eq!(bin_price(300, 25).unwrap(), 39015224491048514752);
         assert!(bin_price(1 << 19, 1).is_err());
+    }
+
+    #[test]
+    fn the_oracle_price_is_quoted_as_the_pair_does_in_either_token_order() {
+        // $73.80 per SOL, where bin -6517 of a 4 bps pair sits, 1.9 bps higher
+        let bin = bin_price(-6517, 4).unwrap();
+        let quote = oracle_quote(73_800_000, SOL, true).unwrap();
+        assert!(prices_within(bin, quote, 2).unwrap() && !prices_within(bin, quote, 1).unwrap());
+        // With USDC as token X the pair quotes lamports per USDC unit, the inverse of the same price
+        let inverse = oracle_quote(73_800_000, SOL, false).unwrap();
+        assert!(mul_div_wide(quote, inverse, ONE).unwrap().abs_diff(ONE) < ONE / 1_000_000_000);
+        // A price that is nothing, or too large for the fixed point, has no quote
+        assert!(oracle_quote(0, SOL, true).is_err() && oracle_quote(ONE, SOL, true).is_err());
     }
 
     #[test]
