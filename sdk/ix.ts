@@ -1092,6 +1092,7 @@ export async function dlmmOpen(
 
 // Adds the owner's own tokens to a Meteora position the account holds, spread over its range by `strategy` (Spot by default)
 // SOL is wrapped first and whatever Meteora leaves unspent is unwrapped again
+// `range` names the pair and bins of a position opened in the same transaction, which cannot be read from the chain yet
 export async function dlmmAdd(
   program: PluribusProgram,
   d: Deployment,
@@ -1099,9 +1100,11 @@ export async function dlmmAdd(
   position: PublicKey,
   amountX: Amount,
   amountY: Amount,
-  opts: { strategy?: number; slippageBins?: number } = {},
+  opts: { strategy?: number; slippageBins?: number; range?: { pair: PublicKey; lower: number; upper: number } } = {},
 ): Ixs {
-  const c = await dlmmContext(program, d, position);
+  const c = opts.range
+    ? { held: { lower: opts.range.lower, upper: opts.range.upper }, ...(await dlmmPairContext(program, d, opts.range.pair)) }
+    : await dlmmContext(program, d, position);
   const [x, y] = [bn(amountX), bn(amountY)];
   const native = [c.pair.mintX, c.pair.mintY].findIndex((m) => m.equals(NATIVE_MINT));
   const sol = native === 0 ? x : native === 1 ? y : null;
@@ -1128,6 +1131,29 @@ export async function dlmmAdd(
       .instruction(),
     ...(native >= 0 ? [unwrap(owner)] : []),
   ];
+}
+
+// Opens a Meteora position and funds it in one transaction, under one compute limit since a transaction takes only one
+// `position` is a fresh keypair's address, and that keypair signs too
+export async function dlmmOpenAndAdd(
+  program: PluribusProgram,
+  d: Deployment,
+  owner: PublicKey,
+  pairKey: PublicKey,
+  position: PublicKey,
+  lowerBinId: number,
+  width: number,
+  amountX: Amount,
+  amountY: Amount,
+  opts: { strategy?: number; slippageBins?: number } = {},
+): Ixs {
+  const range = { pair: pairKey, lower: lowerBinId, upper: lowerBinId + width - 1 };
+  const [open, add] = await Promise.all([
+    dlmmOpen(program, d, owner, pairKey, position, lowerBinId, width),
+    dlmmAdd(program, d, owner, position, amountX, amountY, { ...opts, range }),
+  ]);
+  // Both start with their own compute limit, which is dropped for one that covers the two
+  return [dlmmBudget(), ...open.slice(1), ...add.slice(1)];
 }
 
 // The owner's side of the exit instructions: the tokens come out to the owner's own accounts
