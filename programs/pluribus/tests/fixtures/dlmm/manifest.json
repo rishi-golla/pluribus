@@ -1,0 +1,90 @@
+{
+  "cluster": "mainnet",
+  "slot": 471129911,
+  "programId": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+  "program": "lb_clmm.so",
+  "lbPair": "5rCf1DM8LjKTw4YqhnoLcngyZYeNnQqztScTogYHAS6",
+  "binStep": 4,
+  "activeId": -6537,
+  "price": "73.2206949984707",
+  "tokenX": {
+    "mint": "So11111111111111111111111111111111111111112",
+    "decimals": 9,
+    "reserve": "EYj9xKw6ZszwpyNibHY7JD5o3QgTVrSdcBp1fMJhrR9o"
+  },
+  "tokenY": {
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "decimals": 6,
+    "reserve": "CoaxzEh8p5YyGLcj36Eo3cUThVJxeKCs7qvLAGDYwBcz"
+  },
+  "oracle": "59YuGWPunbchD2mbi9U7qvjWQKQReGeepn4ZSr9zz9Li",
+  "eventAuthority": "D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVniYD6",
+  "binArrays": [
+    {
+      "index": -96,
+      "address": "3MbEJY4VafKhxPmufcdqd22isGPERwvJuWJmqTqTzwXk"
+    },
+    {
+      "index": -95,
+      "address": "29di3sS9T6AoctHydYZd3jJALLNQFzsa25Uj8s2n9qYq"
+    },
+    {
+      "index": -94,
+      "address": "42zf8Gxhidg48BBmhiCbskKg5jRtWYq7ZTuEtk8B2Lpr"
+    },
+    {
+      "index": -93,
+      "address": "HzSDvEFgJFmieDNsBwLRuGK2kQNVRCNwSTuFBAqNe7FG"
+    },
+    {
+      "index": -92,
+      "address": "CqpVWqcMyDGaoH8HWXhEfVo9Xd2i6Ljspvja3Fy6Ye7j"
+    }
+  ],
+  "accounts": {
+    "lb_pair": {
+      "address": "5rCf1DM8LjKTw4YqhnoLcngyZYeNnQqztScTogYHAS6",
+      "file": "lb_pair.json"
+    },
+    "token_x_mint": {
+      "address": "So11111111111111111111111111111111111111112",
+      "file": "token_x_mint.json"
+    },
+    "token_y_mint": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "file": "token_y_mint.json"
+    },
+    "reserve_x": {
+      "address": "EYj9xKw6ZszwpyNibHY7JD5o3QgTVrSdcBp1fMJhrR9o",
+      "file": "reserve_x.json"
+    },
+    "reserve_y": {
+      "address": "CoaxzEh8p5YyGLcj36Eo3cUThVJxeKCs7qvLAGDYwBcz",
+      "file": "reserve_y.json"
+    },
+    "oracle": {
+      "address": "59YuGWPunbchD2mbi9U7qvjWQKQReGeepn4ZSr9zz9Li",
+      "file": "oracle.json"
+    },
+    "bin_array_-96": {
+      "address": "3MbEJY4VafKhxPmufcdqd22isGPERwvJuWJmqTqTzwXk",
+      "file": "bin_array_-96.json"
+    },
+    "bin_array_-95": {
+      "address": "29di3sS9T6AoctHydYZd3jJALLNQFzsa25Uj8s2n9qYq",
+      "file": "bin_array_-95.json"
+    },
+    "bin_array_-94": {
+      "address": "42zf8Gxhidg48BBmhiCbskKg5jRtWYq7ZTuEtk8B2Lpr",
+      "file": "bin_array_-94.json"
+    },
+    "bin_array_-93": {
+      "address": "HzSDvEFgJFmieDNsBwLRuGK2kQNVRCNwSTuFBAqNe7FG",
+      "file": "bin_array_-93.json"
+    },
+    "bin_array_-92": {
+      "address": "CqpVWqcMyDGaoH8HWXhEfVo9Xd2i6Ljspvja3Fy6Ye7j",
+      "file": "bin_array_-92.json"
+    }
+  }
+}

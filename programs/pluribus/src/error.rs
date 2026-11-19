@@ -88,4 +88,8 @@ pub enum PluribusError {
     ExitCancelled,
     #[msg("This needs a Raydium market")]
     NotRaydiumMarket,
+    #[msg("This needs a Meteora DLMM market")]
+    NotDlmmMarket,
+    #[msg("Not a Meteora DLMM position the pool alone controls")]
+    InvalidDlmmPosition,
 }

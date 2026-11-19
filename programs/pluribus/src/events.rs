@@ -204,3 +204,13 @@ pub struct PremiumBooked {
     pub rate_bps: u16,
     pub debt: u64,
 }
+
+/// Liquidity went into or came out of a Meteora position the pool holds for `account`, as the tokens that changed hands
+#[event]
+pub struct DlmmLiquidityChanged {
+    pub account: Pubkey,
+    pub position: Pubkey,
+    pub amount_x: u64,
+    pub amount_y: u64,
+    pub deposit: bool,
+}

@@ -1,5 +1,6 @@
 pub mod clmm;
 pub mod constants;
+pub mod dlmm;
 pub mod error;
 pub mod events;
 pub mod instructions;
@@ -245,5 +246,36 @@ pub mod pluribus {
 
     pub fn demo_activate(ctx: Context<DemoActivate>) -> Result<()> {
         admin::handle_demo_activate(ctx)
+    }
+
+    pub fn dlmm_open(ctx: Context<DlmmOpen>, lower_bin_id: i32, width: i32) -> Result<()> {
+        instructions::dlmm::handle_dlmm_open(ctx, lower_bin_id, width)
+    }
+
+    pub fn dlmm_add<'info>(
+        ctx: Context<'info, DlmmAdd<'info>>,
+        amount_x: u64,
+        amount_y: u64,
+        active_id: i32,
+        max_active_bin_slippage: i32,
+        strategy: u8,
+    ) -> Result<()> {
+        instructions::dlmm::handle_dlmm_add(ctx, amount_x, amount_y, active_id, max_active_bin_slippage, strategy)
+    }
+
+    pub fn dlmm_remove<'info>(ctx: Context<'info, DlmmExit<'info>>, bps: u16, bin_arrays: u8) -> Result<()> {
+        instructions::dlmm::handle_dlmm_remove(ctx, bps, bin_arrays)
+    }
+
+    pub fn dlmm_close<'info>(ctx: Context<'info, DlmmExit<'info>>, bin_arrays: u8) -> Result<()> {
+        instructions::dlmm::handle_dlmm_close(ctx, bin_arrays)
+    }
+
+    pub fn dlmm_liquidate<'info>(ctx: Context<'info, DlmmLiquidate<'info>>, repay_amount: u64, bin_arrays: u8) -> Result<()> {
+        instructions::dlmm::handle_dlmm_liquidate(ctx, repay_amount, bin_arrays)
+    }
+
+    pub fn dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Result<()> {
+        instructions::dlmm::handle_dlmm_autopay(ctx)
     }
 }

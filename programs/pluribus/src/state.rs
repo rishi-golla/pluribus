@@ -869,11 +869,11 @@ impl Asset {
 
 }
 
-/// A whitelisted Orca Whirlpool or Raydium CLMM pool whose positions count as collateral, always quoted in USDC
+/// A whitelisted Orca Whirlpool, Raydium CLMM pool or Meteora DLMM pair whose positions count as collateral, always quoted in USDC
 #[account]
 #[derive(InitSpace)]
 pub struct LpMarket {
-    /// The pool, Orca or Raydium
+    /// The pool, Orca or Raydium, or the Meteora pair
     pub whirlpool: Pubkey,
     pub base_mint: Pubkey,
     pub bump: u8,
@@ -936,7 +936,7 @@ pub struct DemoPrice {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, InitSpace)]
 pub struct Position {
     pub kind: u8,
-    /// Token mint, or the position NFT mint of an LP
+    /// Token mint, the position NFT mint of an LP, or the position account of a Meteora position
     pub mint: Pubkey,
     /// Token base units, or 1 for an LP position
     pub amount: u64,
@@ -1006,6 +1006,19 @@ impl CreditAccount {
 
     pub fn remove_lp(&mut self, mint: &Pubkey) -> Result<()> {
         let i = self.find(KIND_LP, mint)?;
+        self.positions[i] = Position::default();
+        Ok(())
+    }
+
+    /// A Meteora position has no NFT, so its slot names the position account the pool owns
+    pub fn add_dlmm(&mut self, position: &Pubkey) -> Result<()> {
+        let i = self.free_slot()?;
+        self.positions[i] = Position { kind: KIND_DLMM, mint: *position, amount: 1, bump: 0 };
+        Ok(())
+    }
+
+    pub fn remove_dlmm(&mut self, position: &Pubkey) -> Result<()> {
+        let i = self.find(KIND_DLMM, position)?;
         self.positions[i] = Position::default();
         Ok(())
     }

@@ -63,6 +63,8 @@ pub const USDC_DECIMALS: u8 = 6;
 pub const KIND_EMPTY: u8 = 0;
 pub const KIND_TOKEN: u8 = 1;
 pub const KIND_LP: u8 = 2;
+/// A Meteora DLMM position, which has no NFT: the pool PDA owns the position account itself
+pub const KIND_DLMM: u8 = 3;
 
 pub const ORACLE_FIXED: u8 = 0;
 pub const ORACLE_PYTH: u8 = 1;
@@ -84,6 +86,8 @@ pub const RAYDIUM_CLMM_PROGRAMS: [Pubkey; 2] =
     [pubkey!("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"), pubkey!("DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH")];
 /// The memo program Raydium's v2 instructions take, which this program only passes along
 pub const MEMO_PROGRAM_ID: Pubkey = pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+/// Meteora DLMM, whose positions cannot change owner, so the pool opens and holds them itself
+pub const METEORA_DLMM_PROGRAM_ID: Pubkey = pubkey!("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
 pub const PYTH_RECEIVER_ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
 /// Ceiling on an asset's risk premium, the extra yearly rate charged on debt it backs: 30%
 pub const MAX_RISK_PREMIUM_BPS: u16 = 3_000;

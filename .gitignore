@@ -31,6 +31,7 @@ scripts/.keys/
 scripts/out/
 programs/pluribus/tests/fixtures/orca/whirlpool.so
 programs/pluribus/tests/fixtures/raydium/*.so
+programs/pluribus/tests/fixtures/dlmm/lb_clmm.so
 
 # Local chain addresses differ per machine
 deployments/localnet.json

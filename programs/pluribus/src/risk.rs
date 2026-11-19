@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{clmm, constants::*, error::PluribusError, events::PremiumBooked, math::*, oracle::*, state::*, token2022};
+use crate::{clmm, constants::*, dlmm, error::PluribusError, events::PremiumBooked, math::*, oracle::*, state::*, token2022};
 
 /// An account's collateral valued under every scenario
 #[derive(Default)]
@@ -17,10 +17,10 @@ pub struct Health {
     pub price: [u128; MAX_POSITIONS],
     /// A token whose price is unclear right now, around a corporate action, which can't be seized until it is clear
     pub unclear: [bool; MAX_POSITIONS],
-    /// Each position's draw value per scenario, paused or not, which weighs its risk premium
-    pub pos_init: [[u128; MAX_SCENARIOS]; MAX_POSITIONS],
-    /// Risk premium of each position's asset, or of an LP's base asset
-    pub premium: [u16; MAX_POSITIONS],
+    /// Draw value per scenario of every position, paused or not, and the same with each position weighted by its risk premium
+    /// Sums rather than a table per position, since the health check's stack has no room for one
+    pub all_init: [u128; MAX_SCENARIOS],
+    pub premium_weighted: [u128; MAX_SCENARIOS],
 }
 
 /// The worst scenario for the whole portfolio
@@ -48,14 +48,11 @@ impl Health {
     /// in the scenario where the whole portfolio is worth least, so collateral worth little in a crash adds little
     /// Only filled by a health check that values draws
     pub fn premium_bps(&self) -> u16 {
-        let total = |s: usize| self.pos_init.iter().fold(0u128, |sum, p| sum.saturating_add(p[s]));
-        let Some(s) = (0..self.scenarios).min_by_key(|&s| total(s)) else { return 0 };
-        let all = total(s);
-        if all == 0 {
+        let Some(s) = (0..self.scenarios).min_by_key(|&s| self.all_init[s]) else { return 0 };
+        if self.all_init[s] == 0 {
             return 0;
         }
-        let weighted = self.pos_init.iter().zip(self.premium).fold(0u128, |sum, (p, b)| sum.saturating_add(p[s].saturating_mul(b as u128)));
-        (weighted / all).min(MAX_RISK_PREMIUM_BPS as u128) as u16
+        (self.premium_weighted[s] / self.all_init[s]).min(MAX_RISK_PREMIUM_BPS as u128) as u16
     }
 }
 
@@ -70,14 +67,15 @@ pub enum Scope {
 enum Valuer {
     Token { amount: u64, decimals: u8 },
     Lp { liquidity: u128, lower: u128, upper: u128, decimals: u8 },
+    Dlmm(dlmm::Curve),
 }
 
 /// Square roots of the prices already seen in this health check
 /// The root is the costly step, and every LP on the same asset asks for the same few crash prices
+/// Kept on the heap, since the health check's stack frame is nearly full
 #[derive(Default)]
 struct Roots {
-    seen: [(u128, u8, u128); 2 * MAX_SCENARIOS + 1],
-    len: usize,
+    seen: Vec<(u128, u8, u128)>,
 }
 
 impl Roots {
@@ -86,13 +84,13 @@ impl Roots {
         if price == 0 {
             return Ok(0);
         }
-        if let Some(hit) = self.seen[..self.len].iter().find(|r| r.0 == price && r.1 == decimals) {
+        if let Some(hit) = self.seen.iter().find(|r| r.0 == price && r.1 == decimals) {
             return Ok(hit.2);
         }
         let root = sqrt_price_x64(price, decimals)?;
-        if self.len < self.seen.len() {
-            self.seen[self.len] = (price, decimals, root);
-            self.len += 1;
+        // The spot price and each scenario's two crash prices, which is all one asset ever asks for
+        if self.seen.len() < 2 * MAX_SCENARIOS + 1 {
+            self.seen.push((price, decimals, root));
         }
         Ok(root)
     }
@@ -109,6 +107,7 @@ impl Valuer {
                 // Kept at or under the payout on either dex
                 Ok(under_payout(base + cut(usdc, usdc_shock)?))
             }
+            Valuer::Dlmm(ref curve) => curve.value(price, usdc_shock),
         }
     }
 }
@@ -117,6 +116,7 @@ impl Valuer {
 /// Token: asset, its mint and vault if it is a Token-2022 token, then its price account unless the asset is fixed at $1,
 /// then for a staking token the SOL price account and, for an SPL stake pool, the pool account
 /// LP: LP market, the dex's position, base asset, base price account
+/// Meteora position: LP market, the pair, the position, base asset, base price account
 pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i64, scope: Scope) -> Result<Health> {
     let params = &pool.params;
     let n = params.num_scenarios as usize;
@@ -207,10 +207,26 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 // An LP carries its base token's premium, since that is the side a crash takes down
                 (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d, asset.premium_bps)
             }
+            KIND_DLMM => {
+                let market: LpMarket = load(next()?)?;
+                let pair = next()?;
+                let account = next()?;
+                // A Meteora position has no NFT, so the slot names the position account itself
+                require_keys_eq!(account.key(), pos.mint, PluribusError::AccountMismatch);
+                let asset: Asset = load(next()?)?;
+                require_keys_eq!(asset.mint, market.base_mint, PluribusError::AccountMismatch);
+                // Oracle price only, and the pair's active bin and reserves are never read
+                let priced = read_price(pool, &asset, next()?, now)?;
+                h.price[i] = priced.price;
+                let valuer = Valuer::Dlmm(dlmm::curve(pool, &market, pair, account, asset.price_decimals())?);
+                let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
+                let d = asset.dynamic_shocks(params);
+                // Like any LP, it carries its base token's premium
+                (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d, asset.premium_bps)
+            }
             _ => continue,
         };
 
-        h.premium[i] = premium;
         if want_maint {
             h.market[i] = valuer.at(h.price[i], 0, &mut roots)?;
         }
@@ -230,7 +246,8 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
             if want_init {
                 let shocked = cut(h.price[i], init_shocks[s])?;
                 let init = cut(valuer.at(shocked, params.shock(true, s, pool.usdc_group), &mut roots)?, cost)?;
-                h.pos_init[i][s] = init;
+                h.all_init[s] = h.all_init[s].saturating_add(init);
+                h.premium_weighted[s] = h.premium_weighted[s].saturating_add(init.saturating_mul(premium as u128));
                 if !paused {
                     h.init[s] += init;
                 }

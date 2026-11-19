@@ -652,7 +652,7 @@ pub struct InitLpMarket<'info> {
     pub admin: Signer<'info>,
     #[account(mut, seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
     pub pool: Box<Account<'info, Pool>>,
-    /// CHECK: An Orca Whirlpool or Raydium CLMM pool, whose owner, discriminator and mints are checked in the handler
+    /// CHECK: An Orca Whirlpool, Raydium CLMM pool or Meteora DLMM pair, whose owner, discriminator and mints are checked in the handler
     pub whirlpool: UncheckedAccount<'info>,
     #[account(seeds = [ASSET_SEED, base_asset.mint.as_ref()], bump = base_asset.bump)]
     pub base_asset: Box<Account<'info, Asset>>,

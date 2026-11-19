@@ -1681,6 +1681,888 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "dlmmAdd",
+      "discriminator": [
+        227,
+        32,
+        158,
+        52,
+        44,
+        255,
+        34,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lpMarket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lbPair"
+              }
+            ]
+          }
+        },
+        {
+          "name": "baseAsset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lpMarket.baseMint",
+                "account": "lpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "lbPair",
+          "writable": true
+        },
+        {
+          "name": "bitmapExtension"
+        },
+        {
+          "name": "ownerTokenX",
+          "writable": true
+        },
+        {
+          "name": "ownerTokenY",
+          "writable": true
+        },
+        {
+          "name": "reserveX",
+          "writable": true
+        },
+        {
+          "name": "reserveY",
+          "writable": true
+        },
+        {
+          "name": "tokenXMint"
+        },
+        {
+          "name": "tokenYMint"
+        },
+        {
+          "name": "tokenXProgram"
+        },
+        {
+          "name": "tokenYProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": [
+        {
+          "name": "amountX",
+          "type": "u64"
+        },
+        {
+          "name": "amountY",
+          "type": "u64"
+        },
+        {
+          "name": "activeId",
+          "type": "i32"
+        },
+        {
+          "name": "maxActiveBinSlippage",
+          "type": "i32"
+        },
+        {
+          "name": "strategy",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "dlmmAutopay",
+      "discriminator": [
+        189,
+        69,
+        122,
+        121,
+        104,
+        200,
+        14,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "creditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lpMarket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lbPair"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lbPair",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "baseAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lpMarket.baseMint",
+                "account": "lpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "baseVault",
+          "writable": true
+        },
+        {
+          "name": "baseMint"
+        },
+        {
+          "name": "usdcAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcCollateralVault",
+          "writable": true
+        },
+        {
+          "name": "usdcMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdcVault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "reserveX",
+          "writable": true
+        },
+        {
+          "name": "reserveY",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "docs": [
+            "Both of a listed pair's tokens are classic tokens"
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "memoProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "dlmmClose",
+      "discriminator": [
+        25,
+        242,
+        122,
+        175,
+        92,
+        44,
+        173,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "lbPair",
+          "writable": true
+        },
+        {
+          "name": "bitmapExtension"
+        },
+        {
+          "name": "ownerTokenX",
+          "writable": true
+        },
+        {
+          "name": "ownerTokenY",
+          "writable": true
+        },
+        {
+          "name": "reserveX",
+          "writable": true
+        },
+        {
+          "name": "reserveY",
+          "writable": true
+        },
+        {
+          "name": "tokenXMint"
+        },
+        {
+          "name": "tokenYMint"
+        },
+        {
+          "name": "tokenXProgram"
+        },
+        {
+          "name": "tokenYProgram"
+        },
+        {
+          "name": "memoProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": [
+        {
+          "name": "binArrays",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "dlmmLiquidate",
+      "discriminator": [
+        91,
+        244,
+        205,
+        175,
+        148,
+        15,
+        4,
+        83
+      ],
+      "accounts": [
+        {
+          "name": "liquidator",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "creditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "usdcVault",
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "liquidatorUsdc",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "docs": [
+            "Moves the USDC, which is always a classic token"
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "lbPair",
+          "writable": true
+        },
+        {
+          "name": "bitmapExtension"
+        },
+        {
+          "name": "liquidatorTokenX",
+          "writable": true
+        },
+        {
+          "name": "liquidatorTokenY",
+          "writable": true
+        },
+        {
+          "name": "reserveX",
+          "writable": true
+        },
+        {
+          "name": "reserveY",
+          "writable": true
+        },
+        {
+          "name": "tokenXMint"
+        },
+        {
+          "name": "tokenYMint"
+        },
+        {
+          "name": "tokenXProgram"
+        },
+        {
+          "name": "tokenYProgram"
+        },
+        {
+          "name": "memoProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": [
+        {
+          "name": "repayAmount",
+          "type": "u64"
+        },
+        {
+          "name": "binArrays",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "dlmmOpen",
+      "discriminator": [
+        178,
+        135,
+        157,
+        174,
+        240,
+        177,
+        201,
+        100
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lpMarket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lbPair"
+              }
+            ]
+          }
+        },
+        {
+          "name": "baseAsset",
+          "docs": [
+            "The pair's priced token, whose own pause and activation delay apply to its positions too"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lpMarket.baseMint",
+                "account": "lpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lbPair"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "A fresh account the DLMM program turns into the position, so it must sign"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lowerBinId",
+          "type": "i32"
+        },
+        {
+          "name": "width",
+          "type": "i32"
+        }
+      ]
+    },
+    {
+      "name": "dlmmRemove",
+      "discriminator": [
+        44,
+        240,
+        102,
+        52,
+        39,
+        87,
+        206,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "lbPair",
+          "writable": true
+        },
+        {
+          "name": "bitmapExtension"
+        },
+        {
+          "name": "ownerTokenX",
+          "writable": true
+        },
+        {
+          "name": "ownerTokenY",
+          "writable": true
+        },
+        {
+          "name": "reserveX",
+          "writable": true
+        },
+        {
+          "name": "reserveY",
+          "writable": true
+        },
+        {
+          "name": "tokenXMint"
+        },
+        {
+          "name": "tokenYMint"
+        },
+        {
+          "name": "tokenXProgram"
+        },
+        {
+          "name": "tokenYProgram"
+        },
+        {
+          "name": "memoProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": [
+        {
+          "name": "bps",
+          "type": "u16"
+        },
+        {
+          "name": "binArrays",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "draw",
       "discriminator": [
         61,
@@ -4859,6 +5741,19 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "dlmmLiquidityChanged",
+      "discriminator": [
+        250,
+        160,
+        29,
+        53,
+        244,
+        159,
+        237,
+        178
+      ]
+    },
+    {
       "name": "drawn",
       "discriminator": [
         87,
@@ -5295,6 +6190,16 @@ export type Pluribus = {
       "code": 6042,
       "name": "notRaydiumMarket",
       "msg": "This needs a Raydium market"
+    },
+    {
+      "code": 6043,
+      "name": "notDlmmMarket",
+      "msg": "This needs a Meteora DLMM market"
+    },
+    {
+      "code": 6044,
+      "name": "invalidDlmmPosition",
+      "msg": "Not a Meteora DLMM position the pool alone controls"
     }
   ],
   "types": [
@@ -5839,6 +6744,37 @@ export type Pluribus = {
       }
     },
     {
+      "name": "dlmmLiquidityChanged",
+      "docs": [
+        "Liquidity went into or came out of a Meteora position the pool holds for `account`, as the tokens that changed hands"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "amountX",
+            "type": "u64"
+          },
+          {
+            "name": "amountY",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
       "name": "drawn",
       "type": {
         "kind": "struct",
@@ -6175,7 +7111,7 @@ export type Pluribus = {
     {
       "name": "lpMarket",
       "docs": [
-        "A whitelisted Orca Whirlpool or Raydium CLMM pool whose positions count as collateral, always quoted in USDC"
+        "A whitelisted Orca Whirlpool, Raydium CLMM pool or Meteora DLMM pair whose positions count as collateral, always quoted in USDC"
       ],
       "type": {
         "kind": "struct",
@@ -6183,7 +7119,7 @@ export type Pluribus = {
           {
             "name": "whirlpool",
             "docs": [
-              "The pool, Orca or Raydium"
+              "The pool, Orca or Raydium, or the Meteora pair"
             ],
             "type": "pubkey"
           },
@@ -6763,7 +7699,7 @@ export type Pluribus = {
           {
             "name": "mint",
             "docs": [
-              "Token mint, or the position NFT mint of an LP"
+              "Token mint, the position NFT mint of an LP, or the position account of a Meteora position"
             ],
             "type": "pubkey"
           },

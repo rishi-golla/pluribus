@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{constants::*, error::PluribusError, orca, state::LpMarket};
+use crate::{constants::*, dlmm, error::PluribusError, orca, state::LpMarket};
 
 /// First 8 bytes of sha256("account:PersonalPositionState")
 const RAYDIUM_POSITION_DISCRIMINATOR: [u8; 8] = [0x46, 0x6f, 0x96, 0x7e, 0xe6, 0x0f, 0x19, 0x75];
@@ -26,6 +26,11 @@ pub fn read_pool(acc: &AccountInfo) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let (a, b) = orca::read_whirlpool_mints(acc)?;
         return Ok((WHIRLPOOL_PROGRAM_ID, a, b));
     }
+    // A Meteora pair lists as a market like any other, but its positions come in through the DLMM instructions
+    if *acc.owner == METEORA_DLMM_PROGRAM_ID {
+        let pair = dlmm::read_listing(acc)?;
+        return Ok((METEORA_DLMM_PROGRAM_ID, pair.mint_x, pair.mint_y));
+    }
     require!(RAYDIUM_CLMM_PROGRAMS.contains(acc.owner), PluribusError::PoolNotWhitelisted);
     let d = acc.try_borrow_data()?;
     // Layout (packed): disc 8 | bump 1 | amm config 32 | creator 32 | token mint 0 at 73 | token mint 1 at 105
@@ -45,6 +50,8 @@ pub fn read_position(market: &LpMarket, acc: &AccountInfo) -> Result<LpPosition>
         let p = orca::read_position(acc)?;
         (p.whirlpool, p.position_mint, p.liquidity, p.tick_lower, p.tick_upper)
     } else {
+        // A Meteora market has no position NFT to hand over
+        require!(RAYDIUM_CLMM_PROGRAMS.contains(&market.dex_program), PluribusError::InvalidLpPosition);
         require_keys_eq!(*acc.owner, market.dex_program, PluribusError::InvalidLpPosition);
         let d = acc.try_borrow_data()?;
         // Layout: disc 8 | bump 1 | nft mint 32 | pool 32 | tick lower i32 | tick upper i32 | liquidity u128
