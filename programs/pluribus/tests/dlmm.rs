@@ -29,6 +29,12 @@ const SPOT: u8 = 6;
 const SWAP: [u8; 8] = [0x41, 0x4b, 0x3f, 0x4c, 0xeb, 0x5b, 0x5b, 0x88];
 /// First 8 bytes of sha256("global:remove_liquidity_by_range2")
 const REMOVE: [u8; 8] = [0xcc, 0x02, 0xc3, 0x91, 0x35, 0x91, 0x91, 0xcd];
+/// First 8 bytes of sha256("global:claim_fee2")
+const CLAIM: [u8; 8] = [0x70, 0xbf, 0x65, 0xab, 0x1c, 0x90, 0x7f, 0xbb];
+/// First 8 bytes of sha256("global:close_position2")
+const CLOSE: [u8; 8] = [0xae, 0x5a, 0x23, 0x73, 0xba, 0x28, 0x93, 0xe2];
+/// First 8 bytes of sha256("global:close_position_if_empty")
+const CLOSE_IF_EMPTY: [u8; 8] = [0x3b, 0x7c, 0xd4, 0x76, 0x5b, 0x98, 0x6e, 0x9d];
 const BINS_PER_ARRAY: i32 = 70;
 
 fn key(v: &Value) -> Pubkey {
@@ -454,6 +460,32 @@ fn moving_the_pair_price_does_not_move_the_value() {
     assert!(before.position_value[0] <= paid, "valued {}, paid out {paid}", before.position_value[0]);
 }
 
+/// Everything that takes value out of a position, sent straight to the DLMM program and signed by `who`:
+/// removing its liquidity, collecting its fees, closing it and closing it if empty
+fn direct_ixs(env: &Env, pair: &Pair, who: &Pubkey, position: &Pubkey) -> Vec<Instruction> {
+    let (lower, upper) = range_of(env, position);
+    let (range, no_hooks) = ([lower.to_le_bytes(), upper.to_le_bytes()].concat(), [0u8; 4]);
+    let exit = exit_metas(env, pair, who, position);
+    let [position, lb_pair, token_x, token_y, reserve_x, reserve_y] = [3, 4, 6, 7, 8, 9].map(|i| exit[i].clone());
+    let signer = AccountMeta::new_readonly(*who, true);
+    // After the leading accounts both share the mints, token programs, memo program, event authority and the program itself
+    let mut remove = exit[3..10].to_vec();
+    remove.extend([vec![exit[10].clone(), exit[11].clone(), signer.clone()], exit[12..].to_vec()].concat());
+    let mut claim = vec![lb_pair, position.clone(), signer.clone(), reserve_x, reserve_y, token_x, token_y];
+    claim.extend(exit[10..].to_vec());
+    let close = vec![position, signer, AccountMeta::new(*who, false), exit[15].clone(), exit[16].clone()];
+    let bins = pair.bins(lower, upper);
+    [
+        ([&REMOVE[..], &range, &10_000u16.to_le_bytes(), &no_hooks].concat(), [remove, bins.clone()].concat()),
+        ([&CLAIM[..], &range, &no_hooks].concat(), [claim, bins].concat()),
+        (CLOSE.to_vec(), close.clone()),
+        (CLOSE_IF_EMPTY.to_vec(), close),
+    ]
+    .into_iter()
+    .map(|(data, metas)| Instruction::new_with_bytes(METEORA_DLMM_PROGRAM_ID, &data, metas))
+    .collect()
+}
+
 #[test]
 fn a_position_comes_out_only_through_the_program_and_within_the_credit_limit() {
     let Some((mut env, pair)) = real_pair() else { return };
@@ -463,16 +495,16 @@ fn a_position_comes_out_only_through_the_program_and_within_the_credit_limit() {
     let usdc = env.usdc;
     let position = open_position(&mut env, &pair, &user, 70 * SOL, 5_000 * USDC);
 
-    // The owner cannot go around the program: to Meteora the position is the pool's, not theirs
-    let (lower, upper) = range_of(&env, &position);
-    let mut direct = exit_metas(&env, &pair, &me, &position)[3..].to_vec();
-    direct.insert(9, AccountMeta::new_readonly(me, true));
-    direct.extend(pair.bins(lower, upper));
-    let data = [&REMOVE[..], &lower.to_le_bytes(), &upper.to_le_bytes(), &10_000u16.to_le_bytes(), &[0u8; 4]].concat();
-    assert!(env.send(&[budget(), Instruction::new_with_bytes(METEORA_DLMM_PROGRAM_ID, &data, direct)], &[&user]).is_err());
-    // Nor can another account's owner name it as their own
+    // Nobody can go around the program, the borrower included: to Meteora the position is the pool's alone
     fund_sol(&mut env, &other.pubkey(), SOL);
     env.fund(&usdc, &other.pubkey(), USDC);
+    for who in [&user, &other] {
+        for ix in direct_ixs(&env, &pair, &who.pubkey(), &position) {
+            // Anchor's code for a failed account constraint, here the one that asks for the owner or operator
+            assert!(failed_with_code(&env.send(&[budget(), ix], &[who]), 2003));
+        }
+    }
+    // Nor can another account's owner name it as their own
     expect_err(env.send(&[budget(), add_ix(&env, &pair, &other.pubkey(), &position, SOL, USDC)], &[&other]), PluribusError::PositionNotFound);
     expect_err(env.send(&[budget(), remove_ix(&env, &pair, &other.pubkey(), &position, 10_000)], &[&other]), PluribusError::PositionNotFound);
 
@@ -497,6 +529,25 @@ fn a_position_comes_out_only_through_the_program_and_within_the_credit_limit() {
     assert!(env.svm.get_account(&position).is_none_or(|a| a.lamports == 0));
     assert!(!env.credit(&me).has_collateral());
     expect_ok(env.send(&[env.close_account_ix(&me)], &[&user]));
+}
+
+#[test]
+fn a_pair_meteora_disables_still_lets_liquidity_out() {
+    let Some((mut env, pair)) = real_pair() else { return };
+    let user = env.user();
+    let me = user.pubkey();
+    let position = open_position(&mut env, &pair, &user, 70 * SOL, 5_000 * USDC);
+    // Meteora's admin can switch a pair off, which is the status byte it sets
+    let mut account = env.svm.get_account(&pair.address).unwrap();
+    account.data[82] = 1;
+    env.svm.set_account(pair.address, account).unwrap();
+    // Nothing more goes in, with Meteora's own error for a disabled pool
+    fund_sol(&mut env, &me, SOL);
+    assert!(failed_with_code(&env.send(&[budget(), add_ix(&env, &pair, &me, &position, SOL, 0)], &[&user]), 6042));
+    // What is in still comes out, so a liquidator is never left with a position it cannot empty
+    expect_ok(env.send(&[budget(), remove_ix(&env, &pair, &me, &position, 10_000)], &[&user]));
+    expect_ok(env.send(&[budget(), close_ix(&env, &pair, &me, &position, true)], &[&user]));
+    assert!(!env.credit(&me).has_collateral());
 }
 
 #[test]
