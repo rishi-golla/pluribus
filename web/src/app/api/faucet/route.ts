@@ -7,7 +7,7 @@ import { listOrcaPositions } from "@/lib/pluribus/sdk";
 // Whole tokens per wallet, and devnet SOL is scarce, so a grant there only covers fees and a small deposit
 const GRANT = { sol: CLUSTER === "localnet" ? 10 : 0.05, stock: 50, usdc: 5_000 };
 // Whole tokens of the other listed mocks, by symbol, sent only while the faucet wallet holds enough of them
-const EXTRAS: Record<string, number> = { JitoSOL: 10, JupSOL: 10, AAPLx: 20 };
+const EXTRAS: Record<string, number> = { JitoSOL: 10, JupSOL: 10, AAPLx: 20, BONK: 100_000_000 };
 
 // A wallet stocked by npm run faucet:stock, which holds mock tokens and no authority over anything
 function faucet() {

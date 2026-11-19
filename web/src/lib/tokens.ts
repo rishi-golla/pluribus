@@ -11,6 +11,7 @@ export const TOKEN_INFO: Record<string, { icon: string; sub: string }> = {
   JupSOL: { icon: "jupsol.webp", sub: "Jupiter liquid staking" },
   NVDAx: { icon: "nvdax.webp", sub: "NVIDIA xStock" },
   AAPLx: { icon: mark("A", "#8e9399", "#4a4e53"), sub: "Apple xStock, Token-2022" },
+  BONK: { icon: "bonk.webp", sub: "Bonk memecoin" },
   USDC: { icon: "usdc.webp", sub: "USD Coin" },
 };
 

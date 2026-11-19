@@ -24,7 +24,7 @@ if (!local && sol > 0) {
 }
 // Mock tokens cost nothing to mint, so the stash is far more than the SOL will ever let it hand out
 // Whole tokens by symbol, each minted only while the wallet holds none, so a faucet stocked before a mock was listed gets just that one
-const STASH: Record<string, number> = { NVDAx: 1_000_000, USDC: 100_000_000, JitoSOL: 1_000_000, JupSOL: 1_000_000, AAPLx: 1_000_000 };
+const STASH: Record<string, number> = { NVDAx: 1_000_000, USDC: 100_000_000, JitoSOL: 1_000_000, JupSOL: 1_000_000, AAPLx: 1_000_000, BONK: 10_000_000_000 };
 const empty = async (mint: string) => {
   const program = new PublicKey(d.assets[mint].tokenProgram ?? TOKEN_PROGRAM_ID.toBase58());
   const account = getAssociatedTokenAddressSync(new PublicKey(mint), to, true, program);
