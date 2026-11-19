@@ -22,9 +22,11 @@ import BN from "bn.js";
 import {
   type CreditAccount,
   type Deployment,
+  DLMM_PROGRAM_ID,
   type HealthView,
   type LpLocation,
   type Pool,
+  KIND_DLMM,
   KIND_LP,
   KIND_TOKEN,
   MAX_U64,
@@ -142,11 +144,12 @@ async function liquidateStep(pool: Pool, owner: PublicKey, credit: CreditAccount
   held.sort((a, b) => a.kind - b.kind || b.value.cmp(a.value));
   for (const p of held) {
     const lp = p.kind === KIND_LP;
+    const dlmm = p.kind === KIND_DLMM;
     // What the whole position sells for at the liquidation discount, rounded up like the program does
     const price = p.value.mul(BPS).div(BPS.addn(pool.params.liqBonusBps)).addn(1);
-    // An NFT cannot be split, so an LP position is always paid for in full
+    // An NFT cannot be split, so an LP position is always paid for in full; a Meteora position is sold in part like a token
     const pay = lp ? price : BN.min(maxRepay, price);
-    const name = lp ? `LP position ${p.mint.toBase58()}` : `${symbol(p.mint)} collateral`;
+    const name = lp ? `LP position ${p.mint.toBase58()}` : dlmm ? `Meteora position ${p.mint.toBase58()}` : `${symbol(p.mint)} collateral`;
     if (!balance || balance.lt(pay)) {
       const has = balance ? `holds ${usd(balance)} USDC` : `has no USDC account ${keeperUsdc.toBase58()}`;
       log(`Skipped liquidating ${name} of ${owner}: keeper ${has} and needs ${usd(pay)}`);
@@ -154,7 +157,11 @@ async function liquidateStep(pool: Pool, owner: PublicKey, credit: CreditAccount
     }
     return send(
       `Liquidation of ${owner}: up to ${usd(pay)} USDC paid for ${name}`,
-      lp ? await ix.liquidateLp(program, d, me, owner, p.mint) : await ix.liquidate(program, d, me, owner, p.mint, maxRepay),
+      lp
+        ? await ix.liquidateLp(program, d, me, owner, p.mint)
+        : dlmm
+          ? await ix.dlmmLiquidate(program, d, me, owner, p.mint, maxRepay)
+          : await ix.liquidate(program, d, me, owner, p.mint, maxRepay),
     );
   }
   return false;
@@ -202,11 +209,14 @@ const lastPremiumRefresh = new Map<string, number>();
 
 const lastFeeCheck = new Map<string, number>();
 
-// Raydium has no quote for what a position has earned, so the harvest is run without being sent
+// Raydium and Meteora have no quote for what a position has earned, so the harvest is run without being sent
 // What it would add to the program's base and USDC vaults is what the fees are, and nothing is sent when that is nothing
-async function autopayRaydium(account: CreditAccount, positionMint: PublicKey, where: LpLocation) {
+async function autopayBySimulation(account: CreditAccount, positionMint: PublicKey, where: LpLocation) {
   const owner = account.owner;
-  const ixs = await ix.autopayRaydium(program, d, me, owner, positionMint, where.pool);
+  const meteora = where.dexProgram.equals(DLMM_PROGRAM_ID);
+  const ixs = meteora
+    ? await ix.dlmmAutopay(program, d, me, owner, positionMint)
+    : await ix.autopayRaydium(program, d, me, owner, positionMint, where.pool);
   const vaults = [pda.vault(where.baseMint), pda.vault(usdcMint)];
   const latest = await connection.getLatestBlockhash();
   const tx = await buildTransaction(connection, d, me, ixs, latest.blockhash);
@@ -230,7 +240,7 @@ async function autopayRaydium(account: CreditAccount, positionMint: PublicKey, w
   if (fees.every((f) => f === 0n)) return;
   const [base, usdcFee] = [d.assets[where.baseMint.toBase58()], Number(fees[1]) / 1e6];
   const owed = `${Number(fees[0]) / 10 ** (base?.decimals ?? 9)} ${symbol(where.baseMint)} and ${usdcFee.toFixed(2)} USDC`;
-  await send(`Autopay for ${owner}: ${owed} of fees from Raydium LP position ${positionMint.toBase58()}`, ixs);
+  await send(`Autopay for ${owner}: ${owed} of fees from ${meteora ? "Meteora" : "Raydium LP"} position ${positionMint.toBase58()}`, ixs);
 }
 
 async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicKey) {
@@ -239,7 +249,9 @@ async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicK
   if (Date.now() - (lastFeeCheck.get(id) ?? 0) < autopayMs) return;
   lastFeeCheck.set(id, Date.now());
   const where = (await locateLps(connection, d, account)).get(id);
-  if (where && RAYDIUM_CLMM_PROGRAM_IDS.some((k) => k.equals(where.dexProgram))) return autopayRaydium(account, positionMint, where);
+  if (where && (where.dexProgram.equals(DLMM_PROGRAM_ID) || RAYDIUM_CLMM_PROGRAM_IDS.some((k) => k.equals(where.dexProgram)))) {
+    return autopayBySimulation(account, positionMint, where);
+  }
   // Orca positions are harvested only in the main whirlpool, where the fees can be quoted
   const position = await orca.getPosition(pda.orcaPosition(positionMint), IGNORE_CACHE).catch(() => null);
   if (!position?.getData().whirlpool.equals(new PublicKey(d.whirlpool))) return;
@@ -381,7 +393,7 @@ async function pass() {
     const owner = account.owner;
     // Fees first, since they pay debt down at no cost before a liquidation is considered
     for (const p of account.positions) {
-      if (p.kind === KIND_LP) await attempt(`Autopay for ${owner}`, () => autopay(pool, account, p.mint));
+      if (p.kind === KIND_LP || p.kind === KIND_DLMM) await attempt(`Autopay for ${owner}`, () => autopay(pool, account, p.mint));
     }
     if (!account.debtShares.isZero()) await attempt(`Debt check of ${owner}`, () => watchDebt(pool, owner, now));
   }
