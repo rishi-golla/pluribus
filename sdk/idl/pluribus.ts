@@ -1214,6 +1214,265 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "compoundOrca",
+      "discriminator": [
+        171,
+        241,
+        81,
+        132,
+        157,
+        231,
+        92,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "creditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lpMarket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "whirlpool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "whirlpool",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "positionMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                14,
+                3,
+                104,
+                95,
+                142,
+                144,
+                144,
+                83,
+                228,
+                88,
+                18,
+                28,
+                102,
+                245,
+                167,
+                106,
+                237,
+                199,
+                112,
+                106,
+                161,
+                28,
+                130,
+                248,
+                170,
+                149,
+                42,
+                143,
+                43,
+                120,
+                121,
+                169
+              ]
+            }
+          }
+        },
+        {
+          "name": "positionMint"
+        },
+        {
+          "name": "vaultNft"
+        },
+        {
+          "name": "tickArrayLower",
+          "writable": true
+        },
+        {
+          "name": "tickArrayUpper",
+          "writable": true
+        },
+        {
+          "name": "baseAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lpMarket.baseMint",
+                "account": "lpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "baseMint"
+        },
+        {
+          "name": "baseVault",
+          "writable": true
+        },
+        {
+          "name": "basePrice"
+        },
+        {
+          "name": "whirlpoolVaultA",
+          "writable": true
+        },
+        {
+          "name": "usdcAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcCollateralVault",
+          "writable": true
+        },
+        {
+          "name": "whirlpoolVaultB",
+          "writable": true
+        },
+        {
+          "name": "usdcMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "bountyBase",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bountyUsdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "whirlpoolProgram",
+          "address": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "convertToJunior",
       "discriminator": [
         0,
@@ -4537,6 +4796,103 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "setCompound",
+      "discriminator": [
+        218,
+        23,
+        231,
+        201,
+        201,
+        175,
+        12,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "position",
+          "type": "pubkey"
+        },
+        {
+          "name": "slippageBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "setCompoundBounty",
+      "discriminator": [
+        41,
+        166,
+        221,
+        31,
+        249,
+        55,
+        27,
+        5
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "bountyBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "setDemoPrice",
       "discriminator": [
         9,
@@ -5728,6 +6084,32 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "compoundSet",
+      "discriminator": [
+        195,
+        253,
+        74,
+        179,
+        146,
+        31,
+        38,
+        183
+      ]
+    },
+    {
+      "name": "compounded",
+      "discriminator": [
+        187,
+        212,
+        188,
+        187,
+        183,
+        29,
+        107,
+        152
+      ]
+    },
+    {
       "name": "demoPriceSet",
       "discriminator": [
         119,
@@ -6200,6 +6582,26 @@ export type Pluribus = {
       "code": 6044,
       "name": "invalidDlmmPosition",
       "msg": "Not a Meteora DLMM position the pool alone controls"
+    },
+    {
+      "code": 6045,
+      "name": "compoundOff",
+      "msg": "This position does not compound its fees"
+    },
+    {
+      "code": 6046,
+      "name": "compoundOn",
+      "msg": "This position compounds its fees, so autopay leaves it alone"
+    },
+    {
+      "code": 6047,
+      "name": "poolPriceOff",
+      "msg": "The pool's price is too far from the oracle's to compound this position"
+    },
+    {
+      "code": 6048,
+      "name": "compoundOverdrawn",
+      "msg": "The dex took more than the position's fees"
     }
   ],
   "types": [
@@ -6641,6 +7043,77 @@ export type Pluribus = {
       }
     },
     {
+      "name": "compoundSet",
+      "docs": [
+        "How far the pool's price may sit from the oracle's for the position to compound, 0 when its fees repay debt instead"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "slippageBps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compounded",
+      "docs": [
+        "A position's fees went back into it: the caller's bounty to its recipient, `added_*` into the position,",
+        "and what the position's price range could not take kept as collateral"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeBase",
+            "type": "u64"
+          },
+          {
+            "name": "feeUsdc",
+            "type": "u64"
+          },
+          {
+            "name": "bountyBase",
+            "type": "u64"
+          },
+          {
+            "name": "bountyUsdc",
+            "type": "u64"
+          },
+          {
+            "name": "addedBase",
+            "type": "u64"
+          },
+          {
+            "name": "addedUsdc",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "creditAccount",
       "type": {
         "kind": "struct",
@@ -6692,6 +7165,20 @@ export type Pluribus = {
               "When the premium was last booked as debt, 0 until the first booking starts the clock"
             ],
             "type": "i64"
+          },
+          {
+            "name": "compoundSlippageBps",
+            "docs": [
+              "Per position slot: how far the pool's price may sit from the oracle's, in bps, for anyone to compound the position's",
+              "fees back into it; 0 has its fees repay debt through autopay instead. Cleared whenever the slot changes hands",
+              "Added after launch: `migrate_account` grows an account opened before it, and the new bytes start at zero"
+            ],
+            "type": {
+              "array": [
+                "u16",
+                5
+              ]
+            }
           }
         ]
       }
@@ -7450,6 +7937,14 @@ export type Pluribus = {
               "Risk premium booked as debt to date"
             ],
             "type": "u64"
+          },
+          {
+            "name": "compoundBountyBps",
+            "docs": [
+              "Share of a position's fees paid to whoever compounds it, up to MAX_COMPOUND_BOUNTY_BPS",
+              "Added after launch: a pool grown by `migrate_pool` pays no bounty until it is set"
+            ],
+            "type": "u16"
           }
         ]
       }
