@@ -78,7 +78,7 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
 
     let held = a.credit.positions[i].amount as u128;
     let bonus = BPS + a.pool.params.liq_bonus_bps as u128;
-    let unit = pow10(a.asset.decimals)?;
+    let unit = pow10(a.asset.price_decimals())?;
     let max_repay = mul_div_floor(debt, a.pool.params.close_factor_bps as u128, BPS)?;
     // a position priced at nothing, as when the issuer emptied its vault, goes whole for no payment:
     // left in place it blocks the write-off and the debt stays behind lender shares for good

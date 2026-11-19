@@ -261,6 +261,36 @@ pub fn handle_apply_premium_tiers(ctx: Context<ApplyParams>) -> Result<()> {
 }
 
 #[derive(Accounts)]
+pub struct SetPriceExponent<'info> {
+    pub admin: Signer<'info>,
+    #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin)]
+    pub pool: Box<Account<'info, Pool>>,
+    #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
+    pub asset: Box<Account<'info, Asset>>,
+}
+
+/// Quotes the asset's price per 10^exponent whole tokens, for a token worth so little that six decimals per token
+/// would round its price to nothing
+/// Only while nothing is deposited and before the listing backs debt, or in demo mode, since every price on the old unit
+/// would be off by the same factor; a staking or multiplier token is priced through SOL or per share and keeps exponent 0
+pub fn handle_set_price_exponent(ctx: Context<SetPriceExponent>, exponent: u8) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let (pool, asset) = (&ctx.accounts.pool, &mut ctx.accounts.asset);
+    let p = &asset.params;
+    require!(
+        exponent <= MAX_PRICE_EXPONENT && p.oracle == ORACLE_PYTH && p.rate_source == RATE_NONE && !p.ui_multiplier,
+        PluribusError::InvalidParams
+    );
+    require!(asset.total_deposited == 0 && (pool.demo_mode || now < pool.effective_at(asset.active_at)), PluribusError::InvalidParams);
+    asset.price_exponent = exponent;
+    // The last volatility sample is on the old unit, and comparing across units would read as a crash or a spike
+    asset.vol_price = 0;
+    asset.vol_time = 0;
+    emit!(ChangeApplied { target: asset.key() });
+    Ok(())
+}
+
+#[derive(Accounts)]
 pub struct DemoAsset<'info> {
     pub admin: Signer<'info>,
     #[account(seeds = [POOL_SEED], bump = pool.bump, has_one = admin, constraint = pool.demo_mode @ PluribusError::DemoDisabled)]
@@ -555,7 +585,8 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         jump_price: 0,
         jump_seen: 0,
         live_price: false,
-        reserved: [0; 6],
+        price_exponent: 0,
+        reserved: [0; 5],
         premium_bps: 0,
         pending_premium_bps: 0,
         premium_pending_at: 0,

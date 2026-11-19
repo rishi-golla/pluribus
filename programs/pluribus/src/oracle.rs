@@ -42,7 +42,7 @@ pub fn read_price(pool: &Pool, asset: &Asset, acc: &AccountInfo, now: i64) -> Re
 
 /// The raw quote for `asset`, from its demo account while it is demo priced or its Pyth account otherwise, checked for the right feed
 pub fn read_quote(pool: &Pool, asset: &Asset, acc: &AccountInfo) -> Result<Quote> {
-    quote_for(demo_priced(pool, asset), &asset.mint, &asset.params.pyth_feed_id, acc)
+    quote_for(demo_priced(pool, asset), &asset.mint, &asset.params.pyth_feed_id, asset.price_exponent, acc)
 }
 
 /// Whether `asset` reads the admin's demo price: only in demo mode, and only until the admin switches it to its live feed
@@ -50,11 +50,12 @@ pub fn demo_priced(pool: &Pool, asset: &Asset) -> bool {
     pool.demo_mode && !asset.live_price
 }
 
-fn quote_for(demo: bool, mint: &Pubkey, feed: &[u8; 32], acc: &AccountInfo) -> Result<Quote> {
+/// A demo price is written in the asset's own unit, a Pyth price per whole token is scaled up to it by `exponent`
+fn quote_for(demo: bool, mint: &Pubkey, feed: &[u8; 32], exponent: u8, acc: &AccountInfo) -> Result<Quote> {
     if demo {
         demo_quote(mint, acc)
     } else {
-        pyth_quote(feed, acc)
+        pyth_quote(feed, exponent, acc)
     }
 }
 
@@ -63,7 +64,7 @@ fn quote_for(demo: bool, mint: &Pubkey, feed: &[u8; 32], acc: &AccountInfo) -> R
 pub fn backing_price(pool: &Pool, asset: &Asset, sol_acc: &AccountInfo, pool_acc: Option<&AccountInfo>, now: i64) -> Result<Priced> {
     let p = &asset.params;
     // The SOL leg follows the staking token's own source, so a live token is never valued with a demo SOL price
-    let Priced { price: sol, fresh, publish_time } = checked_low(quote_for(demo_priced(pool, asset), &p.rate_base_mint, &p.rate_feed_id, sol_acc)?, p, now)?;
+    let Priced { price: sol, fresh, publish_time } = checked_low(quote_for(demo_priced(pool, asset), &p.rate_base_mint, &p.rate_feed_id, 0, sol_acc)?, p, now)?;
     // Lamports behind `units` base units of the token
     let (lamports, units) = match p.rate_source {
         RATE_FIXED => (p.fixed_rate as u128, pow10(asset.decimals)?),
@@ -98,7 +99,7 @@ fn demo_quote(mint: &Pubkey, acc: &AccountInfo) -> Result<Quote> {
 }
 
 /// Reads a Pyth receiver PriceUpdateV2 account by hand, since the layout is fixed once the update is fully verified
-fn pyth_quote(feed: &[u8; 32], acc: &AccountInfo) -> Result<Quote> {
+fn pyth_quote(feed: &[u8; 32], exponent: u8, acc: &AccountInfo) -> Result<Quote> {
     require_keys_eq!(*acc.owner, PYTH_RECEIVER_ID, PluribusError::InvalidPriceAccount);
     let d = acc.try_borrow_data()?;
     // Layout: disc 8 | write authority 32 | verification 1 | feed id 32 | price i64 | conf u64 | expo i32 | publish time i64
@@ -111,8 +112,8 @@ fn pyth_quote(feed: &[u8; 32], acc: &AccountInfo) -> Result<Quote> {
     let expo = i32::from_le_bytes(d[89..93].try_into().unwrap());
     let publish_time = i64::from_le_bytes(d[93..101].try_into().unwrap());
     require!(price > 0 && (-18..=0).contains(&expo), PluribusError::InvalidPriceAccount);
-    // Rescale to 6 decimals: price down, confidence up
-    let (num, den) = (PRICE_ONE, pow10(expo.unsigned_abs() as u8)?);
+    // Rescale to 6 decimals per priced unit: price down, confidence up
+    let (num, den) = (PRICE_ONE * pow10(exponent)?, pow10(expo.unsigned_abs() as u8)?);
     Ok(Quote {
         price: mul_div_floor(price as u128, num, den)?,
         conf: mul_div_ceil(conf as u128, num, den)?,

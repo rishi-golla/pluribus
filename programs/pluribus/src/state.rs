@@ -801,8 +801,11 @@ pub struct Asset {
     pub jump_seen: i64,
     /// In demo mode, read the Pyth feed instead of the admin's demo price, for assets that should show real prices
     pub live_price: bool,
+    /// Prices are quoted per 10^price_exponent whole tokens, so a token worth a tiny fraction of a cent keeps its precision
+    /// at six decimals; 0 for anything priced in cents or more
+    pub price_exponent: u8,
     /// Room for fields added later without moving the ones above
-    pub reserved: [u8; 6],
+    pub reserved: [u8; 5],
     /// Extra yearly rate on debt this asset backs, paid to junior lenders, who lose first if it fails
     /// Added after launch: `migrate_account` grows an asset listed before it, and the new bytes start at zero
     pub premium_bps: u16,
@@ -812,6 +815,11 @@ pub struct Asset {
 }
 
 impl Asset {
+    /// Decimals that turn a base-unit amount into the unit this asset's price is quoted for
+    pub fn price_decimals(&self) -> u8 {
+        self.decimals.saturating_add(self.price_exponent)
+    }
+
     /// The dynamic shock z x sigma x sqrt(T) in bps for a variance per second
     pub fn dynamic_shock(&self, var: u128, z_x100: u16) -> u128 {
         let spread = var.saturating_mul(self.params.vol_horizon_secs as u128).isqrt();

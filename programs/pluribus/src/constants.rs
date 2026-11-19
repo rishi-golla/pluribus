@@ -85,3 +85,5 @@ pub const RAYDIUM_CLMM_PROGRAMS: [Pubkey; 2] =
 pub const PYTH_RECEIVER_ID: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
 /// Ceiling on an asset's risk premium, the extra yearly rate charged on debt it backs: 30%
 pub const MAX_RISK_PREMIUM_BPS: u16 = 3_000;
+/// Largest price exponent: a price per 10^12 whole tokens covers anything worth more than 10^-18 dollars
+pub const MAX_PRICE_EXPONENT: u8 = 12;

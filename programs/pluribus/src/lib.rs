@@ -231,6 +231,10 @@ pub mod pluribus {
         admin::handle_apply_premium_tiers(ctx)
     }
 
+    pub fn set_price_exponent(ctx: Context<SetPriceExponent>, exponent: u8) -> Result<()> {
+        admin::handle_set_price_exponent(ctx, exponent)
+    }
+
     pub fn demo_set_live_price(ctx: Context<DemoAsset>, live: bool) -> Result<()> {
         admin::handle_demo_set_live_price(ctx, live)
     }

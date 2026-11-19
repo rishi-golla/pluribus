@@ -178,7 +178,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                         }
                     }
                 };
-                let valuer = Valuer::Token { amount: pos.amount, decimals: asset.decimals };
+                let valuer = Valuer::Token { amount: pos.amount, decimals: asset.price_decimals() };
                 // A halted mint can't be seized, a price only fresh enough for liquidations backs no new debt,
                 // and neither does a token whose multiplier basis is unclear or whose vault is short or frozen
                 let short = vault.is_some_and(|(held, frozen)| frozen || held < asset.total_deposited);
@@ -201,7 +201,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let priced = read_price(pool, &asset, next()?, now)?;
                 h.price[i] = priced.price;
                 let (lower, upper) = range_sqrt_prices(lp.tick_lower, lp.tick_upper)?;
-                let valuer = Valuer::Lp { liquidity: lp.liquidity, lower, upper, decimals: asset.decimals };
+                let valuer = Valuer::Lp { liquidity: lp.liquidity, lower, upper, decimals: asset.price_decimals() };
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
                 let d = asset.dynamic_shocks(params);
                 // An LP carries its base token's premium, since that is the side a crash takes down
