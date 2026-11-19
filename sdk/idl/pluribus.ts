@@ -3820,6 +3820,73 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "setPriceExponent",
+      "discriminator": [
+        93,
+        108,
+        226,
+        237,
+        225,
+        223,
+        22,
+        227
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "exponent",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "settleSeniorExit",
       "discriminator": [
         22,
@@ -5194,6 +5261,14 @@ export type Pluribus = {
             "type": "bool"
           },
           {
+            "name": "priceExponent",
+            "docs": [
+              "Prices are quoted per 10^price_exponent whole tokens, so a token worth a tiny fraction of a cent keeps its precision",
+              "at six decimals; 0 for anything priced in cents or more"
+            ],
+            "type": "u8"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -5201,7 +5276,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                6
+                5
               ]
             }
           },
