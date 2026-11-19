@@ -263,3 +263,40 @@ fn a_live_asset_reads_its_pyth_feed_in_demo_mode() {
     expect_ok(env.send(&[env.set_flags_ix(&admin.pubkey(), false, false)], &[&admin]));
     expect_err(env.send(&[env.demo_set_live_price_ix(&admin.pubkey(), &stock, true)], &[&admin]), PluribusError::DemoDisabled);
 }
+
+#[test]
+fn a_token_worth_a_fraction_of_a_cent_is_priced_per_million() {
+    let mut env = Env::new();
+    let admin = env.admin.insecure_clone();
+    env.lender(100_000 * USDC);
+    let meme = env.new_mint(5, &TOKEN);
+    let feed = [3; 32];
+    expect_ok(env.send(&[env.init_asset_ix(&meme, asset_params(GROUP_STOCK, ORACLE_PYTH, feed, 1500))], &[&admin]));
+    let stranger = env.wallet();
+    assert!(env.send(&[env.set_price_exponent_ix(&stranger.pubkey(), &meme, 6)], &[&stranger]).is_err());
+    expect_err(env.send(&[env.set_price_exponent_ix(&admin.pubkey(), &meme, MAX_PRICE_EXPONENT + 1)], &[&admin]), PluribusError::InvalidParams);
+    expect_ok(env.send(&[env.set_price_exponent_ix(&admin.pubkey(), &meme, 6)], &[&admin]));
+    // $0.0000024 a token is $2.40 a million, which six decimals hold exactly
+    env.set_price(&meme, 2_400_000);
+    let user = env.user();
+    env.deposit(&user, &meme, 100_000_000 * 100_000);
+    let view = env.health(&user.pubkey());
+    assert_eq!(view.collateral_value, 240 * USDC);
+    // The equity crash takes 35% and the liquidation cost 15%: 240 x 65% x 85%
+    assert_eq!(view.credit_limit, 132_600_000);
+    // The unit is fixed once anything is deposited
+    expect_err(env.send(&[env.set_price_exponent_ix(&admin.pubkey(), &meme, 7)], &[&admin]), PluribusError::InvalidParams);
+
+    // A Pyth price per token is scaled up to the same unit, its band with it
+    expect_ok(env.send(&[env.demo_set_live_price_ix(&admin.pubkey(), &meme, true)], &[&admin]));
+    let pyth = Pubkey::new_unique();
+    let now = env.now();
+    env.set_pyth(pyth, feed, 240, 1, -8, now);
+    let usdc = env.usdc;
+    env.fund(&usdc, &user.pubkey(), 0);
+    let mut draw: Instruction = env.draw_ix(&user.pubkey(), 130 * USDC);
+    let demo = env.price_account(&meme);
+    draw.accounts.iter_mut().filter(|m| m.pubkey == demo).for_each(|m| m.pubkey = pyth);
+    // The low end of the band, $2.39 a million, still covers 130
+    expect_ok(env.send(&[draw], &[&user]));
+}

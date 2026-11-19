@@ -924,6 +924,14 @@ impl Env {
         self.ix(pluribus::instruction::ApplyPremiumTiers {}.data(), pluribus::accounts::ApplyParams { pool: self.pool }.to_account_metas(None), None)
     }
 
+    pub fn set_price_exponent_ix(&self, admin: &Pubkey, mint: &Pubkey, exponent: u8) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetPriceExponent { exponent }.data(),
+            pluribus::accounts::SetPriceExponent { admin: *admin, pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
     pub fn demo_set_live_price_ix(&self, admin: &Pubkey, mint: &Pubkey, live: bool) -> Instruction {
         self.ix(
             pluribus::instruction::DemoSetLivePrice { live }.data(),
