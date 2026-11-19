@@ -10,6 +10,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use super::autopay::{collect_orca_fees, OrcaCollect};
 use crate::{
     constants::*,
+    dlmm::{bin_price, oracle_quote, Pair},
     error::PluribusError,
     events::*,
     instructions::admin::AdminPool,
@@ -141,6 +142,13 @@ impl Compounder<'_, '_> {
     }
 }
 
+/// How far the pool's price may sit from the oracle's for the position to compound, which the owner must have switched on
+fn tolerance_of(credit: &CreditAccount, position: &Pubkey) -> Result<u16> {
+    let tolerance = credit.compound_slippage_bps[credit.lp_slot(position)?];
+    require!(tolerance > 0, PluribusError::CompoundOff);
+    Ok(tolerance)
+}
+
 /// The position's own setting, which must be on, and whether the pool's price sits close enough to the oracle's for it
 /// Adding liquidity is priced at the pool's own price, which a caller can push around inside its transaction,
 /// so the oracle is the yardstick and the owner sets how far off it may be
@@ -153,13 +161,30 @@ pub(crate) fn require_fair_price(
     pool_sqrt: u128,
     base_first: bool,
 ) -> Result<()> {
-    let tolerance = credit.compound_slippage_bps[credit.lp_slot(position)?];
-    require!(tolerance > 0, PluribusError::CompoundOff);
+    let tolerance = tolerance_of(credit, position)?;
     let mid = read_mid(pool, base_asset, base_price, Clock::get()?.unix_timestamp)?;
     let oracle_sqrt = sqrt_price_x64(mid, base_asset.price_decimals())?;
     // With USDC first the pool quotes the base token upside down, whose sqrt price is the inverse in Q64.64
     let reference = if base_first { oracle_sqrt } else { (u128::MAX / oracle_sqrt).max(1) };
     require!(sqrt_prices_within(pool_sqrt, reference, tolerance)?, PluribusError::PoolPriceOff);
+    Ok(())
+}
+
+/// The same check for a Meteora pair, whose price is the one its active bin trades at
+/// The price is only as fine as the pair's bin step, so a tolerance narrower than the step can fail with the pair at the market
+pub(crate) fn require_fair_bin(
+    pool: &Pool,
+    credit: &CreditAccount,
+    position: &Pubkey,
+    base_asset: &Asset,
+    base_price: &AccountInfo,
+    pair: &Pair,
+    base_first: bool,
+) -> Result<()> {
+    let tolerance = tolerance_of(credit, position)?;
+    let mid = read_mid(pool, base_asset, base_price, Clock::get()?.unix_timestamp)?;
+    let reference = oracle_quote(mid, base_asset.price_decimals(), base_first)?;
+    require!(prices_within(bin_price(pair.active_id, pair.bin_step)?, reference, tolerance)?, PluribusError::PoolPriceOff);
     Ok(())
 }
 

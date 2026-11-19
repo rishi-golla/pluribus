@@ -311,7 +311,8 @@ fn swap_ix(env: &Env, pair: &Pair, trader: &Pubkey, sell_sol: bool, amount_in: u
     // Selling SOL pushes the price down through lower bins, buying it pushes up
     let start = active_of(env, pair).div_euclid(BINS_PER_ARRAY);
     let path = if sell_sol { [start, start - 1, start - 2] } else { [start, start + 1, start + 2] };
-    metas.extend(path.iter().map(|i| AccountMeta::new(pair.arrays[i], false)));
+    // Only those the snapshot holds: past its edge the pair has no liquidity to trade against anyway
+    metas.extend(path.iter().filter_map(|i| pair.arrays.get(i)).map(|array| AccountMeta::new(*array, false)));
     let data = [&SWAP[..], &amount_in.to_le_bytes(), &0u64.to_le_bytes(), &[0u8; 4]].concat();
     Instruction::new_with_bytes(METEORA_DLMM_PROGRAM_ID, &data, metas)
 }
@@ -352,16 +353,21 @@ fn trader(env: &mut Env, sol: u64, usdc: u64) -> Keypair {
     wallet
 }
 
-/// Opens a 70-bin position centred on the active bin for `user` and funds it with `sol` and `usdc`
-fn open_position(env: &mut Env, pair: &Pair, user: &Keypair, sol: u64, usdc: u64) -> Pubkey {
+/// Opens a position of `width` bins from `lower` for `user` and funds it with `sol` and `usdc`
+fn open_range(env: &mut Env, pair: &Pair, user: &Keypair, lower: i32, width: i32, sol: u64, usdc: u64) -> Pubkey {
     let (me, position) = (user.pubkey(), Keypair::new());
     let usdc_mint = env.usdc;
     fund_sol(env, &me, sol);
     env.fund(&usdc_mint, &me, usdc);
-    expect_ok(env.send(&[open_ix(env, pair, &me, &position.pubkey(), pair.active - 34, 70)], &[user, &position]));
+    expect_ok(env.send(&[open_ix(env, pair, &me, &position.pubkey(), lower, width)], &[user, &position]));
     let meta = expect_ok(env.send(&[budget(), add_ix(env, pair, &me, &position.pubkey(), sol, usdc)], &[user]));
-    println!("add liquidity to 70 bins: {} compute units", meta.compute_units_consumed);
+    println!("add liquidity to {width} bins: {} compute units", meta.compute_units_consumed);
     position.pubkey()
+}
+
+/// Opens a 70-bin position centred on the active bin for `user` and funds it with `sol` and `usdc`
+fn open_position(env: &mut Env, pair: &Pair, user: &Keypair, sol: u64, usdc: u64) -> Pubkey {
+    open_range(env, pair, user, pair.active - 34, 70, sol, usdc)
 }
 
 /// What `sol` lamports and `usdc` are worth together at `price`
@@ -817,4 +823,276 @@ fn health_checks_with_meteora_positions_need_a_raised_compute_budget() {
         // Under the most one transaction can ask for, with room left for the rest of it
         assert!(meta.compute_units_consumed < 600_000);
     }
+}
+
+fn compound_ix(env: &Env, pair: &Pair, caller: &Pubkey, owner: &Pubkey, position: &Pubkey, recipient: &Pubkey) -> Instruction {
+    let (lower, upper) = range_of(env, position);
+    let mut metas = pluribus::accounts::CompoundDlmm {
+        caller: *caller,
+        credit: env.credit_pda(owner),
+        pool: env.pool,
+        lp_market: env.lp_market_pda(&pair.address),
+        lb_pair: pair.address,
+        position: *position,
+        base_asset: env.asset_pda(&env.sol),
+        base_vault: env.vault_pda(&env.sol),
+        base_mint: env.sol,
+        base_price: env.price_account(&env.sol),
+        usdc_asset: env.asset_pda(&env.usdc),
+        usdc_collateral_vault: env.vault_pda(&env.usdc),
+        usdc_mint: env.usdc,
+        bounty_base: ata(recipient, &env.sol, &TOKEN),
+        bounty_usdc: ata(recipient, &env.usdc, &TOKEN),
+        bitmap_extension: METEORA_DLMM_PROGRAM_ID,
+        reserve_x: pair.reserve_x,
+        reserve_y: pair.reserve_y,
+        token_program: TOKEN,
+        memo_program: MEMO,
+        event_authority: pair.event_authority,
+        dlmm_program: METEORA_DLMM_PROGRAM_ID,
+    }
+    .to_account_metas(None);
+    metas.extend(pair.bins(lower, upper));
+    Instruction::new_with_bytes(pluribus::ID, &pluribus::instruction::CompoundDlmm {}.data(), metas)
+}
+
+/// USDC base units per SOL at the bin the pair trades in now, which is where an honest oracle would sit
+fn active_price(env: &Env, pair: &Pair) -> u64 {
+    let data = env.svm.get_account(&pair.address).unwrap().data;
+    let step = u16::from_le_bytes([data[80], data[81]]);
+    ((pluribus::dlmm::bin_price(active_of(env, pair), step).unwrap() * SOL as u128) >> 64) as u64
+}
+
+/// The fees `position` has earned in SOL and USDC, as autopay would collect them, found by simulating it
+/// Only a position that is not compounding can be asked, and nothing is collected for real
+fn pending_fees(env: &mut Env, pair: &Pair, owner: &Pubkey, position: &Pubkey) -> (u64, u64) {
+    let keeper = env.wallet();
+    let sim = env.simulate(&[budget(), autopay_ix(env, pair, &keeper.pubkey(), owner, position)], &keeper);
+    let gained = |mint: &Pubkey| {
+        let vault = env.vault_pda(mint);
+        let (_, after) = sim.post_accounts.iter().find(|(key, _)| *key == vault).expect("the vault in the simulation");
+        let after: Account = after.clone().into();
+        TokenState::unpack(&after.data[..TokenState::LEN]).unwrap().amount - env.token_amount(&vault)
+    };
+    (gained(&env.sol), gained(&env.usdc))
+}
+
+/// The `Compounded` event a transaction emitted
+fn compounded(meta: &litesvm::types::TransactionMetadata) -> pluribus::events::Compounded {
+    meta.logs
+        .iter()
+        .filter_map(|line| STANDARD.decode(line.strip_prefix("Program data: ")?).ok())
+        .find(|data| data.starts_with(pluribus::events::Compounded::DISCRIMINATOR))
+        .map(|data| pluribus::events::Compounded::deserialize(&mut &data[8..]).unwrap())
+        .expect("a Compounded event")
+}
+
+/// Total of every bin's liquidity share
+fn total_shares(env: &Env, position: &Pubkey) -> u128 {
+    shares_of(env, position).iter().sum()
+}
+
+/// What the account holds of `mint` as plain collateral
+fn kept(env: &Env, owner: &Pubkey, mint: &Pubkey) -> u64 {
+    let credit = env.credit(owner);
+    credit.find(KIND_TOKEN, mint).map_or(0, |i| credit.positions[i].amount)
+}
+
+/// A pool paying a 2% bounty, a position of `width` bins from `offset` bins off the active one that has earned fees in both
+/// tokens, an oracle at the price the pair trades at, and a bounty hunter with token accounts for both tokens
+/// The position compounds within `tolerance_bps` of the oracle, or not at all when that is 0
+struct Compounding {
+    env: Env,
+    pair: Pair,
+    user: Keypair,
+    hunter: Keypair,
+    position: Pubkey,
+    /// What the position has earned in SOL and USDC
+    fees: (u64, u64),
+}
+
+fn compounding_over(offset: i32, width: i32, tolerance_bps: u16) -> Option<Compounding> {
+    let (mut env, pair) = real_pair()?;
+    let admin = env.admin.insecure_clone();
+    let (user, hunter) = (env.user(), env.wallet());
+    let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+    // A range wholly under the price takes only USDC and one wholly over it only SOL
+    let (held_sol, held_usdc) = (if offset + width > 0 { 700 * SOL } else { 0 }, if offset <= 0 { 50_000 * USDC } else { 0 });
+    let position = open_range(&mut env, &pair, &user, pair.active + offset, width, held_sol, held_usdc);
+    trade_through(&mut env, &pair);
+    let price = active_price(&env, &pair);
+    env.set_price(&sol, price);
+    expect_ok(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), 200)], &[&admin]));
+    let fees = pending_fees(&mut env, &pair, &me, &position);
+    if tolerance_bps > 0 {
+        expect_ok(env.send(&[env.set_compound_ix(&me, &position, tolerance_bps)], &[&user]));
+    }
+    fund_sol(&mut env, &hunter.pubkey(), 0);
+    env.fund(&usdc, &hunter.pubkey(), 0);
+    Some(Compounding { env, pair, user, hunter, position, fees })
+}
+
+fn compounding(tolerance_bps: u16) -> Option<Compounding> {
+    compounding_over(-34, 70, tolerance_bps)
+}
+
+#[test]
+fn compound_puts_real_fees_back_into_the_position_and_pays_the_bounty() {
+    let Some(Compounding { mut env, pair, user, hunter, position, fees }) = compounding(100) else { return };
+    let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+    assert!(fees.0 > 0 && fees.1 > 0, "{fees:?}");
+    let before = (shares_of(&env, &position), env.health(&me).position_value[0]);
+
+    let compound = compound_ix(&env, &pair, &hunter.pubkey(), &me, &position, &hunter.pubkey());
+    let meta = expect_ok(env.send(&[budget(), compound], &[&hunter]));
+    println!("compound_dlmm over 70 bins: {} compute units", meta.compute_units_consumed);
+
+    // The caller got 2% of each fee, exactly, which is what the event says too
+    let bounty = (fees.0 * 200 / 10_000, fees.1 * 200 / 10_000);
+    assert_eq!((env.balance(&sol, &hunter.pubkey()), env.balance(&usdc, &hunter.pubkey())), bounty);
+    let event = compounded(&meta);
+    assert_eq!((event.fee_base, event.fee_usdc, event.bounty_base, event.bounty_usdc), (fees.0, fees.1, bounty.0, bounty.1));
+    assert_eq!(event.recipient, hunter.pubkey());
+
+    // The rest went into the position's bins, and whatever the pair left unspent is the account's collateral
+    let after = shares_of(&env, &position);
+    assert!(after.iter().zip(&before.0).all(|(now, was)| now >= was) && after.iter().sum::<u128>() > before.0.iter().sum::<u128>());
+    assert!(event.added_base > 0 && event.added_usdc > 0);
+    assert_eq!(kept(&env, &me, &sol) + event.added_base, fees.0 - bounty.0);
+    assert_eq!(kept(&env, &me, &usdc) + event.added_usdc, fees.1 - bounty.1);
+    assert!(kept(&env, &me, &sol) < (fees.0 - bounty.0) / 100 && kept(&env, &me, &usdc) < (fees.1 - bounty.1) / 100);
+    assert_books_match_vaults(&env);
+    // The position is worth what the fees added to it, and nothing else about the account moved
+    let value = env.health(&me).position_value[0];
+    assert!(value > before.1, "{value} vs {}", before.1);
+
+    // The fees are gone from the position, so a second run has nothing to pay, add or book
+    let again = compound_ix(&env, &pair, &hunter.pubkey(), &me, &position, &hunter.pubkey());
+    let meta = expect_ok(env.send(&[budget(), again], &[&hunter]));
+    let event = compounded(&meta);
+    assert_eq!((event.fee_base, event.fee_usdc, event.added_base, event.added_usdc), (0, 0, 0, 0));
+    assert_eq!((env.balance(&sol, &hunter.pubkey()), env.balance(&usdc, &hunter.pubkey())), bounty);
+    assert_books_match_vaults(&env);
+}
+
+#[test]
+fn compound_waits_for_the_pair_to_trade_near_the_oracle() {
+    let Some(Compounding { mut env, pair, user, hunter, position, .. }) = compounding(100) else { return };
+    let (me, sol) = (user.pubkey(), env.sol);
+    let price = active_price(&env, &pair);
+    let compound = compound_ix(&env, &pair, &hunter.pubkey(), &me, &position, &hunter.pubkey());
+    // The oracle 3% above or below the pair: outside a 1% tolerance, inside 5%
+    for off in [price * 103 / 100, price * 97 / 100] {
+        env.set_price(&sol, off);
+        expect_err(env.send(&[budget(), compound.clone()], &[&hunter]), PluribusError::PoolPriceOff);
+    }
+    // Just inside the tolerance it goes through
+    env.set_price(&sol, price * 1_005 / 1_000);
+    expect_ok(env.send(&[budget(), compound.clone()], &[&hunter]));
+    env.set_price(&sol, price * 103 / 100);
+    expect_ok(env.send(&[env.set_compound_ix(&me, &position, 500)], &[&user]));
+    expect_ok(env.send(&[budget(), compound], &[&hunter]));
+}
+
+#[test]
+fn compounding_is_the_owners_choice_and_autopay_steps_aside_for_it() {
+    let Some(Compounding { mut env, pair, user, hunter, position, .. }) = compounding(0) else { return };
+    let (me, hunter_key) = (user.pubkey(), hunter.pubkey());
+    let compound = compound_ix(&env, &pair, &hunter_key, &me, &position, &hunter_key);
+    expect_err(env.send(&[budget(), compound.clone()], &[&hunter]), PluribusError::CompoundOff);
+
+    // Capped, and set only through the owner's own account
+    expect_err(env.send(&[env.set_compound_ix(&me, &position, MAX_COMPOUND_SLIPPAGE_BPS + 1)], &[&user]), PluribusError::InvalidParams);
+    assert!(env.send(&[env.set_compound_ix(&hunter_key, &position, 100)], &[&hunter]).is_err());
+    expect_ok(env.send(&[env.set_compound_ix(&me, &position, 100)], &[&user]));
+    let autopay = autopay_ix(&env, &pair, &hunter_key, &me, &position);
+    expect_err(env.send(&[budget(), autopay.clone()], &[&hunter]), PluribusError::CompoundOn);
+
+    // Off again, and autopay takes the fees as before
+    expect_ok(env.send(&[env.set_compound_ix(&me, &position, 0)], &[&user]));
+    expect_ok(env.send(&[budget(), autopay], &[&hunter]));
+    expect_err(env.send(&[budget(), compound], &[&hunter]), PluribusError::CompoundOff);
+}
+
+#[test]
+fn compound_pays_into_no_vault_of_the_protocol_and_only_for_a_position_the_account_holds() {
+    let Some(Compounding { mut env, pair, user, hunter, position, .. }) = compounding(100) else { return };
+    let (me, hunter_key, other) = (user.pubkey(), hunter.pubkey(), env.user());
+    let compound = compound_ix(&env, &pair, &hunter_key, &me, &position, &hunter_key);
+
+    // A bounty cannot be routed back into the vaults, where it would be booked twice: Anchor refuses the same writable
+    // account in two places before the program's own check is reached
+    const DUPLICATE_MUTABLE_ACCOUNT: u32 = 2040;
+    for (recipient, vault) in [(ata(&hunter_key, &env.sol, &TOKEN), env.vault_pda(&env.sol)), (ata(&hunter_key, &env.usdc, &TOKEN), env.vault_pda(&env.usdc))] {
+        let mut ix = compound.clone();
+        ix.accounts.iter_mut().filter(|meta| meta.pubkey == recipient).for_each(|meta| meta.pubkey = vault);
+        assert!(failed_with_code(&env.send(&[budget(), ix], &[&hunter]), DUPLICATE_MUTABLE_ACCOUNT));
+    }
+    // Another account's position, and a bounty account of the wrong token
+    let steal = compound_ix(&env, &pair, &hunter_key, &other.pubkey(), &position, &hunter_key);
+    expect_err(env.send(&[budget(), steal], &[&hunter]), PluribusError::PositionNotFound);
+    let mut wrong = compound.clone();
+    wrong.accounts.iter_mut().filter(|meta| meta.pubkey == ata(&hunter_key, &env.sol, &TOKEN)).for_each(|meta| meta.pubkey = ata(&hunter_key, &env.usdc, &TOKEN));
+    assert!(env.send(&[budget(), wrong], &[&hunter]).is_err());
+    expect_ok(env.send(&[budget(), compound], &[&hunter]));
+}
+
+/// Swaps until the pair trades outside the range of `position`: under it when selling SOL, over it when buying
+fn push_price_out(env: &mut Env, pair: &Pair, position: &Pubkey, sell_sol: bool) {
+    let (lower, upper) = range_of(env, position);
+    for _ in 0..10 {
+        let active = active_of(env, pair);
+        if (sell_sol && active < lower) || (!sell_sol && active > upper) {
+            return;
+        }
+        let whale = trader(env, 3_000 * SOL, 300_000 * USDC);
+        let amount = if sell_sol { 300 * SOL } else { 20_000 * USDC };
+        expect_ok(env.send(&[budget(), swap_ix(env, pair, &whale.pubkey(), sell_sol, amount)], &[&whale]));
+    }
+    panic!("the price never left the position's range, now at {} for {lower}..={upper}", active_of(env, pair));
+}
+
+#[test]
+fn compound_into_a_range_the_price_has_left_adds_only_the_token_it_holds() {
+    // The price ends under a range that started around it, and over one that started under it
+    for (offset, width, sell_sol) in [(-34, 70, true), (-20, 15, false)] {
+        let Some(Compounding { mut env, pair, user, hunter, position, .. }) = compounding_over(offset, width, 0) else { return };
+        let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+        // Under its range a position holds only SOL and over it only USDC, though it earned fees in both on the way
+        push_price_out(&mut env, &pair, &position, sell_sol);
+        let price = active_price(&env, &pair);
+        env.set_price(&sol, price);
+        let fees = pending_fees(&mut env, &pair, &me, &position);
+        expect_ok(env.send(&[env.set_compound_ix(&me, &position, 100)], &[&user]));
+        let before = total_shares(&env, &position);
+
+        let compound = compound_ix(&env, &pair, &hunter.pubkey(), &me, &position, &hunter.pubkey());
+        let meta = expect_ok(env.send(&[budget(), compound], &[&hunter]));
+        let event = compounded(&meta);
+        println!("compound_dlmm with the price {} the range: {} compute units", if sell_sol { "under" } else { "over" }, meta.compute_units_consumed);
+        assert_eq!((event.fee_base, event.fee_usdc), fees);
+        let (held, held_fee, other, other_fee) = if sell_sol { (sol, fees.0, usdc, fees.1) } else { (usdc, fees.1, sol, fees.0) };
+        let (added, other_added) = if sell_sol { (event.added_base, event.added_usdc) } else { (event.added_usdc, event.added_base) };
+        // The other token has nowhere to go, so all of it after the bounty is the account's collateral
+        assert!(held_fee > 0 && other_fee > 0 && added > 0, "fees {fees:?}, added {added}, price {} for {:?}", active_of(&env, &pair), range_of(&env, &position));
+        assert_eq!(other_added, 0);
+        assert_eq!(kept(&env, &me, &other), other_fee - other_fee * 200 / 10_000);
+        assert!(kept(&env, &me, &held) < held_fee / 100);
+        assert!(total_shares(&env, &position) > before);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn compound_works_on_a_narrow_position_too() {
+    let Some(Compounding { mut env, pair, user, hunter, position, fees }) = compounding_over(-14, 30, 100) else { return };
+    let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+    let before = total_shares(&env, &position);
+    let compound = compound_ix(&env, &pair, &hunter.pubkey(), &me, &position, &hunter.pubkey());
+    let meta = expect_ok(env.send(&[budget(), compound], &[&hunter]));
+    println!("compound_dlmm over 30 bins: {} compute units", meta.compute_units_consumed);
+    assert_eq!(env.balance(&sol, &hunter.pubkey()), fees.0 * 200 / 10_000);
+    assert_eq!(env.balance(&usdc, &hunter.pubkey()), fees.1 * 200 / 10_000);
+    assert!(total_shares(&env, &position) > before);
+    assert_books_match_vaults(&env);
 }

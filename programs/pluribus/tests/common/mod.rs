@@ -11,7 +11,7 @@ use {
         token::spl_token::state::{Account as TokenState, AccountState, Mint as MintState},
     },
     litesvm::{
-        types::{FailedTransactionMetadata, TransactionMetadata},
+        types::{FailedTransactionMetadata, SimulatedTransactionInfo, TransactionMetadata},
         LiteSVM,
     },
     pluribus::{constants::*, error::PluribusError, instructions::HealthView, math, state::*},
@@ -285,6 +285,13 @@ impl Env {
         self.svm.expire_blockhash();
         let msg = Message::new_with_blockhash(ixs, Some(&signers[0].pubkey()), &self.svm.latest_blockhash());
         self.svm.send_transaction(VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap())
+    }
+
+    /// What `ixs` would do without doing it: the transaction's metadata and the accounts it would leave behind
+    pub fn simulate(&mut self, ixs: &[Instruction], payer: &Keypair) -> SimulatedTransactionInfo {
+        self.svm.expire_blockhash();
+        let msg = Message::new_with_blockhash(ixs, Some(&payer.pubkey()), &self.svm.latest_blockhash());
+        self.svm.simulate_transaction(VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[payer]).unwrap()).expect("simulation")
     }
 
     pub fn now(&self) -> i64 {

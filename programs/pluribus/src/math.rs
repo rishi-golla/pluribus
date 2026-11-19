@@ -75,6 +75,12 @@ pub fn sqrt_prices_within(sqrt_price: u128, reference_sqrt: u128, tolerance_bps:
     Ok((r * r / ONE).abs_diff(ONE) <= ONE / BPS * tolerance_bps as u128)
 }
 
+/// Whether two prices in the same fixed-point unit are within `tolerance_bps` of each other, the first measured against the second
+pub fn prices_within(price: u128, reference: u128, tolerance_bps: u16) -> Result<bool> {
+    require!(reference > 0, PluribusError::MathOverflow);
+    Ok(price.abs_diff(reference) <= mul_div_wide(reference, tolerance_bps as u128, BPS)?)
+}
+
 /// Liquidity that up to `amount_a` and `amount_b` add to the range `tick_lower..tick_upper` of a concentrated liquidity
 /// pool at `sqrt_price`, and the tokens it takes: in range both sides limit it, outside it only the one token the range holds
 /// The pool rounds what it asks for up, so the liquidity is trimmed until that fits inside what is there

@@ -1214,6 +1214,206 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "compoundDlmm",
+      "discriminator": [
+        121,
+        23,
+        220,
+        218,
+        80,
+        244,
+        16,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "credit.owner",
+                "account": "creditAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lpMarket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lbPair"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lbPair",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "baseAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lpMarket.baseMint",
+                "account": "lpMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "baseVault",
+          "writable": true
+        },
+        {
+          "name": "baseMint"
+        },
+        {
+          "name": "basePrice"
+        },
+        {
+          "name": "usdcAsset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcCollateralVault",
+          "writable": true
+        },
+        {
+          "name": "usdcMint",
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "bountyBase",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bountyUsdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bitmapExtension"
+        },
+        {
+          "name": "reserveX",
+          "writable": true
+        },
+        {
+          "name": "reserveY",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "docs": [
+            "Both of a listed pair's tokens are classic tokens"
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "memoProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "dlmmProgram",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "compoundOrca",
       "discriminator": [
         171,
