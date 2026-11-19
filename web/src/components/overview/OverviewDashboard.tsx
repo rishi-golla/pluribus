@@ -91,9 +91,9 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
 const VOL_W = 546;
 const VOL_H = 240;
 const VOL_KEYS = [
-  { key: "draws", label: "Draws", color: "#9e8cff" },
-  { key: "repays", label: "Repayments", color: "#3ddc97" },
-  { key: "autopay", label: "Autopay", color: "#6aa8ff" },
+  { key: "draws", label: "Draws", color: "#a98bff" },
+  { key: "repays", label: "Repayments", color: "#c6f432" },
+  { key: "autopay", label: "Autopay", color: "#33c3d6" },
 ] as const;
 
 function VolumePanel({ stats }: { stats: DayStats[] }) {
@@ -185,7 +185,7 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
             })}
           </svg>
           <div
-            className="glass-tip pointer-events-none absolute top-1 min-w-[170px] rounded-[10px] border border-line-2 px-3 py-2.5 text-xs transition-[left] duration-150"
+            className="glass-tip pointer-events-none absolute top-1 min-w-[170px] border border-line-2 px-3 py-2.5 text-xs transition-[left] duration-150"
             style={{ left: Math.min(VOL_W - 190, Math.max(0, pad.left + idx * (bw + gap) - 85)) }}
           >
             <div className="mb-1.5 text-t3">{dateLabel(n - 1 - idx, true, end)}</div>
@@ -255,8 +255,8 @@ function FeesPanel() {
             height={VOL_H}
             pad={{ top: 10, right: 48, bottom: 26, left: 4 }}
             lines={[
-              { key: "lenders", label: "To lenders", color: "#3ddc97", data: lenders, fill: 0.22 },
-              { key: "insurance", label: "Insurance fund", color: "#a0a4ab", data: insurance, fill: 0.08, width: 1.5 },
+              { key: "lenders", label: "To lenders", color: "#c6f432", data: lenders, fill: 0.22 },
+              { key: "insurance", label: "Insurance fund", color: "#a3a3a3", data: insurance, fill: 0.08, width: 1.5 },
             ]}
             yMax={3000}
             yTicks={[0, 1500, 3000]}
@@ -283,11 +283,11 @@ function MixBar({ title, markets, field }: { title: string; markets: Market[]; f
         <Label>{title}</Label>
         <span className="font-medium">{compactUsd(value)}</span>
       </div>
-      <div className="mt-2.5 flex h-3 gap-[3px] overflow-hidden rounded-full">
+      <div className="mt-2.5 flex h-3 gap-[3px] overflow-hidden ">
         {byClass.map(({ c, v }, i) => (
           <motion.i
             key={c}
-            className="block h-full rounded-[3px]"
+            className="block h-full "
             style={{ background: CLASS_COLORS[c] }}
             initial={{ width: 0 }}
             whileInView={{ width: `${value > 0 ? (v / value) * 100 : 0}%` }}
@@ -381,7 +381,7 @@ function LiquidityMeter({ n }: { n: number }) {
   return (
     <span className="flex h-3.5 items-end gap-[3px]" aria-label={`Liquidity score ${n} of 5`}>
       {[6, 8, 10, 12, 14].map((h, i) => (
-        <i key={h} className={`block w-1 rounded-[1px] ${i < n ? "bg-t2" : "bg-s3"}`} style={{ height: h }} />
+        <i key={h} className={`block w-1 ${i < n ? "bg-t2" : "bg-s3"}`} style={{ height: h }} />
       ))}
     </span>
   );
@@ -414,7 +414,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
             key={f}
             type="button"
             onClick={() => setFilter(f)}
-            className={`inline-flex h-[34px] cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border border-line-2 px-3.5 text-[13px] transition-colors ${
+            className={`inline-flex h-[34px] cursor-pointer items-center gap-2 whitespace-nowrap border border-line-2 px-3.5 text-[13px] transition-colors ${
               filter === f ? "bg-s3 text-t1" : "bg-white/[0.015] text-t2 hover:text-t1"
             }`}
           >
@@ -499,7 +499,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                     <td className="text-right font-medium">{compactUsd(m.borrowed)}</td>
                     <td className="text-right">
                       <div className="inline-flex items-center gap-2.5">
-                        <span className="flex h-1 w-14 overflow-hidden rounded-full bg-s3">
+                        <span className="flex h-1 w-14 overflow-hidden bg-s3">
                           <i className={`block h-full ${used > 0.85 ? "bg-orange" : "bg-t2"}`} style={{ width: `${Math.min(100, used * 100)}%` }} />
                         </span>
                         <span className="font-medium">{pct(used, 0)}</span>
@@ -545,7 +545,7 @@ export function OverviewDashboard() {
         </div>
         <div className="flex gap-2">
           <Chip>
-            <span className="size-1.5 rounded-full bg-green shadow-[0_0_8px_var(--color-green)]" />
+            <span className="size-1.5 bg-green shadow-[0_0_8px_var(--color-green)]" />
             {live && deployment?.demoMode ? "Demo prices live" : "Pyth prices live"}
           </Chip>
           <Chip>

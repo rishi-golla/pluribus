@@ -176,7 +176,7 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
                 setPicked(o.id);
                 setRaw("");
               }}
-              className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${off ? "cursor-not-allowed border-line bg-bg opacity-50" : "cursor-pointer"} ${
+              className={`flex w-full items-center gap-3 border px-3.5 py-3 text-left transition-colors ${off ? "cursor-not-allowed border-line bg-bg opacity-50" : "cursor-pointer"} ${
                 on ? "border-brand/45 bg-brand/5" : off ? "" : "border-line bg-bg hover:border-line-2"
               }`}
             >
@@ -190,11 +190,11 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
             </button>
           );
         })}
-        {!options.length && <div className="rounded-xl border border-line bg-bg px-3.5 py-6 text-center text-t3">No collateral deposited yet.</div>}
+        {!options.length && <div className="border border-line bg-bg px-3.5 py-6 text-center text-t3">No collateral deposited yet.</div>}
       </div>
       {option && !isLp && (
         <>
-          <label className="mt-3.5 block rounded-[14px] border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
+          <label className="mt-3.5 block border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
             <div className="flex items-center justify-between">
               <Label>Amount</Label>
               <Label>
@@ -213,7 +213,7 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
                 }}
                 className="w-full min-w-0 bg-transparent text-[32px] font-medium tracking-[-0.035em] text-t1 outline-none placeholder:text-t3"
               />
-              <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
+              <span className="inline-flex h-9 shrink-0 items-center gap-2 border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
                 <Token src={iconSrc(option.icon)} size={20} />
                 {option.symbol}
               </span>
@@ -226,7 +226,7 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
                 key={q.label}
                 type="button"
                 onClick={() => setRaw((Math.floor(option.max! * q.pct * 1e4) / 1e4).toString())}
-                className="flex-1 cursor-pointer rounded-lg border border-line py-1.5 text-center text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1"
+                className="flex-1 cursor-pointer border border-line py-1.5 text-center text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1"
               >
                 {q.label}
               </button>
@@ -259,8 +259,8 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
             onClick={submit}
             disabled={!!error || status !== "idle"}
             whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-            className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
-              error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
+            className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 text-[15px] font-medium transition-colors ${
+              error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]"
             }`}
           >
             {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
@@ -285,7 +285,7 @@ export function CollateralDialog({ live, open, onClose }: { live: Live; open: { 
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgb(7_8_10/0.7)] backdrop-blur-sm"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgb(12_12_12/0.7)] backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

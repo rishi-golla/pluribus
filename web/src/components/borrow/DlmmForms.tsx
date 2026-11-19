@@ -80,8 +80,8 @@ function Submit({ label, error, status, onClick }: { label: string; error: strin
       onClick={onClick}
       disabled={!!error || status !== "idle"}
       whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-      className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
-        error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
+      className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 text-[15px] font-medium transition-colors ${
+        error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]"
       }`}
     >
       {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
@@ -92,7 +92,7 @@ function Submit({ label, error, status, onClick }: { label: string; error: strin
 
 function Note({ children }: { children: ReactNode }) {
   return (
-    <div className="mt-3 flex gap-2 rounded-xl border border-line bg-bg px-3.5 py-3 text-[12.5px] leading-[1.5] text-t3">
+    <div className="mt-3 flex gap-2 border border-line bg-bg px-3.5 py-3 text-[12.5px] leading-[1.5] text-t3">
       <Info size={14} strokeWidth={1.75} className="mt-px shrink-0" />
       <div>{children}</div>
     </div>
@@ -118,7 +118,7 @@ function AmountBox({
   off?: string;
 }) {
   return (
-    <label className={`block rounded-[14px] border border-line bg-bg px-4 py-3 transition-colors focus-within:border-line-2 ${off ? "opacity-55" : ""}`}>
+    <label className={`block border border-line bg-bg px-4 py-3 transition-colors focus-within:border-line-2 ${off ? "opacity-55" : ""}`}>
       <div className="flex items-center justify-between">
         <Label>{symbol}</Label>
         <Label>Available {money(max, 4)}</Label>
@@ -140,11 +140,11 @@ function AmountBox({
           type="button"
           disabled={!!off}
           onClick={() => onChange((Math.floor(max * 1e4) / 1e4).toString())}
-          className="cursor-pointer rounded-md border border-line px-2 py-0.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed"
+          className="cursor-pointer border border-line px-2 py-0.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed"
         >
           Max
         </button>
-        <span className="inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-s3 pl-1.5 pr-2.5 text-[13.5px] font-medium">
+        <span className="inline-flex h-8 shrink-0 items-center gap-2 border border-line-2 bg-s3 pl-1.5 pr-2.5 text-[13.5px] font-medium">
           <Token src={iconSrc(icon)} size={18} />
           {symbol}
         </span>
@@ -204,7 +204,7 @@ export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; ma
   return (
     <>
       {!row && market && (
-        <div className="mt-3.5 rounded-[14px] border border-line bg-bg px-4 py-3">
+        <div className="mt-3.5 border border-line bg-bg px-4 py-3">
           <div className="flex items-center justify-between">
             <Label>Range width</Label>
             <span className="text-[13.5px] font-medium">{width === 1 ? "1 bin" : `${width} bins`}</span>
@@ -216,7 +216,7 @@ export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; ma
             value={width}
             aria-label="Range width in bins"
             onChange={(e) => setWidth(Number(e.target.value))}
-            className="mt-2.5 w-full cursor-pointer accent-[#9e8cff]"
+            className="mt-2.5 w-full cursor-pointer accent-brand"
           />
           <div className="mt-1 flex justify-between text-xs text-t3">
             <span>Narrower earns more fees</span>
@@ -302,7 +302,7 @@ export function DlmmExitForm({ live, row, onClose }: { live: Live; row: Collater
         <Note>This position holds no liquidity. Closing it sends its rent and any unclaimed fees to your wallet and frees its slot.</Note>
       ) : (
         <>
-          <div className="mt-3.5 rounded-[14px] border border-line bg-bg px-4 py-3">
+          <div className="mt-3.5 border border-line bg-bg px-4 py-3">
             <div className="flex items-center justify-between">
               <Label>Withdraw</Label>
               <span className="text-[13.5px] font-medium">{pct}%</span>
@@ -314,7 +314,7 @@ export function DlmmExitForm({ live, row, onClose }: { live: Live; row: Collater
               value={pct}
               aria-label="Share of the position to withdraw"
               onChange={(e) => setPct(Number(e.target.value))}
-              className="mt-2.5 w-full cursor-pointer accent-[#9e8cff]"
+              className="mt-2.5 w-full cursor-pointer accent-brand"
             />
           </div>
           <div className="mt-2.5 flex gap-1.5">
@@ -323,7 +323,7 @@ export function DlmmExitForm({ live, row, onClose }: { live: Live; row: Collater
                 key={p}
                 type="button"
                 onClick={() => setPct(p)}
-                className={`flex-1 cursor-pointer rounded-lg border py-1.5 text-center text-xs font-medium transition-colors hover:text-t1 ${
+                className={`flex-1 cursor-pointer border py-1.5 text-center text-xs font-medium transition-colors hover:text-t1 ${
                   pct === p ? "border-brand/45 bg-brand/5 text-t1" : "border-line text-t2 hover:border-line-2"
                 }`}
               >

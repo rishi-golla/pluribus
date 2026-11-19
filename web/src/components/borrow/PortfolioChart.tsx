@@ -36,9 +36,9 @@ export function PortfolioChart({ range, focus, samples }: { range: Range; focus:
     : { collateral: collateral.slice(-n), limit: limit.slice(-n), debt: debt.slice(-n) };
   const yMax = live ? niceMax(Math.max(...data.collateral, ...data.limit, ...data.debt)) : 60000;
   const lines = [
-    { key: "Value", label: "Collateral", color: "#9e8cff", data: data.collateral, fill: 0.28, width: 2 },
-    { key: "Credit", label: "Credit limit", color: "#ededef", data: data.limit, width: 1.5, dash: "4 4" },
-    { key: "Debt", label: "Debt", color: "#ffa24c", data: data.debt, fill: 0.1, width: 1.75 },
+    { key: "Value", label: "Collateral", color: "#c6f432", data: data.collateral, fill: 0.28, width: 2 },
+    { key: "Credit", label: "Credit limit", color: "#f0f0f0", data: data.limit, width: 1.5, dash: "4 4" },
+    { key: "Debt", label: "Debt", color: "#f59a3d", data: data.debt, fill: 0.1, width: 1.75 },
   ];
   return (
     <div className="mt-2">

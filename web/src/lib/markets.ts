@@ -51,11 +51,11 @@ export const TOTALS = (() => {
 })();
 
 export const CLASS_COLORS: Record<AssetClass, string> = {
-  SOL: "#9e8cff",
-  LSTs: "#6aa8ff",
-  "LP positions": "#3ddc97",
-  Stocks: "#ffa24c",
-  Memes: "#ff6166",
+  SOL: "#a98bff",
+  LSTs: "#33c3d6",
+  "LP positions": "#c6f432",
+  Stocks: "#f59a3d",
+  Memes: "#ff5c8a",
 };
 
 /** 90 days of protocol activity. The last day matches today's 24h volume. */

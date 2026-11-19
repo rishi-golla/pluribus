@@ -35,12 +35,12 @@ function Waterfall({ s, step = 6000 }: { s: MonthSummary; step?: number }) {
   const W = 805;
   const H = 270;
   const steps: [string, number, "total" | "up" | "down", string][] = [
-    ["Opening", s.opening, "total", "#2a2e35"],
-    ["Draws", s.draws, "up", "#9e8cff"],
-    ["Interest", s.interest, "up", "#ffa24c"],
-    ["Repayments", -s.repayments, "down", "#3ddc97"],
-    ["Autopay", -s.autopay, "down", "#3ddc97"],
-    ["Closing", s.closing, "total", "#ededef"],
+    ["Opening", s.opening, "total", "#2e2e2e"],
+    ["Draws", s.draws, "up", "#a98bff"],
+    ["Interest", s.interest, "up", "#f59a3d"],
+    ["Repayments", -s.repayments, "down", "#c6f432"],
+    ["Autopay", -s.autopay, "down", "#c6f432"],
+    ["Closing", s.closing, "total", "#f0f0f0"],
   ];
   const yMax = Math.max(step, Math.ceil(peakOf(s) / step) * step);
   const pt = 26;
@@ -108,7 +108,7 @@ function Waterfall({ s, step = 6000 }: { s: MonthSummary; step?: number }) {
               x={x + bw / 2}
               y={Y(b.top) - 9}
               textAnchor="middle"
-              style={{ fill: "#ededef", fontSize: 12.5, fontWeight: 500 }}
+              style={{ fill: "#f0f0f0", fontSize: 12.5, fontWeight: 500 }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.45 + i * 0.12 }}
@@ -135,7 +135,7 @@ function MonthPicker({ months, value, onChange }: { months: { key: string; label
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3"
+        className="inline-flex h-9 cursor-pointer items-center gap-2 border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3"
       >
         <Calendar size={16} strokeWidth={1.75} />
         {current.label}
@@ -147,7 +147,7 @@ function MonthPicker({ months, value, onChange }: { months: { key: string; label
             <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
             <motion.ul
               role="listbox"
-              className="glass-tip absolute right-0 z-30 mt-2 w-56 rounded-xl border border-line-2 p-1.5"
+              className="glass-tip absolute right-0 z-30 mt-2 w-56 border border-line-2 p-1.5"
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98 }}
@@ -163,7 +163,7 @@ function MonthPicker({ months, value, onChange }: { months: { key: string; label
                       onChange(m.key);
                       setOpen(false);
                     }}
-                    className="flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-[13.5px] transition-colors hover:bg-white/[0.05]"
+                    className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-[13.5px] transition-colors hover:bg-white/[0.05]"
                   >
                     <span>
                       {m.label}
@@ -239,11 +239,11 @@ export function StatementsDashboard() {
         </div>
         <div className="flex gap-2">
           <MonthPicker months={months} value={monthKey} onChange={setMonthKey} />
-          <button type="button" onClick={exportCsv} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3">
+          <button type="button" onClick={exportCsv} className="inline-flex h-9 cursor-pointer items-center gap-2 border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3">
             <FileSpreadsheet size={16} strokeWidth={1.75} />
             Export CSV
           </button>
-          <button type="button" onClick={() => window.print()} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] bg-[#f4f4f5] px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white">
+          <button type="button" onClick={() => window.print()} className="inline-flex h-9 cursor-pointer items-center gap-2 bg-brand px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white">
             <Download size={16} strokeWidth={1.75} />
             Download PDF
           </button>
@@ -281,7 +281,7 @@ export function StatementsDashboard() {
             <h3 className="text-[15px] font-medium">Balance movement</h3>
             <div className="flex gap-4 text-[12.5px] text-t3">
               <span className="flex items-center gap-1.5">
-                <Swatch color="var(--color-brand)" />
+                <Swatch color="#a98bff" />
                 Increases debt
               </span>
               <span className="flex items-center gap-1.5">
@@ -329,7 +329,7 @@ export function StatementsDashboard() {
                     >
                       <td className="pl-[22px]">
                         <div className="flex items-center gap-3">
-                          <span className="grid size-8 place-items-center rounded-[10px] border border-line bg-s3" style={{ color: k.color }}>
+                          <span className="grid size-8 place-items-center border border-line bg-s3" style={{ color: k.color }}>
                             <Icon size={15} strokeWidth={1.75} />
                           </span>
                           <div>
@@ -375,7 +375,7 @@ export function StatementsDashboard() {
               </div>
               <div className={`mt-[18px] grid gap-1.5 ${tierCols}`}>
                 {progress.map((w, i) => (
-                  <div key={i} className="h-1.5 overflow-hidden rounded-full bg-s3">
+                  <div key={i} className="h-1.5 overflow-hidden bg-s3">
                     <motion.i
                       className="block h-full bg-brand"
                       initial={{ width: 0 }}
@@ -407,7 +407,7 @@ export function StatementsDashboard() {
               <Label className="mb-1.5">LP fees applied to debt</Label>
               <motion.div
                 key={`a-${monthKey}`}
-                className="flex h-7 items-center rounded-lg bg-green-dim px-2.5 text-[12.5px] font-medium text-green"
+                className="flex h-7 items-center bg-green-dim px-2.5 text-[12.5px] font-medium text-green"
                 initial={{ width: "20%" }}
                 animate={{ width: `${Math.max(20, Math.min(100, (s.autopay / widest) * 100))}%` }}
                 transition={{ duration: 0.7, ease: EASE }}
@@ -417,7 +417,7 @@ export function StatementsDashboard() {
               <Label className="mb-1.5 mt-3">Interest accrued</Label>
               <motion.div
                 key={`i-${monthKey}`}
-                className="flex h-7 items-center whitespace-nowrap rounded-lg bg-orange-dim px-2.5 text-[12.5px] font-medium text-orange"
+                className="flex h-7 items-center whitespace-nowrap bg-orange-dim px-2.5 text-[12.5px] font-medium text-orange"
                 initial={{ width: "20%" }}
                 animate={{ width: `${Math.max(20, Math.min(100, (s.interest / widest) * 100))}%` }}
                 transition={{ duration: 0.7, ease: EASE, delay: 0.1 }}

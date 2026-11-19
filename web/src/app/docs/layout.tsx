@@ -19,7 +19,7 @@ export default function DocsLayout({ children }: LayoutProps<"/docs">) {
               <Link
                 key={l.href}
                 href={l.href}
-                className={`rounded-[9px] px-3.5 py-2 text-sm font-medium transition-colors ${l.href === "/docs" ? "bg-s3 text-t1" : "text-t2 hover:text-t1"}`}
+                className={` px-3.5 py-2 text-sm font-medium transition-colors ${l.href === "/docs" ? "bg-s3 text-t1" : "text-t2 hover:text-t1"}`}
               >
                 {l.label}
               </Link>

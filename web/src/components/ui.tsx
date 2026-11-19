@@ -4,21 +4,11 @@ import type { ComponentProps, ReactNode } from "react";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
-export function Logo({ size = 26 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 26 26" fill="none" aria-hidden>
-      <rect x="1" y="1" width="24" height="24" rx="7" fill="#f4f4f5" />
-      <path d="M9.25 7.5v11" stroke="#09090b" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M9.25 7.5h4.25a3.6 3.6 0 0 1 0 7.2H9.25" stroke="#9e8cff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
+// the mono wordmark stands in until a logo is picked
 export function Brandmark() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 text-[17px] font-semibold tracking-[-0.02em]">
-      <Logo />
-      Pluribus
+    <Link href="/" className="text-[19px] font-semibold tracking-[-0.04em]">
+      pluribus
     </Link>
   );
 }
@@ -30,8 +20,8 @@ export function Button({ variant = "default", size = "md", className, children, 
     <Link
       className={cx(
         "inline-flex items-center justify-center gap-2 whitespace-nowrap border font-medium transition-colors",
-        size === "md" ? "h-9 rounded-[10px] px-3.5 text-[13.5px]" : "h-12 rounded-xl px-[22px] text-[15px]",
-        variant === "white" && "border-transparent bg-[#f4f4f5] text-[#09090b] hover:bg-white",
+        size === "md" ? "h-9 px-3.5 text-[13.5px]" : "h-12 px-[22px] text-[15px]",
+        variant === "white" && "border-transparent bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]",
         variant === "default" && "border-line-2 bg-s2 text-t1 hover:bg-s3",
         variant === "ghost" && "border-transparent bg-transparent text-t2 hover:text-t1",
         className,
@@ -45,7 +35,7 @@ export function Button({ variant = "default", size = "md", className, children, 
 
 export function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex h-[34px] items-center gap-2 whitespace-nowrap rounded-full border border-line-2 bg-white/[0.015] px-3.5 text-[13px] text-t2 [&_b]:font-medium [&_b]:text-t1">
+    <span className="inline-flex h-[34px] items-center gap-2 whitespace-nowrap border border-line-2 bg-white/[0.015] px-3.5 text-[13px] text-t2 [&_b]:font-medium [&_b]:text-t1">
       {children}
     </span>
   );
@@ -63,7 +53,7 @@ export function Tag({ tone = "neutral", className, children }: { tone?: keyof ty
   return (
     <span
       className={cx(
-        "inline-flex h-[22px] items-center gap-[5px] whitespace-nowrap rounded-md px-2 text-[11.5px] font-medium [&_svg]:size-3",
+        "inline-flex h-[22px] items-center gap-[5px] whitespace-nowrap px-2 text-[11.5px] font-medium [&_svg]:size-3",
         tagTones[tone],
         className,
       )}
@@ -74,7 +64,7 @@ export function Tag({ tone = "neutral", className, children }: { tone?: keyof ty
 }
 
 export function StatusDot() {
-  return <span className="inline-block size-1.5 rounded-full bg-current" />;
+  return <span className="inline-block size-1.5 bg-current" />;
 }
 
 export function Token({ src, size = 32, className }: { src: string; size?: number; className?: string }) {
@@ -86,7 +76,7 @@ export function Token({ src, size = 32, className }: { src: string; size?: numbe
 }
 
 export function Swatch({ color, className }: { color: string; className?: string }) {
-  return <span className={cx("inline-block size-2 shrink-0 rounded-[2px]", className)} style={{ background: color }} />;
+  return <span className={cx("inline-block size-2 shrink-0 ", className)} style={{ background: color }} />;
 }
 
 export function Label({ children, className }: { children: ReactNode; className?: string }) {

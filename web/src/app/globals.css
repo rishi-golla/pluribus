@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #07080a;
-  --color-s1: #0d0f12;
-  --color-s2: #121418;
-  --color-s3: #181b20;
-  --color-line: rgb(255 255 255 / 0.06);
-  --color-line-2: rgb(255 255 255 / 0.1);
-  --color-t1: #ededef;
-  --color-t2: #a0a4ab;
-  --color-t3: #62666e;
-  --color-brand: #9e8cff;
-  --color-brand-dim: rgb(158 140 255 / 0.14);
-  --color-green: #3ddc97;
-  --color-green-dim: rgb(61 220 151 / 0.12);
-  --color-orange: #ffa24c;
-  --color-orange-dim: rgb(255 162 76 / 0.12);
+  /* neutral black, one lime accent; healthy reads as the accent */
+  --color-bg: #0c0c0c;
+  --color-s1: #121212;
+  --color-s2: #181818;
+  --color-s3: #222222;
+  --color-line: rgb(255 255 255 / 0.1);
+  --color-line-2: rgb(255 255 255 / 0.22);
+  --color-t1: #f0f0f0;
+  --color-t2: #a3a3a3;
+  --color-t3: #6e6e6e;
+  --color-brand: #c6f432;
+  --color-brand-dim: rgb(198 244 50 / 0.12);
+  --color-green: #c6f432;
+  --color-green-dim: rgb(198 244 50 / 0.12);
+  --color-orange: #f59a3d;
+  --color-orange-dim: rgb(245 154 61 / 0.12);
   --color-red: #ff6166;
-  /* The landing page's LP-position color */
-  --color-blue: #6aa8ff;
-  --color-blue-dim: rgb(106 168 255 / 0.12);
+  --color-blue: #33c3d6;
+  --color-blue-dim: rgb(51 195 214 / 0.12);
   --text-xs--line-height: 1.4;
   --text-sm--line-height: 1.4;
   --text-base--line-height: 1.4;
@@ -36,10 +36,9 @@
   }
   body {
     color: var(--color-t1);
-    font-family: var(--font-sans);
+    font-family: var(--font-mono);
     font-size: 14px;
     line-height: 1.4;
-    font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
   }
   :focus-visible {
@@ -52,33 +51,7 @@
   .panel {
     background: linear-gradient(180deg, rgb(255 255 255 / 0.022), rgb(255 255 255 / 0) 160px), var(--color-s1);
     border: 1px solid var(--color-line);
-    border-radius: 16px;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
-  }
-
-  /* The landing page's look: neutral black, one lime accent, mono type. Scoped here until the app takes it too */
-  .theme-terminal {
-    --color-bg: #0c0c0c;
-    --color-s1: #121212;
-    --color-s2: #181818;
-    --color-s3: #222222;
-    --color-line: rgb(255 255 255 / 0.1);
-    --color-line-2: rgb(255 255 255 / 0.22);
-    --color-t1: #f0f0f0;
-    --color-t2: #a3a3a3;
-    --color-t3: #6e6e6e;
-    --color-brand: #c6f432;
-    --color-brand-dim: rgb(198 244 50 / 0.12);
-    /* healthy reads as the accent here */
-    --color-green: #c6f432;
-    --color-green-dim: rgb(198 244 50 / 0.12);
-    background: var(--color-bg);
-    color: var(--color-t1);
-    font-family: var(--font-mono);
-    font-feature-settings: normal;
-  }
-  .theme-terminal :focus-visible {
-    outline-color: var(--color-brand);
   }
 
   /* The hero grid's cells: borrowable, the buffer before liquidation, the crash haircut, and not read yet */
@@ -178,11 +151,11 @@
   }
 
   .app-ambient {
-    background: radial-gradient(900px 340px at 50% -120px, rgb(158 140 255 / 0.13), transparent 70%);
+    background: radial-gradient(900px 340px at 50% -120px, rgb(198 244 50 / 0.05), transparent 70%);
   }
 
   .text-fade {
-    background: linear-gradient(180deg, #ededef 0%, #7d828a 100%);
+    background: linear-gradient(180deg, #f0f0f0 0%, #808080 100%);
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -192,17 +165,17 @@
   }
 
   .health-scale {
-    background: linear-gradient(90deg, #ff6166 0%, #ffa24c 28%, #3ddc97 60%, #3ddc97 100%);
+    background: linear-gradient(90deg, #ff6166 0%, #f59a3d 28%, #c6f432 60%, #c6f432 100%);
   }
 
   .glass-tip {
-    background: rgb(24 27 32 / 0.92);
+    background: rgb(24 24 24 / 0.94);
     backdrop-filter: blur(8px);
     box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
   }
 
   .wallet-avatar {
-    background: conic-gradient(from 200deg, #9e8cff, #3ddc97, #6aa8ff, #9e8cff);
+    background: conic-gradient(from 200deg, #c6f432, #33c3d6, #a98bff, #c6f432);
   }
 
   /* The guides on /docs, rendered from the repository's markdown */
@@ -270,13 +243,11 @@
     color: var(--color-t1);
     background: var(--color-s3);
     border: 1px solid var(--color-line);
-    border-radius: 6px;
     padding: 1px 5px;
   }
   .docs pre {
     background: var(--color-s1);
     border: 1px solid var(--color-line);
-    border-radius: 12px;
     padding: 16px 18px;
     overflow-x: auto;
     font-size: 13px;
@@ -291,7 +262,6 @@
   .docs-table {
     overflow-x: auto;
     border: 1px solid var(--color-line);
-    border-radius: 12px;
   }
   .docs table {
     width: 100%;

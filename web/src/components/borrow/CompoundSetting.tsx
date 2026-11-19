@@ -25,7 +25,7 @@ export function CompoundPill({ bps, onOpen }: { bps: number; onOpen: () => void 
         onOpen();
       }}
       title="Change what this position's fees do"
-      className={`mt-2 inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-md border border-line-2 px-2 text-[11.5px] font-medium transition-colors hover:bg-s2 hover:text-t1 ${bps ? "text-brand" : "text-t2"}`}
+      className={`mt-2 inline-flex h-[22px] cursor-pointer items-center gap-1 whitespace-nowrap border border-line-2 px-2 text-[11px] font-medium transition-colors hover:bg-s2 hover:text-t1 ${bps ? "text-brand" : "text-t2"}`}
     >
       {bps ? `Fees: compound within ${percent(bps)}` : "Fees: repay debt"}
       <ChevronDown size={11} strokeWidth={2} />
@@ -100,7 +100,7 @@ function Form({ live, target, onClose }: { live: Live | null; target: CompoundTa
                   role="radio"
                   aria-checked={on}
                   onClick={() => setPicked(t)}
-                  className={`h-9 flex-1 cursor-pointer rounded-lg border text-[13px] font-medium transition-colors ${on ? "border-brand/45 bg-brand/5 text-t1" : "border-line text-t2 hover:border-line-2 hover:text-t1"}`}
+                  className={`h-9 flex-1 cursor-pointer border text-[13px] font-medium transition-colors ${on ? "border-brand/45 bg-brand/5 text-t1" : "border-line text-t2 hover:border-line-2 hover:text-t1"}`}
                 >
                   {t === "custom" ? "Custom" : percent(t)}
                 </button>
@@ -108,7 +108,7 @@ function Form({ live, target, onClose }: { live: Live | null; target: CompoundTa
             })}
           </div>
           {picked === "custom" && (
-            <label className="mt-2.5 flex items-center justify-between gap-3 rounded-[14px] border border-line bg-bg px-4 py-2.5 transition-colors focus-within:border-line-2">
+            <label className="mt-2.5 flex items-center justify-between gap-3 border border-line bg-bg px-4 py-2.5 transition-colors focus-within:border-line-2">
               <input
                 inputMode="decimal"
                 aria-label={`Tolerance in percent, up to ${percent(MAX_TOLERANCE_BPS)}`}
@@ -138,8 +138,8 @@ function Form({ live, target, onClose }: { live: Live | null; target: CompoundTa
         onClick={submit}
         disabled={!!error || status !== "idle"}
         whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-        className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
-          error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
+        className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 text-[15px] font-medium transition-colors ${
+          error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]"
         }`}
       >
         {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
@@ -162,7 +162,7 @@ export function CompoundDialog({ live, target, onClose }: { live: Live | null; t
     <AnimatePresence>
       {target && (
         <motion.div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgb(7_8_10/0.7)] backdrop-blur-sm"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgb(12_12_12/0.7)] backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

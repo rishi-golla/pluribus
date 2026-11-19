@@ -20,7 +20,7 @@ const TRANCHES = {
     name: "Senior",
     token: "sUSDC",
     apy: 0.069,
-    color: "#3ddc97",
+    color: "#c6f432",
     tone: "green" as const,
     badge: Shield,
     tag: { icon: ShieldCheck, text: "Protected" },
@@ -34,7 +34,7 @@ const TRANCHES = {
     name: "Junior",
     token: "jUSDC",
     apy: 0.242,
-    color: "#ffa24c",
+    color: "#f59a3d",
     tone: "orange" as const,
     badge: Zap,
     tag: { icon: Flame, text: "First loss" },
@@ -128,15 +128,15 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
       aria-pressed={selected}
       whileHover={soon ? undefined : { y: -2 }}
       className={`panel relative overflow-hidden px-[26px] pt-6 text-left transition-[border-color,box-shadow] duration-300 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
-        selected ? "border-brand/35 shadow-[inset_0_0_0_1px_rgba(158,140,255,0.12),0_0_0_4px_rgba(158,140,255,0.05)]" : soon ? "" : "hover:border-line-2"
+        selected ? "border-brand/35 shadow-[inset_0_0_0_1px_rgba(198,244,50,0.12),0_0_0_4px_rgba(198,244,50,0.05)]" : soon ? "" : "hover:border-line-2"
       }`}
     >
       <div className="pointer-events-none absolute -right-20 -top-[120px] h-[300px] w-[360px] rounded-full opacity-[0.22] blur-[60px]" style={{ background: t.color }} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="relative grid size-10 place-items-center rounded-xl border border-line-2 bg-s2">
+          <div className="relative grid size-10 place-items-center border border-line-2 bg-s2">
             <Token src="/tokens/usdc.webp" size={24} />
-            <span className="absolute -bottom-[5px] -right-[5px] grid size-[18px] place-items-center rounded-md shadow-[0_0_0_2px_var(--color-s1)]" style={{ background: t.color }}>
+            <span className="absolute -bottom-[5px] -right-[5px] grid size-[18px] place-items-center shadow-[0_0_0_2px_var(--color-s1)]" style={{ background: t.color }}>
               <Badge size={11} strokeWidth={2.5} className="text-[#09090b]" />
             </span>
           </div>
@@ -202,7 +202,7 @@ function liveHistory(live: Live, samples: Sample[], range: EarnRange): History {
       ],
     },
     Utilization: {
-      lines: [{ key: "util", label: "Utilization", color: "#9e8cff", data: used, fill: 0.24 }],
+      lines: [{ key: "util", label: "Utilization", color: "#a98bff", data: used, fill: 0.24 }],
       ...axis(100),
       ...percent(1),
       stats: [
@@ -235,8 +235,8 @@ function YieldHistory() {
   const config = (samples ? liveHistory(live, samples, range) : {
     APY: {
       lines: [
-        { key: "jun", label: "Junior", color: "#ffa24c", data: s(JUNIOR_APY), fill: 0.2 },
-        { key: "sen", label: "Senior", color: "#3ddc97", data: s(SENIOR_APY), fill: 0.12 },
+        { key: "jun", label: "Junior", color: "#f59a3d", data: s(JUNIOR_APY), fill: 0.2 },
+        { key: "sen", label: "Senior", color: "#c6f432", data: s(SENIOR_APY), fill: 0.12 },
       ],
       yMax: 32,
       yTicks: [0, 8, 16, 24, 32],
@@ -249,7 +249,7 @@ function YieldHistory() {
       ],
     },
     Utilization: {
-      lines: [{ key: "util", label: "Utilization", color: "#9e8cff", data: s(UTIL), fill: 0.24 }],
+      lines: [{ key: "util", label: "Utilization", color: "#a98bff", data: s(UTIL), fill: 0.24 }],
       yMax: 100,
       yTicks: [0, 25, 50, 75, 100],
       fmtY: (v: number) => `${v}%`,
@@ -262,8 +262,8 @@ function YieldHistory() {
     },
     Deposits: {
       lines: [
-        { key: "sdep", label: "Senior", color: "#3ddc97", data: s(SENIOR_DEP), fill: 0.16 },
-        { key: "jdep", label: "Junior", color: "#ffa24c", data: s(JUNIOR_DEP), fill: 0.2 },
+        { key: "sdep", label: "Senior", color: "#c6f432", data: s(SENIOR_DEP), fill: 0.16 },
+        { key: "jdep", label: "Junior", color: "#f59a3d", data: s(JUNIOR_DEP), fill: 0.2 },
       ],
       yMax: 10,
       yTicks: [0, 2.5, 5, 7.5, 10],
@@ -396,7 +396,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
     <div className="panel">
       <div className="px-[22px] pb-[22px] pt-[18px]">
         {rules?.pausedUntil && (
-          <div className="mb-4 rounded-xl border border-orange/30 bg-orange/5 px-3.5 py-2.5 text-[12.5px] text-t2">
+          <div className="mb-4 border border-orange/30 bg-orange/5 px-3.5 py-2.5 text-[12.5px] text-t2">
             Junior exits paused until {when(rules.pausedUntil)}
           </div>
         )}
@@ -427,7 +427,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
                 aria-checked={on}
                 disabled={soon}
                 onClick={() => onTranche(id)}
-                className={`mt-2 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors first-of-type:mt-0 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
+                className={`mt-2 flex w-full items-center gap-3 border px-3.5 py-3 text-left transition-colors first-of-type:mt-0 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
                   on ? "border-brand/45 bg-brand/5" : soon ? "border-line bg-bg" : "border-line bg-bg hover:border-line-2"
                 }`}
               >
@@ -443,7 +443,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
               </button>
             );
           })}
-        <label className="mt-3.5 block rounded-[14px] border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
+        <label className="mt-3.5 block border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
           <div className="flex items-center justify-between">
             <Label>Amount</Label>
             <Label>
@@ -463,7 +463,7 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
               onBlur={() => raw && setRaw((Number(raw) || 0).toFixed(2))}
               className="w-full min-w-0 bg-transparent text-[32px] font-medium tracking-[-0.035em] text-t1 outline-none placeholder:text-t3"
             />
-            <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
+            <span className="inline-flex h-9 shrink-0 items-center gap-2 border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
               <Token src="/tokens/usdc.webp" size={20} />
               USDC
               <ChevronDown size={16} strokeWidth={1.75} className="text-t3" />
@@ -502,8 +502,8 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
           onClick={submit}
           disabled={!!error || status !== "idle"}
           whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-          className={`mt-4 flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
-            error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
+          className={`mt-4 flex h-12 w-full items-center justify-center gap-2.5 text-[15px] font-medium transition-colors ${
+            error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]"
           }`}
         >
           {status !== "idle" && <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#09090b]/25 border-t-[#09090b]" aria-hidden />}
@@ -527,9 +527,9 @@ function SeniorQueue({ live }: { live: Live }) {
     if (ok) toast(done);
   };
   const { cash, seniorQueue } = live.pool;
-  const chip = "h-9 flex-1 cursor-pointer rounded-lg border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  const chip = "h-9 flex-1 cursor-pointer border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
-    <div className="mt-4 rounded-xl border border-line bg-bg px-3.5 py-3">
+    <div className="mt-4 border border-line bg-bg px-3.5 py-3">
       <div className="flex items-center justify-between">
         <Label>Withdrawal queue</Label>
         <span className="text-[12px] text-t3">{money(seniorQueue.reserved)} USDC held for the queue</span>
@@ -596,9 +596,9 @@ function ExitQueue({ live }: { live: Live }) {
     setBusy(null);
     if (ok) toast(done);
   };
-  const chip = "h-9 flex-1 cursor-pointer rounded-lg border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  const chip = "h-9 flex-1 cursor-pointer border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
-    <div className="mt-4 rounded-xl border border-line bg-bg px-3.5 py-3">
+    <div className="mt-4 border border-line bg-bg px-3.5 py-3">
       <div className="flex items-center justify-between">
         <Label>Exit queue</Label>
         <Tag tone={state === "ready" ? "green" : state === "lapsed" ? "neutral" : "orange"}>{state === "ready" ? "Ready to claim" : state === "lapsed" ? "Lapsed" : "Waiting"}</Tag>
@@ -656,9 +656,9 @@ function ExitQueue({ live }: { live: Live }) {
 
 type Split = { share: number; color: string; label: string };
 const SPLIT: Split[] = [
-  { share: 0.59, color: "#3ddc97", label: "Senior yield" },
-  { share: 0.31, color: "#ffa24c", label: "Junior yield" },
-  { share: 0.1, color: "#a0a4ab", label: "Insurance fund" },
+  { share: 0.59, color: "#c6f432", label: "Senior yield" },
+  { share: 0.31, color: "#f59a3d", label: "Junior yield" },
+  { share: 0.1, color: "#a3a3a3", label: "Insurance fund" },
 ];
 
 function Donut({ split, apr }: { split: Split[]; apr: number }) {
@@ -666,7 +666,7 @@ function Donut({ split, apr }: { split: Split[]; apr: number }) {
   const C = 2 * Math.PI * R;
   return (
     <motion.svg width={120} height={120} viewBox="0 0 120 120" initial="hidden" whileInView="shown" viewport={{ once: true, amount: 0.6 }} aria-label="Interest split">
-      <circle cx={60} cy={60} r={R} fill="none" stroke="#181b20" strokeWidth={12} />
+      <circle cx={60} cy={60} r={R} fill="none" stroke="#222222" strokeWidth={12} />
       {split.map((s, i) => (
         <motion.circle
           key={s.color}
@@ -682,10 +682,10 @@ function Donut({ split, apr }: { split: Split[]; apr: number }) {
           transition={{ duration: 0.9, delay: 0.15 + i * 0.25, ease: EASE }}
         />
       ))}
-      <text x={60} y={56} textAnchor="middle" style={{ fill: "#ededef", font: "500 17px var(--font-geist-sans)" }}>
+      <text x={60} y={56} textAnchor="middle" style={{ fill: "#f0f0f0", font: "500 17px var(--font-geist-mono)" }}>
         {(apr * 100).toFixed(1)}%
       </text>
-      <text x={60} y={73} textAnchor="middle" style={{ fill: "#62666e", font: "400 10.5px var(--font-geist-sans)" }}>
+      <text x={60} y={73} textAnchor="middle" style={{ fill: "#6e6e6e", font: "400 10.5px var(--font-geist-mono)" }}>
         borrow APR
       </text>
     </motion.svg>
@@ -762,7 +762,7 @@ function LendingHistory({ live }: { live: Live | null }) {
               <tr key={r.id} className="border-t border-line transition-colors hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5">
                 <td className="pl-[22px]">
                   <div className="flex items-center gap-3">
-                    <span className="grid size-8 place-items-center rounded-[10px] border border-line bg-s3" style={{ color: k.color }}>
+                    <span className="grid size-8 place-items-center border border-line bg-s3" style={{ color: k.color }}>
                       <Icon size={15} strokeWidth={1.75} />
                     </span>
                     <div>
@@ -831,10 +831,10 @@ export function EarnDashboard() {
       ];
   const split: Split[] = pool
     ? [
-        { share: pool.split.senior, color: "#3ddc97", label: "Senior yield" },
-        ...(pool.junior ? [{ share: pool.split.junior, color: "#ffa24c", label: "Junior yield" }] : []),
-        { share: pool.split.protocol, color: "#9e8cff", label: "Protocol" },
-        { share: pool.split.insurance, color: "#a0a4ab", label: "Insurance fund" },
+        { share: pool.split.senior, color: "#c6f432", label: "Senior yield" },
+        ...(pool.junior ? [{ share: pool.split.junior, color: "#f59a3d", label: "Junior yield" }] : []),
+        { share: pool.split.protocol, color: "#a98bff", label: "Protocol" },
+        { share: pool.split.insurance, color: "#a3a3a3", label: "Insurance fund" },
       ]
     : SPLIT;
   return (
@@ -876,12 +876,12 @@ export function EarnDashboard() {
           <div className="px-[22px] pb-[22px] pt-2">
             {waterfall.map((w, i) => (
               <div key={w.n} className={`grid grid-cols-[28px_1fr_auto] items-center gap-3.5 py-3 ${i ? "border-t border-line" : ""}`}>
-                <span className="grid size-[26px] place-items-center rounded-lg bg-s3 text-xs font-semibold text-t2">{w.n}</span>
+                <span className="grid size-[26px] place-items-center bg-s3 text-xs font-semibold text-t2">{w.n}</span>
                 <div>
                   <div className="font-medium">{w.name}</div>
-                  <div className="mt-2 flex h-1 overflow-hidden rounded-full bg-s3">
+                  <div className="mt-2 flex h-1 overflow-hidden bg-s3">
                     <motion.i
-                      className="block h-full min-w-1.5 rounded-full"
+                      className="block h-full min-w-1.5 "
                       style={{ background: w.color }}
                       initial={{ width: 0 }}
                       whileInView={{ width: w.width }}

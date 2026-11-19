@@ -38,7 +38,7 @@ function Cta({ href, primary, size = "lg", children }: { href: string; primary?:
 
 export default function Home() {
   return (
-    <div className="theme-terminal min-h-screen">
+    <div className="min-h-screen">
       <div className="mx-auto max-w-[1280px] px-4 sm:px-10">
         <FadeUp onMount y={-8} duration={0.6}>
           <header className="flex h-[72px] items-center gap-10 border-b border-line-2">

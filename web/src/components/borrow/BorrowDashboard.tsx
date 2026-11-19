@@ -83,15 +83,15 @@ function CreditHero({ p }: { p: Projection }) {
             </Tag>
           )}
         </div>
-        <div className="mt-[22px] flex h-2.5 gap-[3px] overflow-hidden rounded-full">
-          <motion.i className="block h-full rounded-[3px] bg-brand" initial={{ width: 0 }} animate={{ width: `${base}%` }} transition={{ ...bar, delay: 0.2 }} />
+        <div className="mt-[22px] flex h-2.5 gap-[3px] overflow-hidden ">
+          <motion.i className="block h-full bg-brand" initial={{ width: 0 }} animate={{ width: `${base}%` }} transition={{ ...bar, delay: 0.2 }} />
           <motion.i
-            className={`block h-full rounded-[3px] ${p.mode === "Draw" ? "bg-brand/40" : "bg-green/50"}`}
+            className={`block h-full ${p.mode === "Draw" ? "bg-brand/40" : "bg-green/50"}`}
             initial={false}
             animate={{ width: `${delta}%`, opacity: delta > 0 ? 1 : 0 }}
             transition={bar}
           />
-          <i className="stripes block h-full flex-1 rounded-[3px]" />
+          <i className="stripes block h-full flex-1 " />
         </div>
         <div className="mt-3.5 flex gap-5 whitespace-nowrap text-[13px] text-t2 [&_b]:ml-1 [&_b]:font-medium [&_b]:text-t1">
           <span className="inline-flex items-center">
@@ -127,12 +127,12 @@ function CreditHero({ p }: { p: Projection }) {
         <div className={`mt-2.5 text-[40px] font-medium leading-[1.05] tracking-[-0.04em] tabular-nums transition-colors ${healthTone(health)}`}>
           {Number.isFinite(health) ? <Num value={health} decimals={2} countUp /> : "No debt"}
         </div>
-        <div className="health-scale relative mt-[22px] h-1.5 rounded-full">
+        <div className="health-scale relative mt-[22px] h-1.5 ">
           <AnimatePresence>
             {showDelta && (
               <motion.span
                 key="ghost"
-                className="absolute -top-[5px] h-4 w-1 rounded-[2px] border border-white/80"
+                className="absolute -top-[5px] h-4 w-1 border border-white/80"
                 initial={{ opacity: 0, left: `${healthPos(health)}%` }}
                 animate={{ opacity: 1, left: `${healthPos(nextHealth)}%` }}
                 transition={{ type: "spring", stiffness: 260, damping: 30 }}
@@ -140,7 +140,7 @@ function CreditHero({ p }: { p: Projection }) {
             )}
           </AnimatePresence>
           <motion.span
-            className="absolute -top-[5px] h-4 w-1 rounded-[2px] bg-white shadow-[0_0_0_3px_var(--color-s1)]"
+            className="absolute -top-[5px] h-4 w-1 bg-white shadow-[0_0_0_3px_var(--color-s1)]"
             initial={{ left: "0%" }}
             animate={{ left: `${healthPos(health)}%` }}
             transition={{ type: "spring", stiffness: 120, damping: 20, delay: 0.3 }}
@@ -191,7 +191,7 @@ function PortfolioPanel() {
   };
   const stats = [
     { key: "Value", label: "Collateral value", color: "var(--color-brand)", value: collateralValue },
-    { key: "Credit", label: "Credit limit", color: "#ededef", value: creditLimit },
+    { key: "Credit", label: "Credit limit", color: "#f0f0f0", value: creditLimit },
     { key: "Debt", label: "Debt", color: "var(--color-orange)", value: debt },
   ] as const;
   return (
@@ -315,7 +315,7 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
     <div className="panel">
       <div className="px-[22px] pb-[22px] pt-[18px]">
         <Segmented label="Action" items={["Draw", "Repay"] as const} value={mode} onChange={form.switchMode} />
-        <label className="mt-4 block rounded-[14px] border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
+        <label className="mt-4 block border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
           <div className="flex items-center justify-between">
             <Label>Amount</Label>
             <Label>
@@ -335,7 +335,7 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
               onBlur={form.normalize}
               className="w-full min-w-0 bg-transparent text-[32px] font-medium tracking-[-0.035em] text-t1 outline-none placeholder:text-t3"
             />
-            <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
+            <span className="inline-flex h-9 shrink-0 items-center gap-2 border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
               <Token src="/tokens/usdc.webp" size={20} />
               USDC
               <ChevronDown {...ic} className="text-t3" />
@@ -349,7 +349,7 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
               key={q.label}
               type="button"
               onClick={() => form.pick(q.label, q.pct)}
-              className={`flex-1 cursor-pointer rounded-lg border py-1.5 text-center text-xs font-medium transition-colors ${
+              className={`flex-1 cursor-pointer border py-1.5 text-center text-xs font-medium transition-colors ${
                 chip === q.label ? "border-line-2 bg-s3 text-t1" : "border-line text-t2 hover:border-line-2 hover:text-t1"
               }`}
             >
@@ -382,8 +382,8 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
           onClick={() => form.run(onApply)}
           disabled={!!error || status !== "idle"}
           whileTap={!error && status === "idle" ? { scale: 0.98 } : undefined}
-          className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-medium transition-colors ${
-            error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-[#f4f4f5] text-[#09090b] hover:bg-white"
+          className={`mt-[18px] flex h-12 w-full items-center justify-center gap-2.5 text-[15px] font-medium transition-colors ${
+            error ? "cursor-not-allowed bg-s3 text-t3" : "cursor-pointer bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]"
           }`}
         >
           {status !== "idle" && <Spinner />}
@@ -415,7 +415,7 @@ function Meter({ n, label }: { n: number; label: ReactNode }) {
     <div className="flex items-center gap-2.5">
       <span className="flex h-3.5 items-end gap-[3px]">
         {[6, 8, 10, 12, 14].map((h, i) => (
-          <i key={h} className={`block w-1 rounded-[1px] ${i < n ? "bg-t2" : "bg-s3"}`} style={{ height: h }} />
+          <i key={h} className={`block w-1 ${i < n ? "bg-t2" : "bg-s3"}`} style={{ height: h }} />
         ))}
       </span>
       {label}
@@ -425,9 +425,9 @@ function Meter({ n, label }: { n: number; label: ReactNode }) {
 
 function RangeBar({ from, to, at }: { from: number; to: number; at: number }) {
   return (
-    <span className="relative inline-block h-1.5 w-[92px] rounded-full bg-s3">
-      <span className="absolute inset-y-0 rounded-full bg-green/45" style={{ left: `${from}%`, right: `${100 - to}%` }} />
-      <span className="absolute -top-[3px] h-3 w-0.5 rounded-[1px] bg-white" style={{ left: `${at}%` }} />
+    <span className="relative inline-block h-1.5 w-[92px] bg-s3">
+      <span className="absolute inset-y-0 bg-green/45" style={{ left: `${from}%`, right: `${100 - to}%` }} />
+      <span className="absolute -top-[3px] h-3 w-0.5 bg-white" style={{ left: `${at}%` }} />
     </span>
   );
 }
@@ -554,14 +554,14 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
           Collateral <span className="font-normal text-t3">{all.length === 1 ? "1 position" : `${all.length} positions`}</span>
         </h3>
         <div className="flex items-center gap-2.5">
-          <button type="button" onClick={onStressTest} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3">
+          <button type="button" onClick={onStressTest} className="inline-flex h-9 cursor-pointer items-center gap-2 border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3">
             <Activity {...ic} />
             Run stress test
           </button>
           <button
             type="button"
             onClick={() => (live ? setDialog({}) : toast({ title: "Connect a wallet to deposit", detail: "SOL, LSTs, LP positions, xStocks", tone: "info" }))}
-            className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[10px] bg-[#f4f4f5] px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white"
+            className="inline-flex h-9 cursor-pointer items-center gap-2 bg-brand px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white"
           >
             <Plus {...ic} />
             Deposit
@@ -574,7 +574,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
             key={f.label}
             type="button"
             onClick={() => setFilter(f.label)}
-            className={`inline-flex h-[34px] cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border border-line-2 px-3.5 text-[13px] transition-colors ${
+            className={`inline-flex h-[34px] cursor-pointer items-center gap-2 whitespace-nowrap border border-line-2 px-3.5 text-[13px] transition-colors ${
               filter === f.label ? "bg-s3 text-t1" : "bg-white/[0.015] text-t2 hover:text-t1"
             }`}
           >
@@ -631,7 +631,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
                 </td>
                 <td className="text-right">
                   <div className="inline-flex items-center gap-2.5">
-                    <span className="flex h-1 w-14 overflow-hidden rounded-full bg-s3">
+                    <span className="flex h-1 w-14 overflow-hidden bg-s3">
                       <i className="block h-full bg-t2" style={{ width: `${r.ltv}%` }} />
                     </span>
                     <span className="font-medium">{r.ltv.toFixed(1)}%</span>
@@ -661,7 +661,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
                               e.stopPropagation();
                               setDialog(a.open);
                             }}
-                            className="h-7 cursor-pointer rounded-lg border border-line-2 bg-s2 px-2.5 text-[12.5px] font-medium transition-colors hover:bg-s3"
+                            className="h-7 cursor-pointer border border-line-2 bg-s2 px-2.5 text-[12.5px] font-medium transition-colors hover:bg-s3"
                           >
                             {a.label}
                           </button>
@@ -728,7 +728,7 @@ function PriceControl({ live }: { live: Live }) {
     setRaw("");
     toast({ title: `${asset} price set to ${usd(next)}`, detail: `Was ${usd(price)}`, tone: "info" });
   };
-  const chip = "cursor-pointer rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
+  const chip = "cursor-pointer border border-line px-2.5 py-1.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <div className="mb-4 flex items-center gap-1.5">
       <Label className="mr-1.5">Demo price</Label>
@@ -738,7 +738,7 @@ function PriceControl({ live }: { live: Live }) {
           -{c}%
         </button>
       ))}
-      <label className="ml-auto flex h-[30px] w-[104px] items-center gap-1 rounded-lg border border-line bg-bg px-2.5 text-xs font-medium transition-colors focus-within:border-line-2">
+      <label className="ml-auto flex h-[30px] w-[104px] items-center gap-1 border border-line bg-bg px-2.5 text-xs font-medium transition-colors focus-within:border-line-2">
         <span className="text-t3">$</span>
         <input
           inputMode="decimal"
@@ -787,14 +787,14 @@ function StressPanel({ highlight }: { highlight: boolean }) {
   const liqIdx = Math.max(0, crossing);
   const crashIdx = Math.min(SHOCKS.length - 1, Math.round(lead * 50));
   return (
-    <motion.div className="panel" animate={{ boxShadow: highlight ? "0 0 0 1px rgba(158,140,255,0.5), 0 0 40px -8px rgba(158,140,255,0.45)" : "inset 0 1px 0 rgba(255,255,255,0.03)" }} transition={{ duration: 0.6 }}>
+    <motion.div className="panel" animate={{ boxShadow: highlight ? "0 0 0 1px rgba(198,244,50,0.5), 0 0 40px -8px rgba(198,244,50,0.45)" : "inset 0 1px 0 rgba(255,255,255,0.03)" }} transition={{ duration: 0.6 }}>
       <div className="flex items-center justify-between gap-4 px-[22px] pt-[18px]">
         <h3 className="text-[15px] font-medium tracking-[-0.01em]">Stress test</h3>
         
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
         {live?.canSetPrice && <PriceControl live={live} />}
-        <div role="group" aria-label="Crash scenario" className="grid gap-px overflow-hidden rounded-xl border border-line bg-line" style={{ gridTemplateColumns: `repeat(${scenarios.length}, minmax(0, 1fr))` }}>
+        <div role="group" aria-label="Crash scenario" className="grid gap-px overflow-hidden border border-line bg-line" style={{ gridTemplateColumns: `repeat(${scenarios.length}, minmax(0, 1fr))` }}>
           {scenarios.map((s, i) => (
             <button
               key={s.name}
@@ -821,7 +821,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
             height={254}
             pad={{ top: 10, right: 40, bottom: 44, left: 8 }}
             xTitle={xTitle}
-            lines={[{ key: "hf", label: "Health factor", color: "#3ddc97", data: hf, fill: 0.14 }]}
+            lines={[{ key: "hf", label: "Health factor", color: "#c6f432", data: hf, fill: 0.14 }]}
             yMin={0.5}
             yMax={2.5}
             yTicks={[1, 1.5, 2, 2.5]}
@@ -837,7 +837,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
                 <line x1={pad.left} x2={pad.left + innerWidth} y1={y(1)} y2={y(1)} stroke="#ff6166" strokeDasharray="4 4" strokeWidth={1.2} />
                 {(!live || crossing >= 0) && (
                   <>
-                    <circle cx={x(liqIdx)} cy={y(1)} r={4} fill="#ff6166" stroke="#0d0f12" strokeWidth={2} />
+                    <circle cx={x(liqIdx)} cy={y(1)} r={4} fill="#ff6166" stroke="#121212" strokeWidth={2} />
                     <text x={x(liqIdx) + (live && liqIdx < 12 ? 10 : -10)} y={y(1) + 18} textAnchor={live && liqIdx < 12 ? "start" : "end"} style={{ fill: "#ff6166", fontSize: 11.5 }}>
                       Liquidation at {sc.sol === sc.stock ? `${pct(dropAt(SHOCKS[liqIdx]).sol)} on both` : `SOL ${pct(dropAt(SHOCKS[liqIdx]).sol)}, stocks ${pct(dropAt(SHOCKS[liqIdx]).stock)}`}
                     </text>
@@ -918,7 +918,7 @@ function AutopayPanel() {
             onClick={fast.toggle}
             aria-pressed={fast.running}
             title="Test only, harvests every second"
-            className={`ml-auto mr-3 cursor-pointer rounded-md border px-2 py-0.5 text-[11.5px] font-medium transition-colors ${fast.running ? "border-green/50 text-green" : "border-line text-t3 hover:border-line-2 hover:text-t1"}`}
+            className={`ml-auto mr-3 cursor-pointer border px-2 py-0.5 text-[11.5px] font-medium transition-colors ${fast.running ? "border-green/50 text-green" : "border-line text-t3 hover:border-line-2 hover:text-t1"}`}
           >
             {fast.running ? "Stop 1s harvest" : "Test: harvest every 1s"}
           </button>
@@ -930,9 +930,9 @@ function AutopayPanel() {
           aria-label="Autopay"
           disabled={!!live}
           onClick={toggle}
-          className={`relative h-5 w-[34px] rounded-full transition-colors duration-300 ${live ? "cursor-not-allowed" : "cursor-pointer"} ${on ? "bg-green" : "bg-s3"}`}
+          className={`relative h-5 w-[34px] transition-colors duration-300 ${live ? "cursor-not-allowed" : "cursor-pointer"} ${on ? "bg-green" : "bg-s3"}`}
         >
-          <motion.span className="absolute top-0.5 size-4 rounded-full bg-white" initial={false} animate={{ left: on ? 16 : 2 }} transition={{ type: "spring", stiffness: 600, damping: 35 }} />
+          <motion.span className="absolute top-0.5 size-4 bg-white" initial={false} animate={{ left: on ? 16 : 2 }} transition={{ type: "spring", stiffness: 600, damping: 35 }} />
         </button>
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
@@ -970,7 +970,7 @@ function AutopayPanel() {
                 width={bw}
                 height={h}
                 rx={2}
-                fill={on ? "#3ddc97" : "#62666e"}
+                fill={on ? "#c6f432" : "#6e6e6e"}
                 fillOpacity={i === 29 ? 1 : 0.55}
                 style={{ transformBox: "fill-box", transformOrigin: "bottom" }}
                 variants={{ hidden: { scaleY: 0 }, shown: { scaleY: 1 } }}
@@ -985,7 +985,7 @@ function AutopayPanel() {
             Today
           </text>
         </motion.svg>
-        <div className="mt-3.5 grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-line bg-line">
+        <div className="mt-3.5 grid grid-cols-3 gap-px overflow-hidden border border-line bg-line">
           {[
             ["This month", <Num key="m" value={autopayPerMonth} decimals={2} prefix="$" countUp className="text-green" />],
             ["Lifetime", <Num key="l" value={live ? paid.reduce((s, e) => s + e.amount, 0) : 1847.2} decimals={2} prefix="$" countUp />],
