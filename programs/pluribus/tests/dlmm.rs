@@ -64,9 +64,11 @@ impl Pair {
 /// A chain holding the real DLMM program and a pair copied from mainnet, with Pluribus set up on that pair's own mints
 /// and the pair listed as its LP market
 /// Returns None when the DLMM binary has not been fetched, since it is too large to commit
+/// `DLMM_SO` names another binary in the fixtures folder, so the devnet build can be checked against the same accounts
 fn real_pair() -> Option<(Env, Pair)> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dlmm");
-    let Ok(program) = fs::read(dir.join("lb_clmm.so")) else {
+    let binary = std::env::var("DLMM_SO").unwrap_or_else(|_| "lb_clmm.so".into());
+    let Ok(program) = fs::read(dir.join(binary)) else {
         eprintln!("Skipped: run `npm run dlmm:snapshot` to fetch lb_clmm.so");
         return None;
     };
