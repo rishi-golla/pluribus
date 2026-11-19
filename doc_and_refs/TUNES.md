@@ -127,7 +127,7 @@ A borrower can have an LP or Meteora position's fees put back into it instead of
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
 | `compound_slippage_bps` (per position, set by its owner) | 0 for every position (fees repay debt) | 0, or 1 to `MAX_COMPOUND_SLIPPAGE_BPS` (1000) | 0 keeps autopay. Anything else lets anyone compound while the pool's price is within that many bps of the oracle's, and autopay then leaves the position alone. A looser tolerance compounds more often but lets a caller who moves the pool first take more of the fees; it can never touch the position's existing value or lower health, since fees never counted as collateral. Cleared whenever the slot is withdrawn, liquidated or reused. |
-| `compound_bounty_bps` (pool) | 0 until set | ≤ `MAX_COMPOUND_BOUNTY_BPS` (500) | Share of each fee paid to the caller's recipient. Too low and nobody bothers, too high and borrowers lose more of their yield. Set with `set_compound_bounty`, which applies at once inside the cap. |
+| `compound_bounty_bps` (pool) | 200 (2%) | ≤ `MAX_COMPOUND_BOUNTY_BPS` (500) | Share of each fee paid to the caller's recipient. Too low and nobody bothers, too high and borrowers lose more of their yield. Set with `set_compound_bounty`, which applies at once inside the cap. |
 | `COMPOUND`, `COMPOUND_INTERVAL_MS`, `COMPOUND_MIN_USD` | keeper env, on / 600000 / 0.01 | | The keeper compounds for the bounty too, as a fallback for callers. `COMPOUND=0` leaves it to others. |
 
 - The caller picks the recipient of the bounty, so a throwaway key can pay the transaction fees while the bounty goes to a wallet. The web app's auto-compound uses that.
