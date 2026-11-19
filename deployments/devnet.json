@@ -88,6 +88,19 @@
       "pool": "5ZnKViaNwjT2iCZsgAchihmUurnaKTau4MWPUj1MQSnP",
       "dexProgram": "DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH",
       "baseMint": "So11111111111111111111111111111111111111112"
+    },
+    {
+      "pool": "Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi",
+      "dexProgram": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+      "baseMint": "So11111111111111111111111111111111111111112",
+      "accounts": [
+        "8EDkMkJUdGo1HzBVhnBZkE5AffTC9c5NKQTQohgVyUa2",
+        "J2LcK5DJhZGfpX4ffHzTd2gTVVmhes54ZtzZQb5Y9dLs",
+        "FmqmeXaYQtSurZK67fzRbXPE28tyb1qHhsunNS5mBtwz",
+        "FAzAMC4zLRXAfRJZh8jvVkPktU6rrUj1BoesoWpuaTuY",
+        "5c6zFaMoDwgSCTzB6pQDjz9pkZLdH6axpEb2m24JRSsG",
+        "29EYcpwKj2YRjbSLjtuVyUoJ2UXYPQwoqg7Ywn2NXoZZ"
+      ]
     }
   ]
 }
