@@ -31,6 +31,8 @@ import {
   pda,
   priceAccountFor,
 } from "./core";
+import { DLMM_PROGRAM_ID, MEMO_PROGRAM_ID, dlmmPda } from "./dlmm";
+import { binArrays, dlmmContext, raydiumHarvestAccounts } from "./ix";
 
 const key = (s: string) => new PublicKey(s);
 const ata = (mint: PublicKey, owner: PublicKey) => getAssociatedTokenAddressSync(mint, owner, true, TOKEN_PROGRAM_ID);
@@ -99,6 +101,83 @@ export async function compoundOrca(
   ];
 }
 
+// Compounds a held Raydium position, paying the bounty to `recipient`'s token accounts, which must exist
+// Raydium pays the position's rewards out in the same call, to the owner, whose reward token accounts are made first
+export async function compoundRaydium(
+  program: PluribusProgram,
+  d: Deployment,
+  caller: PublicKey,
+  owner: PublicKey,
+  positionMint: PublicKey,
+  pool: PublicKey,
+  recipient: PublicKey,
+): Promise<TransactionInstruction[]> {
+  const r = await raydiumHarvestAccounts(program, d, caller, owner, positionMint, pool);
+  const sources = await fetchPriceSources(program, d);
+  const usdc = key(d.usdcMint);
+  return [
+    ...r.creates,
+    await program.methods
+      .compoundRaydium()
+      .accountsStrict({
+        ...r.accounts,
+        pool: pda.pool(),
+        basePrice: priceAccountFor(d, r.market.baseMint.toBase58(), sources),
+        usdcMint: usdc,
+        bountyBase: ata(r.market.baseMint, recipient),
+        bountyUsdc: ata(usdc, recipient),
+        tokenProgram: TOKEN_PROGRAM_ID,
+        memoProgram: MEMO_PROGRAM_ID,
+      })
+      .remainingAccounts(r.remaining)
+      .instruction(),
+  ];
+}
+
+// Compounds a held Meteora position, paying the bounty to `recipient`'s token accounts, which must exist
+export async function compoundDlmm(
+  program: PluribusProgram,
+  d: Deployment,
+  caller: PublicKey,
+  owner: PublicKey,
+  position: PublicKey,
+  recipient: PublicKey,
+): Promise<TransactionInstruction[]> {
+  const c = await dlmmContext(program, d, position);
+  const sources = await fetchPriceSources(program, d);
+  const usdc = key(d.usdcMint);
+  return [
+    await program.methods
+      .compoundDlmm()
+      .accountsStrict({
+        caller,
+        credit: pda.credit(owner),
+        pool: pda.pool(),
+        lpMarket: pda.lpMarket(c.pair.address),
+        lbPair: c.pair.address,
+        position,
+        baseAsset: pda.asset(c.baseMint),
+        baseVault: pda.vault(c.baseMint),
+        baseMint: c.baseMint,
+        basePrice: priceAccountFor(d, c.baseMint.toBase58(), sources),
+        usdcAsset: pda.asset(usdc),
+        usdcCollateralVault: pda.vault(usdc),
+        usdcMint: usdc,
+        bountyBase: ata(c.baseMint, recipient),
+        bountyUsdc: ata(usdc, recipient),
+        bitmapExtension: c.bitmapExtension,
+        reserveX: c.pair.reserveX,
+        reserveY: c.pair.reserveY,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        memoProgram: MEMO_PROGRAM_ID,
+        eventAuthority: dlmmPda.eventAuthority(),
+        dlmmProgram: DLMM_PROGRAM_ID,
+      })
+      .remainingAccounts(binArrays(c.pair.address, c.held.lower, c.held.upper))
+      .instruction(),
+  ];
+}
+
 export type Compoundable = {
   owner: PublicKey;
   position: PublicKey;
@@ -123,7 +202,7 @@ export async function findCompoundable(
   d: Deployment,
   caller: PublicKey,
   recipient: PublicKey,
-  opts: { concurrency?: number; minUsd?: number; builders?: Partial<Record<"raydium" | "meteora", Builder>> } = {},
+  opts: { concurrency?: number; minUsd?: number } = {},
 ): Promise<Compoundable[]> {
   const connection = program.provider.connection;
   const [credits, prices] = await Promise.all([fetchAllCredits(program), fetchPrices(program, d)]);
@@ -141,9 +220,19 @@ export async function findCompoundable(
     if (!at?.dexProgram.equals(WHIRLPOOL_PROGRAM_ID) || !at.pool.equals(key(d.whirlpool))) return null;
     return { dex: "orca", baseMint: key(d.solMint), ixs: await compoundOrca(program, d, caller, owner, position, recipient) };
   };
+  const raydium: Builder = async (owner, position, credit) => {
+    const at = (await locateLps(connection, d, credit)).get(position.toBase58());
+    if (!at || at.dexProgram.equals(WHIRLPOOL_PROGRAM_ID) || at.dexProgram.equals(DLMM_PROGRAM_ID)) return null;
+    return { dex: "raydium", baseMint: at.baseMint, ixs: await compoundRaydium(program, d, caller, owner, position, at.pool, recipient) };
+  };
+  const meteora: Builder = async (owner, position, credit) => {
+    const at = (await locateLps(connection, d, credit)).get(position.toBase58());
+    if (!at?.dexProgram.equals(DLMM_PROGRAM_ID)) return null;
+    return { dex: "meteora", baseMint: at.baseMint, ixs: await compoundDlmm(program, d, caller, owner, position, recipient) };
+  };
   const build = async (c: (typeof candidates)[number]) => {
     const kind = c.credit.positions.find((p) => p.mint.equals(c.position))?.kind;
-    const builders = kind === KIND_DLMM ? [opts.builders?.meteora] : [orca, opts.builders?.raydium];
+    const builders = kind === KIND_DLMM ? [meteora] : [orca, raydium];
     for (const b of builders) {
       const built = b && (await b(c.owner, c.position, c.credit, recipient).catch(() => null));
       if (built) return built;
@@ -158,8 +247,11 @@ export async function findCompoundable(
       const built = await build(c);
       if (!built) continue;
       const bounty = [ata(built.baseMint, recipient), ata(usdc, recipient)];
+      // The program needs the recipient's token accounts, so a recipient without them yet has them made in the simulation,
+      // which is what `bountyAccountSetup` does for real before sending
+      const setup = [built.baseMint, usdc].map((m) => createAssociatedTokenAccountIdempotentInstruction(caller, ata(m, recipient), recipient, m, TOKEN_PROGRAM_ID));
       const { blockhash } = await connection.getLatestBlockhash();
-      const tx = await buildTransaction(connection, d, caller, [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...built.ixs], blockhash);
+      const tx = await buildTransaction(connection, d, caller, [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...setup, ...built.ixs], blockhash);
       const [before, run] = await Promise.all([
         connection.getMultipleAccountsInfo(bounty),
         connection.simulateTransaction(tx, {

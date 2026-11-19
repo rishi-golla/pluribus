@@ -673,6 +673,28 @@ export async function autopayRaydium(
   positionMint: PublicKey,
   pool: PublicKey,
 ): Ixs {
+  const r = await raydiumHarvestAccounts(program, d, caller, owner, positionMint, pool);
+  return [
+    budget(),
+    ...r.creates,
+    await program.methods
+      .autopayRaydium()
+      .accountsStrict({ ...usdcAccounts(d), ...r.accounts, memoProgram: MEMO_PROGRAM_ID })
+      .remainingAccounts(r.remaining)
+      .instruction(),
+  ];
+}
+
+// The accounts every Raydium fee collect names, for autopay and compound alike, with the owner's reward token accounts
+// made first when missing, since Raydium pays rewards out in the same call and the program only lets them go to the owner
+export async function raydiumHarvestAccounts(
+  program: PluribusProgram,
+  d: Deployment,
+  caller: PublicKey,
+  owner: PublicKey,
+  positionMint: PublicKey,
+  pool: PublicKey,
+) {
   const market = lpMarketOf(d, pool);
   const [usdc, position] = [key(d.usdcMint), pda.lpPosition(market.dexProgram, positionMint)];
   const [mint, account, poolAccount] = await program.provider.connection.getMultipleAccountsInfo([positionMint, position, pool]);
@@ -709,37 +731,32 @@ export async function autopayRaydium(
       { pubkey: r.mint, isSigner: false, isWritable: false },
     );
   });
-  return [
-    budget(),
-    ...creates,
-    await program.methods
-      .autopayRaydium()
-      .accountsStrict({
-        ...usdcAccounts(d),
-        caller,
-        credit: pda.credit(owner),
-        lpMarket: pda.lpMarket(pool),
-        clmmPool: pool,
-        position,
-        positionMint,
-        vaultNft: ata(positionMint, pda.pool(), mint.owner),
-        protocolPosition,
-        clmmVault0: clmm.vault0,
-        clmmVault1: clmm.vault1,
-        tickArrayLower: tickArray(tickLower),
-        tickArrayUpper: tickArray(tickUpper),
-        baseAsset: pda.asset(market.baseMint),
-        baseMint: market.baseMint,
-        baseVault: pda.vault(market.baseMint),
-        usdcAsset: pda.asset(usdc),
-        usdcCollateralVault: pda.vault(usdc),
-        tokenProgram2022: TOKEN_2022_PROGRAM_ID,
-        memoProgram: MEMO_PROGRAM_ID,
-        dexProgram: market.dexProgram,
-      })
-      .remainingAccounts(remaining)
-      .instruction(),
-  ];
+  return {
+    market,
+    creates,
+    remaining,
+    accounts: {
+      caller,
+      credit: pda.credit(owner),
+      lpMarket: pda.lpMarket(pool),
+      clmmPool: pool,
+      position,
+      positionMint,
+      vaultNft: ata(positionMint, pda.pool(), mint.owner),
+      protocolPosition,
+      clmmVault0: clmm.vault0,
+      clmmVault1: clmm.vault1,
+      tickArrayLower: tickArray(tickLower),
+      tickArrayUpper: tickArray(tickUpper),
+      baseAsset: pda.asset(market.baseMint),
+      baseMint: market.baseMint,
+      baseVault: pda.vault(market.baseMint),
+      usdcAsset: pda.asset(usdc),
+      usdcCollateralVault: pda.vault(usdc),
+      tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+      dexProgram: market.dexProgram,
+    },
+  };
 }
 
 export async function accrue(program: PluribusProgram): Ixs {
@@ -983,7 +1000,7 @@ export async function setLpMarket(
 // Meteora DLMM: positions the pool PDA owns, opened and funded through the program
 
 // The pair, the position and the market behind a Meteora position the account holds
-async function dlmmContext(program: PluribusProgram, d: Deployment, position: PublicKey) {
+export async function dlmmContext(program: PluribusProgram, d: Deployment, position: PublicKey) {
   const connection = program.provider.connection;
   const posInfo = await connection.getAccountInfo(position);
   if (!posInfo?.owner.equals(DLMM_PROGRAM_ID)) throw new Error(`${position.toBase58()} is not a Meteora position`);
@@ -991,7 +1008,7 @@ async function dlmmContext(program: PluribusProgram, d: Deployment, position: Pu
   return { held, ...(await dlmmPairContext(program, d, held.pair)) };
 }
 
-async function dlmmPairContext(program: PluribusProgram, d: Deployment, pairKey: PublicKey) {
+export async function dlmmPairContext(program: PluribusProgram, d: Deployment, pairKey: PublicKey) {
   const connection = program.provider.connection;
   const [pairInfo, extension] = await connection.getMultipleAccountsInfo([pairKey, dlmmPda.bitmapExtension(pairKey)]);
   if (!pairInfo?.owner.equals(DLMM_PROGRAM_ID)) throw new Error(`${pairKey.toBase58()} is not a Meteora pair`);
@@ -1004,7 +1021,7 @@ async function dlmmPairContext(program: PluribusProgram, d: Deployment, pairKey:
 }
 
 // The writable bin arrays of a position's range, which every liquidity instruction names after its own accounts
-const binArrays = (pair: PublicKey, lower: number, upper: number) =>
+export const binArrays = (pair: PublicKey, lower: number, upper: number) =>
   binArrayIndexes(lower, upper).map((i) => ({ pubkey: dlmmPda.binArray(pair, i), isSigner: false, isWritable: true }));
 
 // The pair's side of every liquidity instruction, both tokens being classic ones
