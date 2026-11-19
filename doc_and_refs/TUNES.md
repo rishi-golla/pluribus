@@ -11,7 +11,10 @@ Every setting worth revisiting before mainnet, with the value deployed on devnet
   - LP market: raising the cost, pausing.
 - Everything else waits out `activation_delay_secs`, then anyone sends `apply_params` / `apply_asset` / `apply_lp_market`.
 - Nothing waiting can apply during a junior exit pause, nor until a full activation delay after it ends.
+- Risk premiums follow their own rule: `set_asset_premium` and `set_premium_tiers` apply a cut at once and drop a waiting raise; a raise waits out `activation_delay_secs`, then anyone sends `apply_asset_premium` / `apply_premium_tiers`. Borrowers get the delay to repay or move collateral before they pay more.
 - The guardian (`scripts/.keys/devnet/guardian.json`) can drop a waiting change or pause an asset or market. It cannot loosen anything or pause exits.
+- In demo mode the admin can end every wait at once with `demo_activate`: the pool's waiting settings and premium tiers, plus the waiting changes, premiums and listing delays of the assets and LP markets passed in. The admin already writes the prices, so the delays protect nobody there. It is gone for good once demo mode is off.
+- After an upgrade that appends account fields, run `npm run migrate:accounts` straight away. `migrate_pool` (admin) and `migrate_account` (anyone, for assets and credit accounts) grow old accounts with the new fields at zero. Until then an instruction that touches an old account fails because it can't be read; nothing is misread.
 - On localnet `scripts/setup.ts` runs the same rules on seconds (`WAITS`), so the e2e scripts finish in minutes.
 
 ## Junior tranche
@@ -104,6 +107,29 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `tier_discount_bps` | 0 / 40 / 80 | starts at 0, never decreases | Rate discount per loyalty tier. |
 | `tier_min_healthy_secs` | 0 / 7d / 30d | starts at 0, increasing | Healthy time needed for each tier. |
 
+## Risk premium
+
+Risky collateral pays an extra rate that goes to junior lenders, who take the first loss when it fails.
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `premium_bps` (per asset) | NVDAx and AAPLx 300, BONK 1500, others 0 | ≤ `MAX_RISK_PREMIUM_BPS` (3000) | Extra yearly rate on debt the asset backs. An LP carries its base token's premium. Should follow how thin the asset's market is and how fast it can gap. |
+| `premium_tier_bps` | 10000 / 6000 / 3000 | ≤ 10000, not rising with the tier | Share of the premium charged in each loyalty tier, so it fades while the account stays healthy. A liquidation, or health under `warn_health_bps`, drops the account to tier 0 and the full premium. 0 everywhere (a pool grown by `migrate_pool`) charges nothing. |
+| Weighting | | | An account's premium is each position's premium weighted by its draw value in the scenario where the whole portfolio is worth least. A position that adds little in a crash adds little premium. Paused collateral still counts. |
+| Booking | | | The premium is booked as new debt before anything reads or changes the account's debt or tier: draws, repays, withdrawals, liquidations, autopay and `refresh_tier`. Reserves and the protocol take their usual cuts and juniors the rest; with no junior money it stays with seniors. It goes straight to junior assets, not through the yield buffer. A junior who joins just before a booking still waits out the exit delay to take any of it. |
+| Refresh | | | The rate in force is the one set at the account's last valuation (draw, withdrawal or `refresh_tier`). A new asset premium or a changed collateral mix takes effect at the next refresh. |
+| `PREMIUM_INTERVAL_MS` | keeper env, 600000 | | How often the keeper refreshes an account that pays a premium. Shorter makes junior payouts smoother and puts changes into effect sooner, at a transaction per account per interval. |
+
+## Senior withdrawals and accounts
+
+No settings, only rules worth knowing before mainnet.
+
+- A senior lender whose instant withdrawal finds too little idle cash queues with `request_senior_exit`. The exit's value is fixed then: it can lose value while it waits but never gains any.
+- Idle cash up to the queued value is held back (`Pool::available_cash`) from draws, instant withdrawals, junior cash claims and fee collection, so repayments refill the queue first.
+- `settle_senior_exit` is permissionless and pays the head of the queue once cash covers it. The keeper pays up to 10 exits a pass, after liquidations.
+- `cancel_senior_exit` hands back shares worth the queued value. The yield earned while queued is burned into the senior share price, or goes to the reserve when the canceller is the only senior. A cancelled ticket stays in line, empty, until the queue reaches it.
+- `close_account` closes an empty credit account (no debt, no positions) and returns its rent.
+
 ## Per asset and LP market
 
 | Setting | Devnet | Allowed | Tuning notes |
@@ -114,12 +140,11 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `max_conf_bps` | 200 | 1 to 2000 | Widest accepted Pyth confidence band. |
 | `deposit_cap` | 0 (no cap) | 0 = uncapped | Cap per asset. Should follow on-chain depth for risky assets. |
 | `oracle`, `pyth_feed_id` | the real Pyth feed of each asset: SOL/USD, NVDA/USD, AAPL/USD, JITOSOL/USD, BONK/USD | | JupSOL reads JITOSOL/USD because Pyth has no JUPSOL/USD feed, and its fixed backing (1.22 x SOL) caps it. The LSTs' backing feed is SOL/USD. `list:meme` and `setup` point each asset at its feed, and the push-feed account the program reads is the PDA of the push oracle `pythWSnsw…` for shard 0 and the feed id (`deployments/<cluster>.json` `pythAccount`). |
-| `live_price` | JitoSOL, JupSOL on; AAPLx, BONK off until their feeds are fresh; SOL, NVDAx off | demo mode only | With demo mode on an asset reads its admin-written demo price until `demo_set_live_price(true)` switches it to its Pyth feed. SOL and NVDAx stay on demo prices so the crash demo can move them. An LST's SOL backing follows the LST's own flag. `list:meme` flips an asset only while its feed is fresh within `max_price_age_secs` and its band fits `max_conf_bps` after the program rescales the price to 6 decimals; BONK's $0.0000024 rounds to a price of 2 with a band of 1, which fails that check. |
-| `premium_bps` | NVDAx and AAPLx 300, BONK 1500, others 0 | ≤ `MAX_RISK_PREMIUM_BPS` (3000) | Extra yearly rate on debt an asset backs. A cut applies at once, a raise waits out the activation delay (`demo_activate` applies it on a demo pool). |
-| `premium_tier_bps` | 10000 / 6000 / 3000 | ≤ 10000, not rising with the tier | Share of each asset's premium charged per loyalty tier. |
-| LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca and Raydium positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. |
-| `RAYDIUM_CLMM_PROGRAMS` | mainnet `CAMMCzo5…`, devnet `DRayAUg…` | constant in `constants.rs` | The only programs besides Orca whose pools can list. Raydium can upgrade its program, so recheck the position and pool layouts (offsets in `clmm.rs`) after each Raydium upgrade. |
-| Demo prices (setup.ts) | SOL at the pool price, stock $180, xStock $230, LSTs 0.1% under their backing, BONK $0.000002 | | Starting demo feed. `scripts/price.ts` moves only SOL and the stock. |
+| `live_price` | JitoSOL, JupSOL on; AAPLx, BONK off until their feeds are fresh; SOL, NVDAx off | demo mode only | With demo mode on an asset reads its admin-written demo price until `demo_set_live_price(true)` switches it to its Pyth feed. SOL and NVDAx stay on demo prices so the crash demo can move them. An LST's SOL backing follows the LST's own flag. `list:meme` flips an asset only while its feed is fresh within `max_price_age_secs` and its band fits `max_conf_bps` on the asset's priced unit. BONK's devnet push feed is days old, so it stays on its demo price until a Hermes token lets the keeper post it. JitoSOL and JupSOL read the feeds Pyth itself pushes on devnet, about every half hour; if those stop, accounts holding them fail health checks after a day, and the admin can switch them back to demo prices at once. |
+| `price_exponent` | BONK 6, others 0 | 0 to 12; only with nothing deposited and before the listing is live, or in demo mode; never for staking or multiplier tokens | The asset is priced per 10^k whole tokens. At six decimals per token BONK's price would round to a couple of units, which wrecks valuation and fails the band check, so it is priced per million. Pyth prices are scaled up to the unit, band included, and demo prices are written in it. Setting it resets the volatility sample. |
+| LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca and Raydium positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. Devnet lists the Orca SOL/USDC whirlpool and the Raydium SOL/USDC pool `5ZnKVi…` (`lpMarkets`). |
+| `RAYDIUM_CLMM_PROGRAMS` | mainnet `CAMMCzo5…`, devnet `DRayAUg…` | constant in `constants.rs` | The only programs besides Orca whose pools can list. Raydium can upgrade its program, so recheck the position and pool layouts (offsets in `clmm.rs`) after each Raydium upgrade. `autopay_raydium` collects fees with `decrease_liquidity_v2` at zero liquidity; Raydium pays any pool rewards in the same call, so the program only lets them go to the account owner's own token accounts. |
+| Demo prices (setup.ts) | SOL at the pool price, stock $180, xStock $230, LSTs 0.1% under their backing, BONK $2.40 per million | | Starting demo feed. `scripts/price.ts` moves only SOL and the stock. |
 
 ## Hard caps in `programs/pluribus/src/constants.rs`
 
@@ -136,13 +161,16 @@ These need a program upgrade to change.
 | `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
 | `MIN_EPOCH_SECS` / `MAX_EPOCH_SECS` | 60s / 30d | Yield epoch length when not 0 |
 | `STAKE_POOL_PROGRAMS` | SPL stake pool, Sanctum multi-validator | Programs whose pools can back an LST |
+| `MAX_RISK_PREMIUM_BPS` | 3000 | Any asset's risk premium |
+| `MAX_PRICE_EXPONENT` | 12 | How many tokens one priced unit can hold (10^12) |
 
 ## Off-chain services and demo
 
 | Setting | Where | Default | Notes |
 |---|---|---|---|
 | `INTERVAL_MS` | keeper env | 5000 | How often the keeper checks for liquidations and tiers. |
-| `AUTOPAY_INTERVAL_MS` | keeper env | 600000 | How often each LP position's fees are harvested. |
+| `AUTOPAY_INTERVAL_MS` | keeper env | 600000 | How often each LP position's fees are harvested, Orca by quote and Raydium by simulating the harvest. |
+| `PREMIUM_INTERVAL_MS` | keeper env | 600000 | How often an account paying a risk premium is refreshed (see Risk premium). |
 | `PYTH_INTERVAL_MS` | keeper env | 30000 | How often the feeds of live assets are posted again, and the keeper posts them again right before a volatility sample, which needs a price under `vol_max_age_secs` old. |
 | `HERMES_ACCESS_TOKEN`, `HERMES_URL`, `PYTH_PUSH` | keeper env | none, `https://hermes.pyth.network`, on | The public Hermes serves price updates only with an access token, so without one the keeper posts nothing and logs it once. `PYTH_PUSH=0` leaves the feeds to someone else, and localnet never posts. |
 | `GRANT`, `EXTRAS` | `web/src/app/api/faucet/route.ts` | 0.05 SOL (10 on localnet), 50 stock, 5000 USDC; 10 JitoSOL, 10 JupSOL, 20 AAPLx, 100M BONK | Test tokens per wallet. |
@@ -156,17 +184,20 @@ These need a program upgrade to change.
 
 Planned in the earlier research and plans, not implemented:
 
-- **Coverage gate:** block risky draws when junior deposits fall below X% of risky debt.
 - **Depth-based limits:** cap liquidation size and deposits at the Orca depth within the bonus (`D(m)`), and size haircuts with it.
 - **Fee-implied σ (Panoptic)** for pool tokens without a feed. Left out on purpose for now: it needs a volume crank and can be wash-traded to push σ around.
-- **An emergency switch for a broken LST backing.** If a stake pool account stops reading (for example after an upstream migration), that LST's health checks fail, and the fix (`rate_source` → NONE or FIXED) waits out the activation delay. Liquidations of that LST are frozen meanwhile. Options: let the guardian switch to FIXED at or below the last rate at once, or fall back to the own price with an extra haircut.
+- **An emergency switch for a broken LST backing.** If a stake pool account stops reading (for example after an upstream migration), that LST's health checks fail, and the fix (`rate_source` → NONE or FIXED) waits out the activation delay. Liquidations of that LST are frozen meanwhile. In demo mode the admin can switch the token back to its demo price at once; with demo mode off there is no such switch. Options: let the guardian switch to FIXED at or below the last rate at once, or fall back to the own price with an extra haircut.
 - **Close publish times for the LST's two prices.** The SOL leg is accepted anywhere inside the LST's own age window, so a liquidator can pick the lowest SOL print in that window.
 - **SDK reads the deployment file, not the chain,** for LST backing accounts, token programs and extra LP markets. Which price account each asset reads (demo or Pyth) does come from the chain, and the price helper applies the xStock multiplier. A timelocked on-chain change needs a regenerated deployment JSON.
-- **Fee harvesting for Raydium positions.** Autopay only collects Orca fees; Raydium positions keep their fees until the owner withdraws the NFT.
 - **One Raydium program per cluster.** Both Raydium ids are accepted everywhere; listing is admin-only, but a build flag could pin each cluster to its own id.
 - **Raydium's admin can turn off `decrease_liquidity` for a pool**, which would leave a liquidator holding an NFT it can't redeem. Watch Raydium pool status for listed markets.
 - **Very large LP sides overflow.** A position whose token side would exceed u64 at a shocked price fails every health check for that account (Orca too). Only plausible for base tokens with many decimals; cap decimals at listing or saturate.
 - **Meteora DLMM positions.** Deferred: positions can't be handed over like an NFT, so custody would need CPI for every action and a new liquidation path.
 - **No volatility sample yet:** an xStock listed and then changed twice before its first sample is valued at its lowest possible multiplier with nothing to cap it. Seed `vol_price` at listing (needs a price account at listing) if this matters.
 - **A cap on each instant shock raise**, so one tightening cannot make every borrower liquidatable at once.
+- **Premium refreshes are the keeper's job.** An account's premium rate only moves at a valuation, so with no keeper a borrower who deposits risky collateral after drawing pays the old rate until its next draw, withdrawal or refresh. Anyone can call `refresh_tier`.
 - **Reopening a wiped tranche with a fresh share mint (a bug to fix before mainnet).** After a 100% junior loss, the dead shares still count in the share price, so every new dollar mints about `dead_supply` shares. Token supply is a u64, so the tranche can then never hold more than about `$18.4T / dead_supply_in_USDC` (10M dead caps it near $1.8M; the 100k devnet seed near $184M). Deposits and `convert_to_junior` past that cap fail with `MathOverflow`. The senior tranche has the same maths. Fix: an admin instruction allowed only when junior assets are 0 that opens a new junior mint and escrow (seeded by an epoch counter), so new money starts again at $1 a share and the old mint is retired. Exits still queued on the old mint close out at $0.
+
+## Dropped
+
+- **Coverage gate** (block risky draws when junior deposits fall below X% of risky debt). Dropped: the risk premium pays juniors for carrying risky debt instead, and the Earn page no longer shows it.
