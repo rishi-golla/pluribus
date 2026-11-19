@@ -43,6 +43,8 @@ export type Collateral = {
   risk: Risk;
   /** Price range, payout at the current price, and the limit a flat per-token discount would give */
   lp?: { lower: number; upper: number; sol: number; usdc: number; naive: number };
+  /** The same for a Meteora position, whose `mint` is the position account the pool owns */
+  dlmm?: { lower: number; upper: number; sol: number; usdc: number; naive: number };
 };
 
 export type LiveMarket = { collateral: number; crashLtv: number | null; liqCostBps: number };
@@ -135,6 +137,14 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       risk: p.risk,
     };
     if ("amount" in p.risk) return { ...base, symbol: d.assets[base.mint]?.symbol ?? "Token" };
+    if ("bins" in p.risk) {
+      const { bins, group, usdcGroup, liqCostBps } = p.risk;
+      const held = math.dlmmAmounts(bins, price);
+      const naive = (held.base * price * (1 - shockOf(group)) + held.usdc * (1 - shockOf(usdcGroup))) * (1 - liqCostBps / 1e4);
+      const prices = bins.map((b) => b.price);
+      const range = prices.length ? { lower: Math.min(...prices), upper: Math.max(...prices) } : { lower: price, upper: price };
+      return { ...base, symbol: "SOL-USDC", dlmm: { ...range, sol: held.base, usdc: held.usdc, naive } };
+    }
     const { liquidity, tickLower, tickUpper, group, usdcGroup, liqCostBps } = p.risk;
     const held = math.lpAmounts(liquidity, tickLower, tickUpper, price);
     // The same shocks as the crash test, applied to what the position holds now instead of what it would hold after the crash

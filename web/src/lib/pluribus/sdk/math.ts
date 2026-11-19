@@ -15,7 +15,22 @@ export type RiskPosition = {
   | { amount: number }
   // `usdcGroup` is the pool's `usdcGroup`: the USDC side of an LP position takes that group's shock
   | { liquidity: Numeric; tickLower: number; tickUpper: number; usdcGroup: number }
+  // A Meteora position: each bin's price in USDC per whole base token and its liquidity in USDC at that price
+  | { bins: DlmmBin[]; usdcGroup: number }
 );
+
+export type DlmmBin = { price: number; usdc: number };
+
+// Mirrors `dlmm::Curve`: each bin counts as whichever of its two tokens is worth less at `price`,
+// all USDC once the price is above the bin and all base token below it, the USDC marked down to `usdcKept`
+export function dlmmValue(bins: DlmmBin[], price: number, usdcKept = 1) {
+  return bins.reduce((sum, b) => sum + Math.min(b.usdc * usdcKept, (b.usdc * price) / b.price), 0);
+}
+
+// Whole base tokens and USDC the position holds once the pair trades at `price`, fees left out
+export function dlmmAmounts(bins: DlmmBin[], price: number) {
+  return bins.reduce((t, b) => (b.price <= price ? { ...t, usdc: t.usdc + b.usdc } : { ...t, base: t.base + b.usdc / b.price }), { base: 0, usdc: 0 });
+}
 
 // `only` values a single scenario of the full tables
 export type ShockParams = { numScenarios: number; initShockBps: number[]; maintShockBps: number[]; maxShockBps?: number; only?: number };
@@ -76,6 +91,7 @@ export function limits(positions: RiskPosition[], params: ShockParams, prices: R
   };
   const value = (p: RiskPosition, at: number, usdcKept = 1) => {
     if ("amount" in p) return p.amount * at;
+    if ("bins" in p) return dlmmValue(p.bins, at, usdcKept);
     const { sol, usdc } = lpAmounts(p.liquidity, p.tickLower, p.tickUpper, at);
     return sol * at + usdc * usdcKept;
   };

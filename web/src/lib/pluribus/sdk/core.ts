@@ -24,6 +24,7 @@ import BN from "bn.js";
 import { Buffer } from "buffer";
 import idl from "./idl/pluribus.json";
 import type { Pluribus } from "./idl/pluribus";
+import { DLMM_PROGRAM_ID, MEMO_PROGRAM_ID, binPrice, decodeDlmmPair, decodeDlmmPosition, dlmmPda } from "./dlmm";
 import { type RiskPosition, dynamicShocks, effectiveAt, lpAmounts, lpValue, tickToPrice } from "./math";
 
 export type { Pluribus };
@@ -49,7 +50,8 @@ export type Deployment = {
   tickSpacing: number;
   demoMode: boolean;
   // LP markets besides `whirlpool`, such as Raydium CLMM pools, each with the program that owns it and its base token
-  lpMarkets?: { pool: string; dexProgram: string; baseMint: string }[];
+  // `accounts` are the market's own accounts its instructions keep naming, such as a Meteora pair's reserves, for the lookup table
+  lpMarkets?: { pool: string; dexProgram: string; baseMint: string; accounts?: string[] }[];
   // An address lookup table of the accounts transactions keep reusing, see `buildTransaction`
   lookupTable?: string;
   // Indexed by mint, and USDC has no price account because it is fixed at $1
@@ -97,6 +99,8 @@ export const RAYDIUM_CLMM_PROGRAM_IDS = ["CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grr
 );
 export const KIND_TOKEN = 1;
 export const KIND_LP = 2;
+// A Meteora DLMM position, whose slot names the position account itself since it has no NFT
+export const KIND_DLMM = 3;
 export const MAX_U64 = new BN("18446744073709551615");
 const TICK_ARRAY_SIZE = 88;
 // Pyth's receiver owns every price update account, and its push oracle keeps one long-lived account per feed id and shard
@@ -315,6 +319,11 @@ export function healthAccounts(
       if (backing) keys.push(backing);
       const stakePool = d.assets[p.mint.toBase58()]?.backing?.stakePool;
       if (stakePool) keys.push(new PublicKey(stakePool));
+    } else if (p.kind === KIND_DLMM) {
+      // Market and pair, the position the slot names, then the base token's asset and price
+      const at = opts.lps?.get(p.mint.toBase58());
+      if (!at) throw new Error(`Meteora position ${p.mint.toBase58()} is not in a listed pair, or was not located with locateLps`);
+      keys.push(at.market, at.pool, p.mint, pda.asset(at.baseMint), priceAccountFor(d, at.baseMint.toBase58(), opts.sources));
     } else if (p.kind === KIND_LP) {
       // Without `lps` from `locateLps` every LP is taken to be an Orca position in the main whirlpool
       const at = opts.lps?.get(p.mint.toBase58());
@@ -333,13 +342,16 @@ export function healthAccounts(
 // Where an LP position lives: its market, the dex's position account, the pool, the dex and the market's base token
 export type LpLocation = { market: PublicKey; position: PublicKey; pool: PublicKey; dexProgram: PublicKey; baseMint: PublicKey };
 
-// Finds each LP position of `credit` on Orca or Raydium, keyed by NFT mint
+// Finds each LP position of `credit` on Orca or Raydium, keyed by NFT mint, and each Meteora position keyed by its own address
 // With only the main whirlpool listed every position is in it, so nothing is fetched
 export async function locateLps(connection: Connection, d: Deployment, credit: CreditAccount): Promise<Map<string, LpLocation>> {
   const lps = credit.positions.filter((p) => p.kind === KIND_LP);
   const markets = [{ pool: d.whirlpool, dexProgram: WHIRLPOOL_PROGRAM_ID.toBase58(), baseMint: d.solMint }, ...(d.lpMarkets ?? [])];
   const orcaOnly = !d.lpMarkets?.length;
-  const programs = orcaOnly ? [WHIRLPOOL_PROGRAM_ID] : [...new Set(markets.map((m) => m.dexProgram))].map((k) => new PublicKey(k));
+  // Meteora positions have no NFT, so only the NFT dexes are searched for LP slots
+  const programs = orcaOnly
+    ? [WHIRLPOOL_PROGRAM_ID]
+    : [...new Set(markets.map((m) => m.dexProgram))].map((k) => new PublicKey(k)).filter((k) => !k.equals(DLMM_PROGRAM_ID));
   const candidates = lps.flatMap((p) => programs.map((dexProgram) => ({ mint: p.mint, dexProgram, position: pda.lpPosition(dexProgram, p.mint) })));
   const accounts = orcaOnly || !candidates.length ? [] : await connection.getMultipleAccountsInfo(candidates.map((c) => c.position));
   const found = new Map<string, LpLocation>();
@@ -354,6 +366,17 @@ export async function locateLps(connection: Connection, d: Deployment, credit: C
     const market = markets.find((m) => m.pool === pool.toBase58());
     if (!market) return;
     found.set(c.mint.toBase58(), { market: pda.lpMarket(pool), position: c.position, pool, dexProgram: c.dexProgram, baseMint: new PublicKey(market.baseMint) });
+  });
+  // A Meteora position records its pair, which names the market
+  const dlmms = credit.positions.filter((p) => p.kind === KIND_DLMM);
+  const infos = dlmms.length ? await connection.getMultipleAccountsInfo(dlmms.map((p) => p.mint)) : [];
+  dlmms.forEach((p, i) => {
+    const info = infos[i];
+    if (!info?.owner.equals(DLMM_PROGRAM_ID)) return;
+    const pair = decodeDlmmPosition(p.mint, info.data).pair;
+    const market = d.lpMarkets?.find((m) => m.pool === pair.toBase58());
+    if (!market) return;
+    found.set(p.mint.toBase58(), { market: pda.lpMarket(pair), position: p.mint, pool: pair, dexProgram: DLMM_PROGRAM_ID, baseMint: new PublicKey(market.baseMint) });
   });
   return found;
 }
@@ -421,7 +444,10 @@ export function lookupAddresses(d: Deployment): PublicKey[] {
     }
     if (a.backing?.stakePool) keys.push(k(a.backing.stakePool));
   }
-  for (const m of d.lpMarkets ?? []) keys.push(k(m.pool), pda.lpMarket(k(m.pool)), k(m.dexProgram));
+  for (const m of d.lpMarkets ?? []) {
+    keys.push(k(m.pool), pda.lpMarket(k(m.pool)), k(m.dexProgram), ...(m.accounts ?? []).map(k));
+    if (m.dexProgram === DLMM_PROGRAM_ID.toBase58()) keys.push(MEMO_PROGRAM_ID, dlmmPda.eventAuthority());
+  }
   return [...new Map(keys.map((key) => [key.toBase58(), key])).values()];
 }
 
@@ -461,8 +487,8 @@ export async function fetchHealth(program: PluribusProgram, d: Deployment, owner
 
 export type PositionInfo = {
   slot: number;
-  kind: "token" | "lp";
-  // Token mint, or the Orca position NFT mint
+  kind: "token" | "lp" | "dlmm";
+  // Token mint, the Orca or Raydium position NFT mint, or the Meteora position account
   mint: PublicKey;
   // Token base units, or 1 for an LP position
   amount: BN;
@@ -474,16 +500,27 @@ export type PositionInfo = {
 export async function fetchPositions(program: PluribusProgram, d: Deployment, credit: CreditAccount): Promise<PositionInfo[]> {
   const held = credit.positions.map((p, slot) => ({ ...p, slot })).filter((p) => p.kind !== 0);
   const lps = held.filter((p) => p.kind === KIND_LP);
+  const dlmms = held.filter((p) => p.kind === KIND_DLMM);
   const where = await locateLps(program.provider.connection, d, credit);
   const located = lps.map((p) => where.get(p.mint.toBase58()));
+  const dlmmAt = dlmms.map((p) => {
+    const at = where.get(p.mint.toBase58());
+    if (!at) throw new Error(`Meteora position ${p.mint.toBase58()} is not in a listed pair`);
+    return at;
+  });
   // An LP is priced with its market's base token
-  const mintOf = (p: (typeof held)[number]) => (p.kind === KIND_LP ? (where.get(p.mint.toBase58())?.baseMint.toBase58() ?? d.solMint) : p.mint.toBase58());
+  const mintOf = (p: (typeof held)[number]) =>
+    p.kind === KIND_LP || p.kind === KIND_DLMM ? (where.get(p.mint.toBase58())?.baseMint.toBase58() ?? d.solMint) : p.mint.toBase58();
   const priced = [...new Set(held.map(mintOf))];
-  const [assets, markets, pool, lpAccounts] = await Promise.all([
+  const connection = program.provider.connection;
+  const [assets, markets, pool, lpAccounts, dlmmMarkets, dlmmAccounts] = await Promise.all([
     program.account.asset.fetchMultiple(priced.map((m) => pda.asset(new PublicKey(m)))),
     lps.length ? program.account.lpMarket.fetchMultiple(located.map((l) => l?.market ?? pda.lpMarket(new PublicKey(d.whirlpool)))) : [],
     fetchPool(program),
-    lps.length ? program.provider.connection.getMultipleAccountsInfo(located.map((l, i) => l?.position ?? pda.orcaPosition(lps[i].mint))) : [],
+    lps.length ? connection.getMultipleAccountsInfo(located.map((l, i) => l?.position ?? pda.orcaPosition(lps[i].mint))) : [],
+    dlmms.length ? program.account.lpMarket.fetchMultiple(dlmmAt.map((l) => l.market)) : [],
+    // Each Meteora position, then its pair, for the bin step
+    dlmms.length ? connection.getMultipleAccountsInfo([...dlmms.map((p) => p.mint), ...dlmmAt.map((l) => l.pool)]) : [],
   ]);
   // A listing still in its activation delay backs no new debt, the same as a paused one
   const now = Date.now() / 1000;
@@ -496,6 +533,24 @@ export async function fetchPositions(program: PluribusProgram, d: Deployment, cr
     const shockBps = dynamicShocks(asset, pool.params);
     const base = { mint, group: asset.params.group, paused: asset.params.paused || waiting(asset.activeAt), shockBps };
     let risk: RiskPosition;
+    if (p.kind === KIND_DLMM) {
+      const i = dlmms.indexOf(p);
+      const [posData, pairData, market] = [dlmmAccounts[i]?.data, dlmmAccounts[dlmms.length + i]?.data, dlmmMarkets[i]];
+      if (!posData || !pairData || !market) throw new Error(`Meteora position ${p.mint.toBase58()} is missing`);
+      const position = decodeDlmmPosition(p.mint, posData);
+      const pair = decodeDlmmPair(dlmmAt[i].pool, pairData);
+      const baseIsX = market.baseFirst;
+      const [decimalsX, decimalsY] = baseIsX ? [asset.decimals, 6] : [6, asset.decimals];
+      // A share is a Q64.64 claim on the bin's P x + y, counted in token Y base units
+      const bins = position.shares.flatMap((s, k) => {
+        if (s === BigInt(0)) return [];
+        const price = binPrice(position.lower + k, pair.binStep, decimalsX, decimalsY, baseIsX);
+        const y = Number(s) / 2 ** 64 / 10 ** decimalsY;
+        return [{ price, usdc: baseIsX ? y : y * price }];
+      });
+      risk = { ...base, bins, usdcGroup: pool.usdcGroup, liqCostBps: market.liqCostBps, paused: base.paused || market.paused || waiting(market.activeAt) };
+      return { slot: p.slot, kind: "dlmm" as const, mint: p.mint, amount: p.amount, risk };
+    }
     if (lp) {
       const i = lps.indexOf(p);
       const [data, market] = [lpAccounts[i]?.data, markets[i]];
