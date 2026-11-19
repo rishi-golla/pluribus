@@ -120,6 +120,20 @@ Risky collateral pays an extra rate that goes to junior lenders, who take the fi
 | Refresh | | | The rate in force is the one set at the account's last valuation (draw, withdrawal or `refresh_tier`). A new asset premium or a changed collateral mix takes effect at the next refresh. |
 | `PREMIUM_INTERVAL_MS` | keeper env, 600000 | | How often the keeper refreshes an account that pays a premium. Shorter makes junior payouts smoother and puts changes into effect sooner, at a transaction per account per interval. |
 
+## Compounding
+
+A borrower can have an LP or Meteora position's fees put back into it instead of repaying debt. Anyone may do it and is paid a share of the fees, so no keeper is needed.
+
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `compound_slippage_bps` (per position, set by its owner) | 0 for every position (fees repay debt) | 0, or 1 to `MAX_COMPOUND_SLIPPAGE_BPS` (1000) | 0 keeps autopay. Anything else lets anyone compound while the pool's price is within that many bps of the oracle's, and autopay then leaves the position alone. A looser tolerance compounds more often but lets a caller who moves the pool first take more of the fees; it can never touch the position's existing value or lower health, since fees never counted as collateral. Cleared whenever the slot is withdrawn, liquidated or reused. |
+| `compound_bounty_bps` (pool) | 0 until set | ≤ `MAX_COMPOUND_BOUNTY_BPS` (500) | Share of each fee paid to the caller's recipient. Too low and nobody bothers, too high and borrowers lose more of their yield. Set with `set_compound_bounty`, which applies at once inside the cap. |
+| `COMPOUND`, `COMPOUND_INTERVAL_MS`, `COMPOUND_MIN_USD` | keeper env, on / 600000 / 0.01 | | The keeper compounds for the bounty too, as a fallback for callers. `COMPOUND=0` leaves it to others. |
+
+- The caller picks the recipient of the bounty, so a throwaway key can pay the transaction fees while the bounty goes to a wallet. The web app's auto-compound uses that.
+- A compound needs no health check, so several fit in one transaction: about 5 to 7 Orca or Raydium positions, 2 to 4 Meteora ones (`sdk/compound.ts` `packCompounds`).
+- What a position's range cannot take, for example the second token of an out-of-range position, is booked as collateral as autopay does.
+
 ## Senior withdrawals and accounts
 
 No settings, only rules worth knowing before mainnet.
@@ -164,6 +178,7 @@ These need a program upgrade to change.
 | `STAKE_POOL_PROGRAMS` | SPL stake pool, Sanctum multi-validator | Programs whose pools can back an LST |
 | `MAX_RISK_PREMIUM_BPS` | 3000 | Any asset's risk premium |
 | `MAX_PRICE_EXPONENT` | 12 | How many tokens one priced unit can hold (10^12) |
+| `MAX_COMPOUND_SLIPPAGE_BPS` / `MAX_COMPOUND_BOUNTY_BPS` | 1000 / 500 | The loosest price tolerance a borrower can allow, and the largest compound bounty |
 
 ## Off-chain services and demo
 
