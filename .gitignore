@@ -30,6 +30,7 @@ test-ledger/
 scripts/.keys/
 scripts/out/
 programs/pluribus/tests/fixtures/orca/whirlpool.so
+programs/pluribus/tests/fixtures/raydium/*.so
 
 # Local chain addresses differ per machine
 deployments/localnet.json

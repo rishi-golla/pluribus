@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod autopay;
+pub mod autopay_raydium;
 pub mod borrow;
 pub mod junior;
 pub mod keeper;
@@ -9,6 +10,7 @@ pub mod senior;
 
 pub use admin::*;
 pub use autopay::*;
+pub use autopay_raydium::*;
 pub use borrow::*;
 pub use junior::*;
 pub use keeper::*;

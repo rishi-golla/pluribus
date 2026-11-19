@@ -86,4 +86,6 @@ pub enum PluribusError {
     CollateralLeft,
     #[msg("This senior exit was already cancelled")]
     ExitCancelled,
+    #[msg("This needs a Raydium market")]
+    NotRaydiumMarket,
 }

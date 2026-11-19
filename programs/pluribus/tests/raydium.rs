@@ -1,10 +1,25 @@
 mod common;
 
 use {
-    anchor_lang::prelude::Pubkey,
+    anchor_lang::{
+        prelude::{pubkey, rent, Pubkey},
+        solana_program::{
+            instruction::{AccountMeta, Instruction},
+            program_option::COption,
+            program_pack::Pack,
+            system_program,
+        },
+    },
+    anchor_spl::{associated_token::ID as ATA_PROGRAM, token::spl_token::state::Mint as MintState},
+    base64::{engine::general_purpose::STANDARD, Engine},
     common::*,
-    pluribus::{error::PluribusError, state::*},
+    litesvm::LiteSVM,
+    pluribus::{constants::*, error::PluribusError, state::*},
+    serde_json::Value,
+    solana_account::Account,
+    solana_keypair::Keypair,
     solana_signer::Signer,
+    std::{fs, path::PathBuf, str::FromStr},
 };
 
 /// A Raydium SOL/USDC pool listed as an LP market, with USDC as token 0 when `usdc_first`
@@ -149,7 +164,7 @@ fn only_positions_of_a_listed_raydium_pool_count() {
 }
 
 #[test]
-fn autopay_harvests_only_orca_markets() {
+fn the_orca_autopay_does_not_take_a_raydium_market() {
     let mut env = Env::new();
     let pool = raydium_market(&mut env, false);
     let (lower, upper) = ticks(120.0, 180.0, false);
@@ -160,4 +175,486 @@ fn autopay_harvests_only_orca_markets() {
     let keeper = env.wallet();
     let dummies = [Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique()];
     expect_err(env.send(&[env.autopay_ix(&keeper.pubkey(), &me, &pool, &nft, dummies)], &[&keeper]), PluribusError::UnsupportedDex);
+}
+
+#[test]
+fn the_raydium_autopay_does_not_take_an_orca_market() {
+    let mut env = Env::new();
+    let whirlpool = env.whirlpool;
+    let (user, keeper) = (env.user(), env.wallet());
+    let me = user.pubkey();
+    let nft = env.lp(&me, &whirlpool, 120.0, 180.0, liquidity_for(1_000, 120.0, 180.0, 150), &TOKEN);
+    expect_ok(env.send(&[env.deposit_lp_ix(&me, &whirlpool, &nft)], &[&user]));
+    let dummies = [Pubkey::new_unique(); 5];
+    expect_err(env.send(&[env.autopay_raydium_ix(&keeper.pubkey(), &me, &whirlpool, &nft, dummies, &[])], &[&keeper]), PluribusError::NotRaydiumMarket);
+}
+
+// The tests below run on mainnet's Raydium program with pools and positions it creates itself, and so each swap pays real fees
+
+const COMPUTE_BUDGET: Pubkey = pubkey!("ComputeBudget111111111111111111111111111111");
+/// First 8 bytes of sha256("global:create_pool")
+const CREATE_POOL: [u8; 8] = [0xe9, 0x92, 0xd1, 0x8e, 0xcf, 0x68, 0x40, 0xbc];
+/// First 8 bytes of sha256("global:open_position_with_token22_nft")
+const OPEN_POSITION_WITH_TOKEN22_NFT: [u8; 8] = [0x4d, 0xff, 0xae, 0x52, 0x7d, 0x1d, 0xc9, 0x2e];
+/// First 8 bytes of sha256("global:swap_v2")
+const SWAP_V2: [u8; 8] = [0x2b, 0x04, 0xed, 0x0b, 0x1a, 0xc9, 0x1e, 0x62];
+/// Where a pool keeps its reward infos, and how far into one its mint and vault lie
+const REWARD_INFOS: usize = 397;
+const REWARD_MINT: usize = 57;
+const REWARD_VAULT: usize = 89;
+/// Tokens a wallet is funded with when it has to trade or provide, far more than any test spends
+const PLENTY: u64 = 1 << 50;
+
+/// A Raydium pool of the test chain, listed as a market
+struct Clmm {
+    program: Pubkey,
+    pool: Pubkey,
+    config: Pubkey,
+    usdc_first: bool,
+    mint_0: Pubkey,
+    mint_1: Pubkey,
+    vault_0: Pubkey,
+    vault_1: Pubkey,
+    observation: Pubkey,
+    /// Ticks between initialized ticks
+    spacing: i32,
+}
+
+/// A position of a `Clmm`, over ticks the pool can hold
+struct Lp {
+    nft: Pubkey,
+    lower: i32,
+    upper: i32,
+}
+
+fn budget() -> Instruction {
+    Instruction::new_with_bytes(COMPUTE_BUDGET, &[&[2u8][..], &1_400_000u32.to_le_bytes()].concat(), vec![])
+}
+
+fn find(program: &Pubkey, seeds: &[&[u8]]) -> Pubkey {
+    Pubkey::find_program_address(seeds, program).0
+}
+
+/// Every chain the tests run on: each of the two Raydium programs the protocol accepts, with USDC as either token of its pool
+/// A program whose binary has not been fetched is left out, since they are too large to commit
+fn chains() -> Vec<(Env, Clmm)> {
+    let mut all = vec![];
+    for program in RAYDIUM_CLMM_PROGRAMS {
+        for usdc_first in [false, true] {
+            all.extend(chain(program, usdc_first));
+        }
+    }
+    all
+}
+
+/// A chain holding the real Raydium CLMM program with Pluribus set up beside it, and a SOL/USDC pool of Raydium's made at $150
+fn chain(program: Pubkey, usdc_first: bool) -> Option<(Env, Clmm)> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/raydium");
+    let file = if program == RAYDIUM_CLMM_PROGRAMS[0] { "raydium_clmm.so" } else { "raydium_clmm_devnet.so" };
+    let Ok(binary) = fs::read(dir.join(file)) else {
+        eprintln!("Skipped: run `npm run raydium:snapshot` to fetch {file}");
+        return None;
+    };
+    let mut svm = LiteSVM::new();
+    svm.add_program(program, &binary).unwrap();
+    let file: Value = serde_json::from_str(&fs::read_to_string(dir.join("amm_config.json")).unwrap()).unwrap();
+    let (config, a) = (Pubkey::from_str(file["pubkey"].as_str().unwrap()).unwrap(), &file["account"]);
+    let data = STANDARD.decode(a["data"][0].as_str().unwrap()).unwrap();
+    // Layout: disc 8 | bump 1 | index 2 | owner 32 | protocol fee rate 4 | trade fee rate 4 | tick spacing 2
+    let spacing = u16::from_le_bytes(data[51..53].try_into().unwrap()) as i32;
+    svm.set_account(config, Account { lamports: a["lamports"].as_u64().unwrap(), data, owner: program, executable: false, rent_epoch: 0 }).unwrap();
+
+    // The pool sorts its mints, so the two come in the order that puts USDC where the test wants it
+    let (x, y) = (Pubkey::new_unique(), Pubkey::new_unique());
+    let (low, high) = if x < y { (x, y) } else { (y, x) };
+    let (usdc, sol) = if usdc_first { (low, high) } else { (high, low) };
+    for (mint, decimals) in [(usdc, 6), (sol, 9)] {
+        let state = MintState { mint_authority: COption::None, supply: u64::MAX / 2, decimals, is_initialized: true, freeze_authority: COption::None };
+        let mut data = vec![0; MintState::LEN];
+        MintState::pack(state, &mut data).unwrap();
+        let lamports = svm.minimum_balance_for_rent_exemption(data.len());
+        svm.set_account(mint, Account { lamports, data, owner: TOKEN, executable: false, rent_epoch: 0 }).unwrap();
+    }
+    // Pluribus lists its main Orca market first, which only needs an account that looks like a whirlpool of the two mints
+    let whirlpool = Pubkey::new_unique();
+    let mut data = vec![0u8; 653];
+    data[..8].copy_from_slice(&[0x3f, 0x95, 0xd1, 0x0c, 0xe1, 0x80, 0x63, 0x09]);
+    data[101..133].copy_from_slice(sol.as_ref());
+    data[181..213].copy_from_slice(usdc.as_ref());
+    let lamports = svm.minimum_balance_for_rent_exemption(data.len());
+    svm.set_account(whirlpool, Account { lamports, data, owner: WHIRLPOOL_PROGRAM_ID, executable: false, rent_epoch: 0 }).unwrap();
+    let mut env = Env::on(svm, default_params(), true, Some((usdc, sol, whirlpool)));
+
+    let (mint_0, mint_1) = if usdc_first { (usdc, sol) } else { (sol, usdc) };
+    let pool = find(&program, &[b"pool", config.as_ref(), mint_0.as_ref(), mint_1.as_ref()]);
+    let clmm = Clmm {
+        program,
+        pool,
+        config,
+        usdc_first,
+        mint_0,
+        mint_1,
+        vault_0: find(&program, &[b"pool_vault", pool.as_ref(), mint_0.as_ref()]),
+        vault_1: find(&program, &[b"pool_vault", pool.as_ref(), mint_1.as_ref()]),
+        observation: find(&program, &[b"observation", pool.as_ref()]),
+        spacing,
+    };
+    // Raydium prices token 1 in token 0 in raw units, so with 9 and 6 decimals $150 is 0.15 USDC per SOL lamport
+    let raw: f64 = if usdc_first { 1e9 / 150e6 } else { 150e6 / 1e9 };
+    let sqrt_price = (raw.sqrt() * 18446744073709551616.0) as u128;
+    let creator = env.wallet();
+    let mut data = CREATE_POOL.to_vec();
+    data.extend_from_slice(&sqrt_price.to_le_bytes());
+    // The pool may be traded from the start
+    data.extend_from_slice(&0u64.to_le_bytes());
+    let metas = vec![
+        AccountMeta::new(creator.pubkey(), true),
+        AccountMeta::new_readonly(config, false),
+        AccountMeta::new(pool, false),
+        AccountMeta::new_readonly(mint_0, false),
+        AccountMeta::new_readonly(mint_1, false),
+        AccountMeta::new(clmm.vault_0, false),
+        AccountMeta::new(clmm.vault_1, false),
+        AccountMeta::new(clmm.observation, false),
+        AccountMeta::new(clmm.bitmap_extension(), false),
+        AccountMeta::new_readonly(TOKEN, false),
+        AccountMeta::new_readonly(TOKEN, false),
+        AccountMeta::new_readonly(system_program::ID, false),
+        AccountMeta::new_readonly(rent::ID, false),
+    ];
+    expect_ok(env.send(&[budget(), Instruction::new_with_bytes(program, &data, metas)], &[&creator]));
+    // The pool account is read at fixed offsets by the SDK: its mints, then its vaults, and the tick spacing at 235
+    let made = env.svm.get_account(&pool).unwrap();
+    assert_eq!((&made.data[73..105], &made.data[105..137]), (mint_0.as_ref(), mint_1.as_ref()));
+    assert_eq!((&made.data[137..169], &made.data[169..201]), (clmm.vault_0.as_ref(), clmm.vault_1.as_ref()));
+    assert_eq!(u16::from_le_bytes(made.data[235..237].try_into().unwrap()) as i32, spacing);
+    let admin = env.admin.insecure_clone();
+    expect_ok(env.send(&[env.init_lp_market_ix(&pool, &sol, 500)], &[&admin]));
+    Some((env, clmm))
+}
+
+impl Clmm {
+    fn tick_array(&self, start: i32) -> Pubkey {
+        find(&self.program, &[b"tick_array", self.pool.as_ref(), &start.to_be_bytes()])
+    }
+
+    /// What a position outside the range the pool's own bitmap covers needs as well
+    fn bitmap_extension(&self) -> Pubkey {
+        find(&self.program, &[b"pool_tick_array_bitmap_extension", self.pool.as_ref()])
+    }
+
+    /// Where the tick array holding `tick` starts: an array spans 60 ticks of the pool's spacing
+    fn start(&self, tick: i32) -> i32 {
+        tick.div_euclid(60 * self.spacing) * 60 * self.spacing
+    }
+
+    /// Opens a position over a price range worth `usd` dollars at $150, funded by `owner`, who gets its Token-2022 NFT
+    fn open(&self, env: &mut Env, owner: &Keypair, low: f64, high: f64, usd: u64) -> Lp {
+        let (lower, upper) = ticks(low, high, self.usdc_first);
+        // The range rounds outward to the pool's spacing
+        let (lower, upper) = (lower.div_euclid(self.spacing) * self.spacing, (upper + self.spacing - 1).div_euclid(self.spacing) * self.spacing);
+        let liquidity = liquidity_for(usd, low, high, 150);
+        let (me, nft) = (owner.pubkey(), Keypair::new());
+        for mint in [self.mint_0, self.mint_1] {
+            env.fund(&mint, &me, PLENTY);
+        }
+        let mut data = OPEN_POSITION_WITH_TOKEN22_NFT.to_vec();
+        for tick in [lower, upper, self.start(lower), self.start(upper)] {
+            data.extend_from_slice(&tick.to_le_bytes());
+        }
+        data.extend_from_slice(&liquidity.to_le_bytes());
+        data.extend_from_slice(&u64::MAX.to_le_bytes());
+        data.extend_from_slice(&u64::MAX.to_le_bytes());
+        // No metadata, and no base flag since the liquidity is given
+        data.extend_from_slice(&[0, 0]);
+        let metas = vec![
+            AccountMeta::new(me, true),
+            AccountMeta::new_readonly(me, false),
+            AccountMeta::new(nft.pubkey(), true),
+            AccountMeta::new(ata(&me, &nft.pubkey(), &TOKEN_2022), false),
+            AccountMeta::new(self.pool, false),
+            AccountMeta::new_readonly(self.protocol_position(lower, upper), false),
+            AccountMeta::new(self.tick_array(self.start(lower)), false),
+            AccountMeta::new(self.tick_array(self.start(upper)), false),
+            AccountMeta::new(find(&self.program, &[b"position", nft.pubkey().as_ref()]), false),
+            AccountMeta::new(ata(&me, &self.mint_0, &TOKEN), false),
+            AccountMeta::new(ata(&me, &self.mint_1, &TOKEN), false),
+            AccountMeta::new(self.vault_0, false),
+            AccountMeta::new(self.vault_1, false),
+            AccountMeta::new_readonly(rent::ID, false),
+            AccountMeta::new_readonly(system_program::ID, false),
+            AccountMeta::new_readonly(TOKEN, false),
+            AccountMeta::new_readonly(ATA_PROGRAM, false),
+            AccountMeta::new_readonly(TOKEN_2022, false),
+            AccountMeta::new_readonly(self.mint_0, false),
+            AccountMeta::new_readonly(self.mint_1, false),
+        ];
+        expect_ok(env.send(&[budget(), Instruction::new_with_bytes(self.program, &data, metas)], &[owner, &nft]));
+        Lp { nft: nft.pubkey(), lower, upper }
+    }
+
+    /// Raydium's own account for a range, which the version the tests run on no longer creates
+    fn protocol_position(&self, lower: i32, upper: i32) -> Pubkey {
+        find(&self.program, &[b"position", self.pool.as_ref(), &lower.to_be_bytes(), &upper.to_be_bytes()])
+    }
+
+    /// Sells `amount` of `input` into the pool from a fresh wallet, so the pool's liquidity earns a fee in that token
+    /// `lp` is the pool's only liquidity, whose tick arrays are all a small swap can touch
+    fn swap(&self, env: &mut Env, lp: &Lp, input: &Pubkey, amount: u64) {
+        let trader = env.wallet();
+        let me = trader.pubkey();
+        let (output, vault_in, vault_out) = if *input == self.mint_0 { (self.mint_1, self.vault_0, self.vault_1) } else { (self.mint_0, self.vault_1, self.vault_0) };
+        env.fund(input, &me, amount);
+        env.fund(&output, &me, 0);
+        let mut data = SWAP_V2.to_vec();
+        data.extend_from_slice(&amount.to_le_bytes());
+        data.extend_from_slice(&0u64.to_le_bytes());
+        // No price limit, and the amount given is what goes in
+        data.extend_from_slice(&0u128.to_le_bytes());
+        data.push(1);
+        let mut metas = vec![
+            AccountMeta::new_readonly(me, true),
+            AccountMeta::new_readonly(self.config, false),
+            AccountMeta::new(self.pool, false),
+            AccountMeta::new(ata(&me, input, &TOKEN), false),
+            AccountMeta::new(ata(&me, &output, &TOKEN), false),
+            AccountMeta::new(vault_in, false),
+            AccountMeta::new(vault_out, false),
+            AccountMeta::new(self.observation, false),
+            AccountMeta::new_readonly(TOKEN, false),
+            AccountMeta::new_readonly(TOKEN_2022, false),
+            AccountMeta::new_readonly(MEMO_PROGRAM_ID, false),
+            AccountMeta::new_readonly(*input, false),
+            AccountMeta::new_readonly(output, false),
+        ];
+        // The tick arrays the swap may walk, the one the price sits in first
+        let pool = env.svm.get_account(&self.pool).unwrap();
+        let current = self.start(i32::from_le_bytes(pool.data[269..273].try_into().unwrap()));
+        let mut arrays = vec![current];
+        for start in [self.start(lp.lower), self.start(lp.upper)] {
+            if !arrays.contains(&start) {
+                arrays.push(start);
+            }
+        }
+        metas.extend(arrays.into_iter().map(|start| AccountMeta::new(self.tick_array(start), false)));
+        expect_ok(env.send(&[budget(), Instruction::new_with_bytes(self.program, &data, metas)], &[&trader]));
+    }
+
+    /// Trades a little each way, so the position earns fees in both tokens
+    fn trade(&self, env: &mut Env, lp: &Lp) {
+        let (usdc, sol) = if self.usdc_first { (self.mint_0, self.mint_1) } else { (self.mint_1, self.mint_0) };
+        self.swap(env, lp, &usdc, 30 * USDC);
+        self.swap(env, lp, &sol, SOL / 5);
+    }
+
+    /// The accounts autopay passes Raydium for a position
+    fn accounts(&self, lp: &Lp) -> [Pubkey; 5] {
+        [self.vault_0, self.vault_1, self.tick_array(self.start(lp.lower)), self.tick_array(self.start(lp.upper)), self.protocol_position(lp.lower, lp.upper)]
+    }
+
+    /// What the pool's two vaults hold, which falls by what a harvest collects
+    fn held(&self, env: &Env) -> (u64, u64) {
+        (env.token_amount(&self.vault_0), env.token_amount(&self.vault_1))
+    }
+
+    /// The fees a harvest took out of the vaults between `before` and now, as (base token, USDC)
+    fn collected(&self, env: &Env, before: (u64, u64)) -> (u64, u64) {
+        let now = self.held(env);
+        let (first, second) = (before.0 - now.0, before.1 - now.1);
+        if self.usdc_first {
+            (second, first)
+        } else {
+            (first, second)
+        }
+    }
+
+    /// A position with its NFT deposited as collateral, after the pool has traded
+    fn deposited(&self, env: &mut Env, owner: &Keypair) -> Lp {
+        let lp = self.open(env, owner, 120.0, 180.0, 1_000);
+        self.trade(env, &lp);
+        expect_ok(env.send(&[env.deposit_lp_ix(&owner.pubkey(), &self.pool, &lp.nft)], &[owner]));
+        lp
+    }
+}
+
+fn assert_books_match_vaults(env: &Env) {
+    let pool = env.pool_state();
+    assert_eq!(pool.cash, env.token_amount(&env.usdc_vault));
+    for mint in [env.usdc, env.sol, env.stock] {
+        let asset: Asset = env.load(&env.asset_pda(&mint));
+        assert_eq!(asset.total_deposited, env.token_amount(&env.vault_pda(&mint)));
+    }
+}
+
+/// Points an account of the instruction at another one
+fn swap_account(ix: &mut Instruction, old: &Pubkey, new: Pubkey) {
+    let at = ix.accounts.iter().position(|m| m.pubkey == *old).unwrap();
+    ix.accounts[at].pubkey = new;
+}
+
+#[test]
+fn autopay_collects_real_raydium_fees_and_repays_debt() {
+    for (mut env, clmm) in chains() {
+        env.lender(1_000_000 * USDC);
+        let (user, keeper) = (env.user(), env.wallet());
+        let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+        let lp = clmm.deposited(&mut env, &user);
+        expect_ok(env.draw(&user, 100 * USDC));
+
+        let before = clmm.held(&env);
+        let autopay = env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[]);
+        let meta = expect_ok(env.send(&[autopay.clone()], &[&keeper]));
+        println!("autopay_raydium: {} compute units", meta.compute_units_consumed);
+        let (fee_sol, fee_usdc) = clmm.collected(&env, before);
+        assert!(fee_sol > 0 && fee_usdc > 0, "fees {fee_sol} SOL and {fee_usdc} USDC");
+
+        // The USDC part paid debt down and the SOL part became collateral
+        assert_eq!(env.debt(&me), 100 * USDC - fee_usdc);
+        let credit = env.credit(&me);
+        assert_eq!(credit.positions[credit.find(KIND_TOKEN, &sol).unwrap()].amount, fee_sol);
+        assert!(credit.find(KIND_TOKEN, &usdc).is_err());
+        assert_eq!(env.balance(&lp.nft, &env.pool), 1);
+        assert_books_match_vaults(&env);
+
+        // Nothing is left to collect, so a second run changes nothing
+        expect_ok(env.send(&[autopay], &[&keeper]));
+        assert_eq!(env.debt(&me), 100 * USDC - fee_usdc);
+        assert_eq!(env.credit(&me).positions[credit.find(KIND_TOKEN, &sol).unwrap()].amount, fee_sol);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn autopay_raydium_keeps_fees_as_collateral_when_nothing_is_owed() {
+    for (mut env, clmm) in chains() {
+        let (user, keeper) = (env.user(), env.wallet());
+        let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+        let lp = clmm.deposited(&mut env, &user);
+
+        let before = clmm.held(&env);
+        expect_ok(env.send(&[env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[])], &[&keeper]));
+        let (fee_sol, fee_usdc) = clmm.collected(&env, before);
+        assert!(fee_sol > 0 && fee_usdc > 0);
+        let credit = env.credit(&me);
+        assert_eq!(credit.positions[credit.find(KIND_TOKEN, &sol).unwrap()].amount, fee_sol);
+        assert_eq!(credit.positions[credit.find(KIND_TOKEN, &usdc).unwrap()].amount, fee_usdc);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn autopay_raydium_repays_what_is_owed_and_keeps_the_rest() {
+    for (mut env, clmm) in chains() {
+        env.lender(1_000_000 * USDC);
+        let (user, keeper) = (env.user(), env.wallet());
+        let (me, usdc) = (user.pubkey(), env.usdc);
+        let lp = clmm.deposited(&mut env, &user);
+        // Less debt than the USDC fees
+        let debt = 20_000;
+        expect_ok(env.draw(&user, debt));
+        let before = clmm.held(&env);
+        expect_ok(env.send(&[env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[])], &[&keeper]));
+        let (_, fee_usdc) = clmm.collected(&env, before);
+        assert!(fee_usdc > debt);
+        assert_eq!(env.debt(&me), 0);
+        let credit = env.credit(&me);
+        assert_eq!(credit.positions[credit.find(KIND_TOKEN, &usdc).unwrap()].amount, fee_usdc - debt);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
+fn autopay_raydium_rejects_a_position_the_account_does_not_hold() {
+    for (mut env, clmm) in chains() {
+        let (user, other, keeper) = (env.user(), env.user(), env.wallet());
+        let lp = clmm.deposited(&mut env, &user);
+        let steal = env.autopay_raydium_ix(&keeper.pubkey(), &other.pubkey(), &clmm.pool, &lp.nft, clmm.accounts(&lp), &[]);
+        expect_err(env.send(&[steal], &[&keeper]), PluribusError::PositionNotFound);
+    }
+}
+
+#[test]
+fn autopay_raydium_pays_only_into_the_programs_own_vaults() {
+    for (mut env, clmm) in chains() {
+        wrong_recipients_are_refused(&mut env, &clmm);
+    }
+}
+
+fn wrong_recipients_are_refused(env: &mut Env, clmm: &Clmm) {
+    env.lender(1_000_000 * USDC);
+    let (user, keeper) = (env.user(), env.wallet());
+    let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+    let lp = clmm.deposited(env, &user);
+    expect_ok(env.draw(&user, 100 * USDC));
+    // The keeper's own accounts, where a harvest could be sent to skim the fees
+    let (mine_sol, mine_usdc) = (env.fund(&sol, &keeper.pubkey(), 0), env.fund(&usdc, &keeper.pubkey(), 0));
+    let (base_vault, usdc_vault) = (env.vault_pda(&sol), env.vault_pda(&usdc));
+    let ix = env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[]);
+    let address: u32 = anchor_lang::error::ErrorCode::ConstraintAddress.into();
+
+    let mut skim_base = ix.clone();
+    swap_account(&mut skim_base, &base_vault, mine_sol);
+    assert!(failed_with_code(&env.send(&[skim_base], &[&keeper]), address));
+    let mut skim_usdc = ix.clone();
+    swap_account(&mut skim_usdc, &usdc_vault, mine_usdc);
+    assert!(failed_with_code(&env.send(&[skim_usdc], &[&keeper]), address));
+    // The vaults in each other's places
+    let mut crossed = ix.clone();
+    swap_account(&mut crossed, &base_vault, Pubkey::default());
+    swap_account(&mut crossed, &usdc_vault, base_vault);
+    swap_account(&mut crossed, &Pubkey::default(), usdc_vault);
+    assert!(failed_with_code(&env.send(&[crossed], &[&keeper]), address));
+    // A pool vault that is not the pool's own, or tick arrays of another pool, are Raydium's to refuse
+    let mut wrong_vault = ix.clone();
+    swap_account(&mut wrong_vault, &clmm.vault_0, mine_sol);
+    assert!(env.send(&[wrong_vault], &[&keeper]).is_err());
+    // The other Raydium program in the market's program's place
+    let other = RAYDIUM_CLMM_PROGRAMS.into_iter().find(|p| *p != clmm.program).unwrap();
+    let mut wrong_program = ix.clone();
+    swap_account(&mut wrong_program, &clmm.program, other);
+    assert!(failed_with_code(&env.send(&[wrong_program], &[&keeper]), address));
+
+    assert_eq!(env.debt(&me), 100 * USDC);
+    assert_eq!(env.token_amount(&mine_sol) + env.token_amount(&mine_usdc), 0);
+    // And the untouched instruction still works
+    expect_ok(env.send(&[ix], &[&keeper]));
+}
+
+#[test]
+fn autopay_raydium_pays_a_pools_rewards_only_to_the_accounts_owner() {
+    for (mut env, clmm) in chains() {
+        rewards_go_to_the_owner(&mut env, &clmm);
+    }
+}
+
+fn rewards_go_to_the_owner(env: &mut Env, clmm: &Clmm) {
+    env.lender(1_000_000 * USDC);
+    let (user, keeper) = (env.user(), env.wallet());
+    let me = user.pubkey();
+    let lp = clmm.deposited(env, &user);
+    expect_ok(env.draw(&user, 100 * USDC));
+    // The pool runs a reward, which Raydium wants three accounts for: its vault, a recipient and its mint
+    let reward = env.new_mint(6, &TOKEN);
+    let vault = env.fund(&reward, &Pubkey::new_unique(), 0);
+    let mut pool = env.svm.get_account(&clmm.pool).unwrap();
+    pool.data[REWARD_INFOS + REWARD_MINT..REWARD_INFOS + REWARD_MINT + 32].copy_from_slice(reward.as_ref());
+    pool.data[REWARD_INFOS + REWARD_VAULT..REWARD_INFOS + REWARD_VAULT + 32].copy_from_slice(vault.as_ref());
+    env.svm.set_account(clmm.pool, pool).unwrap();
+    let group = |recipient: Pubkey| [AccountMeta::new(vault, false), AccountMeta::new(recipient, false), AccountMeta::new_readonly(reward, false)];
+    let harvest = |env: &Env, extra: &[AccountMeta]| env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), extra);
+
+    // Without the reward's accounts Raydium refuses the collect
+    assert!(env.send(&[harvest(&env, &[])], &[&keeper]).is_err());
+    // A reward paid to the keeper, or to any account but the owner's, would be the owner's money skimmed
+    let keepers = env.fund(&reward, &keeper.pubkey(), 0);
+    expect_err(env.send(&[harvest(&env, &group(keepers))], &[&keeper]), PluribusError::AccountMismatch);
+    assert_eq!(env.debt(&me), 100 * USDC);
+
+    // The owner's account takes it, and the bitmap extension among the accounts is not mistaken for a reward group
+    let owners = env.fund(&reward, &me, 0);
+    let extension = AccountMeta::new(clmm.bitmap_extension(), false);
+    let extra = [&[extension][..], &group(owners)].concat();
+    expect_ok(env.send(&[harvest(&env, &extra)], &[&keeper]));
+    assert!(env.debt(&me) < 100 * USDC);
+    assert_books_match_vaults(&env);
 }
