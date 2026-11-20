@@ -1,0 +1,19 @@
+web/src/components/reactbits/ScrollReveal.tsx
+  s_f9942887ac27f8::t_71e4328c0606f5 1-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ff581e4bc9b392312b635ef4fac5577797b5710",
+  "prompts": {},
+  "sessions": {
+    "s_f9942887ac27f8": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_f9942887ac27f8",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
