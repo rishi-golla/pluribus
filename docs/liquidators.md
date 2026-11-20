@@ -212,7 +212,7 @@ As read from devnet on 20 Nov 2026. `doc_and_refs/TUNES.md` lists every setting 
 
 | Setting | Value |
 |---|---|
-| Liquidation bonus (`liq_bonus_bps`) | 5% for the pool, which an asset's own bonus can only lower |
+| Liquidation bonus (`liq_bonus_bps`) | SOL 1%, SOL liquidity positions 2%, NVDAx and AAPLx 5%, everything else the pool's 5%, which an asset's own bonus can only lower |
 | Close factor (`close_factor_bps`) | 50% of the debt per transaction |
 | Liquidation cost (`liq_cost_bps`) | SOL 5%, staked SOL 6%, stocks 10%, BONK 15%, USDC 0%, liquidity positions 5% |
 | Oldest price for a liquidation (`liq_price_age_secs`) | 1 day for JitoSOL and JupSOL; the demo prices of SOL, NVDAx, AAPLx and BONK do not expire |

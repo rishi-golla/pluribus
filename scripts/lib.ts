@@ -115,7 +115,7 @@ export const LIVE_SYMBOLS = ["JitoSOL", "JupSOL", "AAPLx", "BONK"];
 export const PREMIUM_BPS: Record<string, number> = { BONK: 1500, NVDAx: 300, AAPLx: 300 };
 export const PREMIUM_TIERS = [10_000, 6_000, 3_000];
 // The liquidator's bonus in bps on a token and on liquidity positions in it; an asset not named here pays the pool's
-export const LIQ_BONUS_BPS: Record<string, [number, number]> = { SOL: [100, 200] };
+export const LIQ_BONUS_BPS: Record<string, [number, number]> = { SOL: [100, 200], NVDAx: [500, 0], AAPLx: [500, 0] };
 // The share of a position's fees paid to whoever collects them, by compounding or by autopay, since no keeper does it
 export const COMPOUND_BOUNTY_BPS = 200;
 
@@ -165,14 +165,16 @@ export async function demoActivateNow(d: Deployment): Promise<boolean> {
   const [pool, now] = await Promise.all([program.account.pool.fetch(pda.pool()), chainNow()]);
   if (!pool.demoMode) return false;
   const mints = Object.keys(d.assets).map((m) => new PublicKey(m));
+  // bn.js gtn takes only numbers below 2^26, far short of a timestamp
+  const later = (at: BN) => at.gt(new BN(now));
   const markets = [d.whirlpool, ...(d.lpMarkets ?? []).map((m) => m.pool)].map((p) => pda.lpMarket(new PublicKey(p)));
   const [assets, lps] = await Promise.all([
     program.account.asset.fetchMultiple(mints.map((m) => pda.asset(m))),
     program.account.lpMarket.fetchMultiple(markets),
   ]);
   const waiting = [
-    ...assets.flatMap((a, i) => (a && (!a.pendingAt.isZero() || !a.premiumPendingAt.isZero() || a.activeAt.gtn(now)) ? [pda.asset(mints[i])] : [])),
-    ...lps.flatMap((m, i) => (m && (!m.pendingAt.isZero() || m.activeAt.gtn(now)) ? [markets[i]] : [])),
+    ...assets.flatMap((a, i) => (a && (!a.pendingAt.isZero() || !a.premiumPendingAt.isZero() || later(a.activeAt)) ? [pda.asset(mints[i])] : [])),
+    ...lps.flatMap((m, i) => (m && (!m.pendingAt.isZero() || later(m.activeAt)) ? [markets[i]] : [])),
   ];
   if (!waiting.length && pool.pendingAt.isZero() && pool.premiumTierPendingAt.isZero()) return false;
   await send(await ix.demoActivate(program, me, waiting));

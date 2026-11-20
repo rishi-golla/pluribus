@@ -58,21 +58,21 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
-| `liq_bonus_bps` (asset) | 0 on every asset, which takes the pool's 500 | 0, or 1 to the pool's `liq_bonus_bps` | The liquidator's bonus on that token. Applies at once either way: the pool's bonus is the ceiling, and a change to that waits out the activation delay. If the pool's is later cut below it, the pool's applies. |
-| `lp_liq_bonus_bps` (asset) | 0 on every asset | same | The bonus on a liquidity position whose base token is this asset, on any dex. |
+| `liq_bonus_bps` (asset) | SOL 100, NVDAx and AAPLx 500, others 0, which takes the pool's 500 | 0, or 1 to the pool's `liq_bonus_bps` | The liquidator's bonus on that token. Applies at once either way: the pool's bonus is the ceiling, and a change to that waits out the activation delay. If the pool's is later cut below it, the pool's applies. |
+| `lp_liq_bonus_bps` (asset) | SOL 200, others 0 | same | The bonus on a liquidity position whose base token is this asset, on any dex. |
 | `ORDER_SLACK_BPS` | 1000 | constant in `constants.rs` | With debt more than this far above the liquidation limit the order stops binding, so a deep account never waits for a liquidator who can afford the first position. Lower = the order gives way sooner. |
 | `ORDER_TIE` | 100, in millionths of a dollar per dollar | constant in `constants.rs` | Keys closer than this count as level, so rounding never decides between two positions of a kind. |
 
 - The order: the position with the lowest key goes first, where key = its value in the scenario that sets the liquidation limit ÷ its market value × (1 + its bonus). That sale costs the limit least per dollar of debt repaid. USDC, a position worth nothing and one that can't be handed over (unclear price, halted mint, short or frozen vault) are outside it.
-- `scripts/setup.ts` sets the values in `LIQ_BONUS_BPS` (`scripts/lib.ts`) on a fresh deployment: SOL 100, positions in SOL 200. Devnet keeps the pool's 500 on everything until someone sets them there.
+- `LIQ_BONUS_BPS` (`scripts/lib.ts`) holds the proposed values: SOL 100, positions in SOL 200 (Orca, Raydium and DLMM alike), NVDAx and AAPLx 500. `scripts/setup.ts` sets them on a fresh deployment and `npm run liq:bonus -- --url <rpc>` on a live one, signed by `DEMO_ADMIN_SECRET` from the root `.env`. Assets not named keep the pool's 500. Set on devnet 20 Nov 2026.
 
-Proposed values, which Ted picks from:
+The values proposed and now set:
 
 | Asset | Deployed | Proposed | Elsewhere (read 19 Nov 2026) |
 |---|---|---|---|
-| SOL | 500 | 100 | Jupiter Lend 1% on its SOL vaults. Kamino from 0.1% (1% before its cut), rising while a loan stays unhealthy. marginfi 5%. |
+| SOL | 100 | 100 | Jupiter Lend 1% on its SOL vaults. Kamino from 0.1% (1% before its cut), rising while a loan stays unhealthy. marginfi 5%. |
 | NVDAx, AAPLx | 500 | 500 | Jupiter Lend 7% on NVDAx and TSLAx, 5% on SPYx and QQQx. |
-| Orca SOL-USDC position | 500 | 200 | Revert Lend 2% to 10% on Uniswap v3 positions. |
+| Orca SOL-USDC position | 200 | 200 | Revert Lend 2% to 10% on Uniswap v3 positions. |
 
 - A stock's bonus pays the liquidator for a price that jumps at the open after a night or a weekend. Jupiter gives that as its reason for 7% on single stocks.
 - A position is sold whole and the liquidator has to unwind it, so it pays more than SOL.

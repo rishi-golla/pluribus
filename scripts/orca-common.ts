@@ -70,7 +70,11 @@ export const [DEC_A, DEC_B] = [9, 6];
 export const SPAN = TICK_SPACING * TICK_ARRAY_SIZE;
 export const POSITIONS = ["p1", "p2", "p3"];
 
-export const wallet = readKey(path.join(os.homedir(), ".config/solana/id.json"));
+// DEMO_ADMIN_SECRET, the pool admin's key in base58 as a wallet exports it or as a JSON byte array, signs instead of the CLI key when set
+const adminSecret = process.env.DEMO_ADMIN_SECRET?.trim();
+export const wallet = adminSecret
+  ? Keypair.fromSecretKey(adminSecret.startsWith("[") ? Uint8Array.from(JSON.parse(adminSecret)) : anchor.utils.bytes.bs58.decode(adminSecret))
+  : readKey(path.join(os.homedir(), ".config/solana/id.json"));
 export const me = wallet.publicKey;
 export const connection = new Connection(url, "confirmed");
 export const ctx = WhirlpoolContext.from(connection, new anchor.Wallet(wallet));
