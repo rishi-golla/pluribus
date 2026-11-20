@@ -26,7 +26,7 @@ function Cta({ href, primary, children }: { href: string; primary?: boolean; chi
   return (
     <Link
       href={href}
-      className={`inline-flex h-12 items-center justify-center whitespace-nowrap rounded-lg border px-6 text-[15px] font-medium transition-colors ${
+      className={`inline-flex h-12 items-center justify-center whitespace-nowrap rounded-lg border px-6 text-[15px] font-medium transition-colors md:px-4 lg:px-6 ${
         primary ? "border-brand bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]" : "border-line-2 bg-white/[0.03] text-t1 hover:bg-white/[0.07]"
       }`}
     >
@@ -44,48 +44,51 @@ export default function Home() {
         </Button>
       </SiteNav>
       <div className="mx-auto max-w-[1280px] px-4 sm:px-10">
-        <section className="grid gap-14 pt-12 sm:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)]">
+        {/* from tablet width up the headline, the board and the collateral strip share the first screen, sized in globals.css */}
+        <div className="first-screen md:flex md:flex-col">
+        <section className="grid gap-14 pt-12 sm:pt-16 md:min-h-0 md:flex-1 md:grid-cols-[minmax(0,1fr)_var(--hero-board)] md:pt-[var(--hero-pad)]">
           <div className="flex flex-col">
             {/* equal space above and below keeps the text centred on the board, whatever sits under it */}
-            <div className="hidden flex-1 lg:block" />
+            <div className="hidden flex-1 md:block" />
             <div>
             <FadeUp onMount delay={0.08} y={20}>
-              <h1 className="text-[44px] font-semibold leading-[0.98] tracking-[-0.035em] sm:text-[60px] lg:text-[80px]">
+              <h1 className="text-[44px] font-semibold leading-[0.98] tracking-[-0.035em] sm:text-[60px] md:text-[length:var(--hero-h1)]">
                 Borrow against
                 <br />
                 everything
                 <br />
                 you hold.
               </h1>
-              <p className="mt-6 max-w-[520px] text-[16px] leading-[1.55] text-t2 sm:text-[18px]">
+              <p className="mt-6 max-w-[520px] text-[16px] leading-[1.55] text-t2 sm:text-[18px] md:text-[16px] lg:text-[18px]">
                 Basket your SOL, LSTs, LPs, stocks and memecoins into one USDC loan. No maturity, and your LP fees pay it down.
               </p>
             </FadeUp>
-            <FadeUp onMount delay={0.18} className="mt-10 flex flex-wrap gap-3">
+            <FadeUp onMount delay={0.18} className="mt-10 flex flex-wrap gap-3 md:mt-[var(--hero-gap)]">
               <Cta href="/borrow" primary>
                 Open a credit line
               </Cta>
               <Cta href="/earn">Earn on USDC</Cta>
             </FadeUp>
             </div>
-            <div className="relative lg:flex-1">
-              {/* on desktop this box runs from the buttons down to the strip's rule, and the line sits in its middle */}
-              <FadeUp onMount delay={0.32} className="mt-8 lg:absolute lg:inset-x-0 lg:top-0 lg:mt-0 lg:flex lg:h-[calc(100%+5rem)] lg:items-center">
-                <EarnUpTo className="text-[17px] font-bold tracking-[-0.01em] text-t1" />
+            <div className="relative md:flex-1">
+              {/* beside the board this box runs from the buttons down to the strip's rule, and the line sits in its middle */}
+              <FadeUp onMount delay={0.32} className="mt-8 md:absolute md:inset-x-0 md:top-0 md:mt-0 md:flex md:h-[calc(100%+var(--strip-gap))] md:items-center">
+                <EarnUpTo className="text-[17px] font-bold tracking-[-0.01em] text-t1 md:text-[15px] lg:text-[17px]" />
               </FadeUp>
             </div>
           </div>
 
-          <FadeUp onMount delay={0.12} y={12} className="lg:self-center">
+          <FadeUp onMount delay={0.12} y={12} className="md:relative md:top-[var(--hero-drop)] md:self-center">
             <PortfolioGrid />
           </FadeUp>
         </section>
 
-        <FadeUp onMount delay={0.34} className="mt-16 border-y border-line py-6 sm:mt-20">
+        <FadeUp onMount delay={0.34} className="mt-16 border-y border-line py-6 sm:mt-20 md:mb-[var(--hero-end)] md:mt-[var(--strip-gap)] md:shrink-0 md:py-[var(--strip-pad)]">
           <div className="text-[12px] uppercase tracking-[0.06em] text-t3">Collateral on Solana</div>
-          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4 lg:justify-between">
+          {/* one row on desktop and two under it, so the strip's height is known to the first screen's sums */}
+          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4 lg:flex-nowrap lg:justify-between lg:gap-x-4">
             {collateral.map(([marks, name]) => (
-              <span key={name} className="flex items-center gap-2.5 text-[14px] font-medium text-t1">
+              <span key={name} className="flex items-center gap-2.5 whitespace-nowrap text-[14px] font-medium text-t1">
                 <span className="flex items-center gap-1.5">
                   {marks.map((mark) => (
                     <svg key={mark} viewBox="0 0 100 100" className="size-[22px] shrink-0" aria-hidden>
@@ -98,6 +101,7 @@ export default function Home() {
             ))}
           </div>
         </FadeUp>
+        </div>
 
         <main className="pb-32">
           <div className="mt-24 sm:mt-[128px]">

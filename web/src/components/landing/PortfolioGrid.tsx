@@ -142,7 +142,7 @@ export function PortfolioGrid() {
     <div ref={ref} className="grid-box">
       <div
         ref={boardRef}
-        className="grid-board relative touch-none lg:ml-auto"
+        className="grid-board relative touch-none md:ml-auto"
         role="img"
         aria-label={`An example portfolio as one board, split into ${PARTS.map((p) => p.name).join(", ")}.`}
         onPointerMove={pick}
