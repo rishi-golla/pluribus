@@ -1,0 +1,19 @@
+web/src/components/landing/ProductTour.tsx
+  s_42e606cc9049df::t_d5298ca8abc016 555,557
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d251cf9384a12cf4298ce1603e89a8ab8641214d",
+  "prompts": {},
+  "sessions": {
+    "s_42e606cc9049df": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_42e606cc9049df",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
