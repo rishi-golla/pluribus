@@ -15,6 +15,8 @@ mockups/
 *.webp
 *.svg
 *.ico
+# The README's banner and screenshots are the exception
+!docs/images/*.png
 
 # OS noise
 .DS_Store
