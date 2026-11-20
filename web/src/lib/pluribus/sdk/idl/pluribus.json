@@ -2021,6 +2021,73 @@
       "args": []
     },
     {
+      "name": "demo_reset_vol",
+      "discriminator": [
+        57,
+        29,
+        176,
+        234,
+        242,
+        93,
+        42,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "Asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "sigma_bps",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "demo_set_live_price",
       "discriminator": [
         228,
