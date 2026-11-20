@@ -2027,6 +2027,73 @@ export type Pluribus = {
       "args": []
     },
     {
+      "name": "demoResetVol",
+      "discriminator": [
+        57,
+        29,
+        176,
+        234,
+        242,
+        93,
+        42,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "sigmaBps",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "demoSetLivePrice",
       "discriminator": [
         228,
