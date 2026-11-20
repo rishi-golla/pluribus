@@ -40,3 +40,7 @@ deployments/localnet.json
 web/src/lib/pluribus/deployments/localnet.json
 .vercel
 .env.local
+
+# Mac mini runtime state
+deploy/macmini/logs/
+deploy/macmini/.streams-token

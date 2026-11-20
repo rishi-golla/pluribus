@@ -5,6 +5,8 @@
   "scripts": {
     "postinstall": "npm --prefix web install",
     "dev": "npm --prefix web run dev",
+    "dev:local": "NEXT_PUBLIC_LOCAL=1 npm --prefix web run dev",
+    "dev:mac": "NEXT_PUBLIC_LOCAL=0 npm --prefix web run dev",
     "orca:fixture": "tsx scripts/orca-fixture.ts",
     "orca:snapshot": "tsx scripts/orca-snapshot.ts",
     "orca:verify": "tsx scripts/orca-verify.ts",
@@ -13,6 +15,7 @@
     "idl": "mkdir -p sdk/idl && cp target/idl/pluribus.json target/types/pluribus.ts sdk/idl/",
     "sdk:sync": "mkdir -p deployments web/src/lib/pluribus && rsync -a --delete sdk deployments web/src/lib/pluribus/",
     "localnet": "tsx scripts/localnet.ts",
+    "macmini:sync": "tsx scripts/macmini-sync.ts",
     "setup": "tsx scripts/setup.ts",
     "list:meme": "tsx scripts/list-meme.ts",
     "liq:bonus": "tsx scripts/liq-bonus.ts",

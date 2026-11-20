@@ -1,0 +1,88 @@
+{
+  "cluster": "localnet",
+  "rpcUrl": "https://dylans-mac-mini.tail70e062.ts.net:10000/rpc",
+  "programId": "A4UnuBwwBLbvxj3AnUtCDzkj11kp1wdPh8CydUn5quc7",
+  "whirlpoolProgramId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  "admin": "2SQYDuhoYyepb74BQ1GjwmhowfBzuWpUttTfzD9KcpNW",
+  "usdcMint": "6zoa6Za8QiE3VHz12mRoDoPAMse4kb4zzuiN9avTfZdo",
+  "solMint": "So11111111111111111111111111111111111111112",
+  "stockMint": "9w1zd6VihAEq1b2ZnCfEABDdC5aF5ZRjW4KhYtrn5Rq2",
+  "shareMint": "CLB5PVk3hyTEiSSq5DwV341JC2Js7NLTzRmcZE1uMtFR",
+  "juniorMint": "Gwx2etGL6TmfYarNe1QbZf9C3eoAgKq3LUW8Big5E5Fy",
+  "whirlpool": "X5MAda6jx3HrVtSpqh1eSkjgAZz8WoTa3tV2G8kQSar",
+  "whirlpoolVaultA": "5DDkbyG36azdKHwjDzWcEXPTwWyakPeTzoRjFjZkVpmo",
+  "whirlpoolVaultB": "5imXLEshBWde4XSHPfiCpC8r7aJmgxmbvhgWFAk9JDrt",
+  "tickSpacing": 64,
+  "demoMode": true,
+  "assets": {
+    "6zoa6Za8QiE3VHz12mRoDoPAMse4kb4zzuiN9avTfZdo": {
+      "symbol": "USDC",
+      "name": "USD Coin (mock)",
+      "decimals": 6,
+      "priceAccount": null
+    },
+    "So11111111111111111111111111111111111111112": {
+      "symbol": "SOL",
+      "name": "Solana",
+      "decimals": 9,
+      "priceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+      "feedId": "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+      "pythAccount": "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+    },
+    "9w1zd6VihAEq1b2ZnCfEABDdC5aF5ZRjW4KhYtrn5Rq2": {
+      "symbol": "NVDAx",
+      "name": "NVIDIA tokenized stock (mock)",
+      "decimals": 6,
+      "priceAccount": "8ASrXfrQFSEDVSDHmD7yPxit6BEN8E4FXpzzg3Yeh8yJ",
+      "feedId": "b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+      "pythAccount": "2w1Tg1XTZbUib7srfRoStJ4v5JXVsK7roQEGMsMaGZFC"
+    },
+    "DemVGUnwGBNZ1RNCLVfi275HZWcCqf6GuNEWwyEoo8Nt": {
+      "symbol": "AAPLx",
+      "name": "Apple tokenized stock (mock)",
+      "decimals": 8,
+      "priceAccount": "5bNmbVvL5GXsHGB35QWrCh9V1snSCVg62iLgoTwEmFPX",
+      "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "feedId": "49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
+      "pythAccount": "DJ2FyTgUAkEtXW3U5P9PF19meFTRtW4ZWKKFgACfVbUy"
+    },
+    "2wT7Rgvyg6cWLrmcwLdFEHNUoGnvb8kVJN3CnRmnfgQ8": {
+      "symbol": "JitoSOL",
+      "name": "Jito staked SOL (mock)",
+      "decimals": 9,
+      "priceAccount": "4YxBHgezWdbrFHAY5YrsataaN8m1139sWkidChCqPk97",
+      "backing": {
+        "solPriceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+        "fixedRate": 1.31,
+        "solPythAccount": "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+      },
+      "feedId": "67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb",
+      "pythAccount": "AxaxyeDT8JnWERSaTKvFXvPKkEdxnamKSqpWbsSjYg1g"
+    },
+    "FPy2ev3urWSviFaSzMaRHJcMVryVwo8PGVrCYcX8EXjq": {
+      "symbol": "JupSOL",
+      "name": "Jupiter staked SOL (mock)",
+      "decimals": 9,
+      "priceAccount": "FnJPYACv4mdDYtjQWrbUH1o5FncyC8qcKNB9S4Avci19",
+      "backing": {
+        "solPriceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+        "fixedRate": 1.22,
+        "solPythAccount": "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+      },
+      "feedId": "67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb",
+      "pythAccount": "AxaxyeDT8JnWERSaTKvFXvPKkEdxnamKSqpWbsSjYg1g"
+    },
+    "4fVqX8m1nHDpij9eySoky5GgviHpSj58wvpcxrXq9m8U": {
+      "symbol": "BONK",
+      "name": "Bonk (mock)",
+      "decimals": 5,
+      "priceAccount": "BnaxWtpnTtbMvx795paixncAMJn7aivVaL4dquvGdyKQ",
+      "priceExponent": 6,
+      "feedId": "72b021217ca3fe68922a19aaf990109cb9d84e9ad004b4d2025ad6f529314419",
+      "pythAccount": "DBE3N8uNjhKPRHfANdwGvCZghWXyLPdqdSbEW2XFwBiX"
+    }
+  },
+  "lookupTable": "CN8uHfkom5KsatvbVuNEtJZvbpsKotj8XfaCsHGd7RzX",
+  "wsUrl": "wss://dylans-mac-mini.tail70e062.ts.net:10000/rpc-ws",
+  "indexerUrl": "https://dylans-mac-mini.tail70e062.ts.net:10000/indexer"
+}
