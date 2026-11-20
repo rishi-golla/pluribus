@@ -149,6 +149,60 @@ export async function withdrawToken(
   ];
 }
 
+/** One piece of collateral to take back in a batch: a token amount in base units, or an Orca or Raydium position NFT */
+export type Withdrawal = { mint: PublicKey; amount: Amount } | { positionMint: PublicKey };
+
+/**
+ * Several withdrawals in one transaction. Each instruction checks health against the positions still held once it has run,
+ * so a slot emptied earlier in the batch is left out of the accounts every later instruction reads
+ */
+export async function withdrawMany(program: PluribusProgram, d: Deployment, owner: PublicKey, items: Withdrawal[]): Ixs {
+  const credit = await creditOf(program, owner);
+  const [lps, sources, nfts] = await Promise.all([
+    locateLps(program.provider.connection, d, credit),
+    fetchPriceSources(program, d),
+    Promise.all(items.map((w) => ("positionMint" in w ? nftProgram(program, w.positionMint) : undefined))),
+  ]);
+  const gone = new Set<string>();
+  const out: TransactionInstruction[] = [
+    // Each health check costs up to about 125k units over many positions, within the 1.4M a transaction can ask for
+    ComputeBudgetProgram.setComputeUnitLimit({ units: Math.min(1_400_000, 200_000 + 200_000 * items.length) }),
+  ];
+  for (const [i, w] of items.entries()) {
+    const target = "positionMint" in w ? w.positionMint : w.mint;
+    const emptied = "positionMint" in w || credit.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(target) && p.amount.eq(bn(w.amount)));
+    if (emptied) gone.add(target.toBase58());
+    const left = { ...credit, positions: credit.positions.filter((p) => !gone.has(p.mint.toBase58())) };
+    const remaining = healthAccounts(program, d, left, { lps, sources });
+    if ("positionMint" in w) {
+      const nft = nfts[i]!;
+      out.push(
+        createAta(owner, w.positionMint, nft),
+        await program.methods
+          .withdrawLp()
+          .accountsStrict({
+            owner,
+            credit: pda.credit(owner),
+            pool: pda.pool(),
+            positionMint: w.positionMint,
+            vaultNft: ata(w.positionMint, pda.pool(), nft),
+            ownerNft: ata(w.positionMint, owner, nft),
+            tokenProgram: nft,
+          })
+          .remainingAccounts(remaining)
+          .instruction(),
+      );
+    } else {
+      out.push(
+        createAta(owner, w.mint, programOf(d, w.mint)),
+        await program.methods.withdrawToken(bn(w.amount)).accountsStrict(moveToken(owner, w.mint, programOf(d, w.mint))).remainingAccounts(remaining).instruction(),
+        ...(w.mint.equals(NATIVE_MINT) ? [unwrap(owner)] : []),
+      );
+    }
+  }
+  return out;
+}
+
 // The accounts a health check reads, with each LP position found on its own dex
 const health = async (program: PluribusProgram, d: Deployment, credit: CreditAccount, opts: { skip?: PublicKey } = {}) => {
   const [lps, sources] = await Promise.all([locateLps(program.provider.connection, d, credit), fetchPriceSources(program, d)]);
