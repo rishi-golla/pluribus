@@ -160,7 +160,9 @@ async function tick() {
 }
 
 log(`Price feed for ${cluster} at ${env.RPC_URL ?? d.rpcUrl}: ${assets.map((a) => `${a.symbol} (${a.pool ? "orca" : "pyth"})`).join(", ")}, every ${intervalMs} ms from mainnet`);
+// PRICEFEED_ONCE=1 sets the prices once and stops, which a new chain's setup uses before anything samples volatility
 for (;;) {
   await tick().catch((e) => log(`Tick failed: ${e?.message ?? e}`));
+  if (env.PRICEFEED_ONCE === "1") break;
   await new Promise((r) => setTimeout(r, intervalMs));
 }

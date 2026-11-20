@@ -119,6 +119,10 @@ export const LIQ_BONUS_BPS: Record<string, [number, number]> = { SOL: [100, 200]
 // The share of a position's fees paid to whoever collects them, by compounding or by autopay, since no keeper does it
 export const COMPOUND_BOUNTY_BPS = 200;
 
+// Each asset's annual volatility in bps, which its dynamic shock starts from until the volatility crank has its own prices
+// Measured as 90 days of daily closes to 20 Nov 2026 (CoinGecko, the xStocks from their own token prices)
+export const SIGMA_BPS: Record<string, number> = { SOL: 6_000, JitoSOL: 6_000, JupSOL: 6_000, BONK: 9_200, NVDAx: 4_800, AAPLx: 2_400 };
+
 // A mock memecoin in a shock column of its own: scenarios are crypto crash, equity crash and broad selloff
 export const MEME = {
   keyName: "bonk-mint",
@@ -129,7 +133,7 @@ export const MEME = {
   liqCostBps: 1500,
   maxConfBps: 200,
   volHorizonSecs: 2 * DAY,
-  sigmaSeedBps: 15_000,
+  sigmaSeedBps: SIGMA_BPS.BONK,
   initShocks: [6000, 3000, 5000],
   maintShocks: [4500, 2000, 3800],
   // Priced per million tokens, since six decimals per token would round BONK's price to a few units
