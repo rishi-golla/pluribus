@@ -14,12 +14,12 @@ import { axisTimes, inRange, niceMax, series, smoothPath, timeLabel, type Point 
 import { compactUsd } from "@/lib/markets";
 
 type Tranche = "senior" | "junior";
-// preview rates are what the deployed rate curve pays at the preview pool's state: 80% utilization, juniors at 10% of the pool
+// preview rates are what the deployed rate curve pays at 90% utilization with juniors at 10% of the pool, the state the landing page's 14.9% is for
 const TRANCHES = {
   senior: {
     name: "Senior",
     token: "sUSDC",
-    apy: 0.0514,
+    apy: 0.0634,
     color: "#c6f432",
     stance: "Paid first, loses last",
     blurb: "Weekly yield from borrower interest",
@@ -31,7 +31,7 @@ const TRANCHES = {
   junior: {
     name: "Junior",
     token: "jUSDC",
-    apy: 0.1207,
+    apy: 0.149,
     color: "#f59a3d",
     stance: "Takes losses first",
     blurb: "Up to 15.9× the senior rate, 2.35× at 10% of pool",
@@ -48,11 +48,11 @@ const span = (secs: number) =>
   secs >= DAY_SECS ? `${+(secs / DAY_SECS).toFixed(1)} day${secs === DAY_SECS ? "" : "s"}` : secs >= 3600 ? `${+(secs / 3600).toFixed(1)} h` : `${Math.max(0, Math.round(secs))} s`;
 const when = (unix: number) => new Date(unix * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-/* 365 days. each rate starts and ends where the curve puts it for the utilization below: 58% a year ago, 71% 90 days ago, 80% now */
+/* 365 days. each rate starts and ends where the curve puts it for the utilization below: 58% a year ago, 71% 90 days ago, 90% now */
 const extend = (last90: number[], start: number, vol: number, seed: number) => [...series(276, start, last90[0], vol, seed).slice(0, -1), ...last90];
-const SENIOR_APY = extend(series(90, 4.16, 5.14, 0.14, 11), 2.93, 0.16, 21);
-const JUNIOR_APY = extend(series(90, 9.77, 12.07, 0.33, 5), 6.87, 0.38, 22);
-const UTIL = extend(series(90, 71, 80, 2.2, 9), 58, 2.4, 23);
+const SENIOR_APY = extend(series(90, 4.16, 6.34, 0.14, 11), 2.93, 0.16, 21);
+const JUNIOR_APY = extend(series(90, 9.77, 14.9, 0.33, 5), 6.87, 0.38, 22);
+const UTIL = extend(series(90, 71, 90, 2.2, 9), 58, 2.4, 23);
 const SENIOR_DEP = extend(series(90, 7.6, 9.0, 0.12, 31), 4.2, 0.15, 24);
 const JUNIOR_DEP = extend(series(90, 0.82, 1.0, 0.03, 32), 0.4, 0.03, 25);
 
@@ -229,7 +229,7 @@ function YieldHistory() {
       stats: [
         { label: `Senior APY, ${range} avg`, color: "var(--color-green)", value: `${avg(s(SENIOR_APY)).toFixed(2)}%` },
         { label: `Junior APY, ${range} avg`, color: "var(--color-orange)", value: `${avg(s(JUNIOR_APY)).toFixed(2)}%` },
-        { label: "Borrower APR", value: "9.11%" },
+        { label: "Borrower APR", value: "10.00%" },
       ],
     },
     Utilization: {
@@ -239,7 +239,7 @@ function YieldHistory() {
       fmtY: (v: number) => `${v}%`,
       fmtValue: (v: number) => `${v.toFixed(1)}%`,
       stats: [
-        { label: "Utilization now", color: "var(--color-brand)", value: "80.0%" },
+        { label: "Utilization now", color: "var(--color-brand)", value: "90.0%" },
         { label: `${range} average`, value: `${avg(s(UTIL)).toFixed(1)}%` },
         { label: "Rate kink", value: "90.0%" },
       ],
@@ -714,7 +714,7 @@ export function EarnDashboard() {
             Total supplied <b>{usd(pool ? pool.supplied : 10_000_000, 0)}</b>
           </Chip>
           <Chip>
-            Utilization <b>{`${((pool ? pool.utilization : 0.8) * 100).toFixed(1)}%`}</b>
+            Utilization <b>{`${((pool ? pool.utilization : 0.9) * 100).toFixed(1)}%`}</b>
           </Chip>
           <Chip>
             Bad debt <b>{usd(pool ? pool.badDebt : 0, 0)}</b>
