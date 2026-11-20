@@ -1,0 +1,19 @@
+web/src/app/page.tsx
+  s_a7b77ac634f479::t_41e302fc1b819e 11,108-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6b76cc6bd480c7d5e095e9ae66ef11d76f2b52d",
+  "prompts": {},
+  "sessions": {
+    "s_a7b77ac634f479": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_a7b77ac634f479",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
