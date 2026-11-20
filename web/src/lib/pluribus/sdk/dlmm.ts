@@ -7,8 +7,11 @@ export const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqX
 // A position covers at most this many bins, and one bin array holds this many
 export const MAX_BINS = 70;
 export const BINS_PER_ARRAY = 70;
-// Meteora's strategy that spreads both tokens evenly: token Y under the active bin, token X above it
+// Meteora's strategies for any mix of the two tokens, token Y going under the active bin and token X above it:
+// spread evenly, piled up around the active bin, or piled up towards the edges of the range
 export const SPOT = 6;
+export const CURVE = 7;
+export const BID_ASK = 8;
 
 const find = (...seeds: (Buffer | Uint8Array)[]) => PublicKey.findProgramAddressSync(seeds, DLMM_PROGRAM_ID)[0];
 const i64 = (v: number) => {
@@ -73,6 +76,17 @@ export function decodeDlmmPosition(address: PublicKey, data: Buffer): DlmmPositi
 }
 
 export const holdsLiquidity = (p: DlmmPosition) => p.shares.some((s) => s > BigInt(0));
+
+// BinArray: index i64 at 8, then 70 bins of 144 bytes from 56, each opening with amount_x and amount_y as u64
+// What each bin of the array holds, in base units of token X and token Y, its first bin being `70 * index`
+export function decodeBinArray(data: Buffer): { index: number; amounts: { x: number; y: number }[] } {
+  const index = Number(data.readBigInt64LE(8));
+  const amounts = Array.from({ length: BINS_PER_ARRAY }, (_, i) => {
+    const at = 56 + 144 * i;
+    return { x: Number(data.readBigUInt64LE(at)), y: Number(data.readBigUInt64LE(at + 8)) };
+  });
+  return { index, amounts };
+}
 
 // The bin arrays covering bins `lower..=upper`, lowest first
 export function binArrayIndexes(lower: number, upper: number): number[] {

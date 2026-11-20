@@ -23,8 +23,11 @@ use {
 };
 
 const MEMO: Pubkey = pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
-/// Meteora's strategy that spreads both tokens evenly, token Y under the active bin and token X over it
+/// Meteora's strategies for any mix of the two tokens, token Y under the active bin and token X over it: spread evenly,
+/// piled up around the active bin, and piled up towards the edges
 const SPOT: u8 = 6;
+const CURVE: u8 = 7;
+const BID_ASK: u8 = 8;
 /// First 8 bytes of sha256("global:swap2")
 const SWAP: [u8; 8] = [0x41, 0x4b, 0x3f, 0x4c, 0xeb, 0x5b, 0x5b, 0x88];
 /// First 8 bytes of sha256("global:remove_liquidity_by_range2")
@@ -147,6 +150,10 @@ fn open_ix(env: &Env, pair: &Pair, owner: &Pubkey, position: &Pubkey, lower: i32
 }
 
 fn add_ix(env: &Env, pair: &Pair, owner: &Pubkey, position: &Pubkey, sol: u64, usdc: u64) -> Instruction {
+    add_shaped_ix(env, pair, owner, position, sol, usdc, SPOT)
+}
+
+fn add_shaped_ix(env: &Env, pair: &Pair, owner: &Pubkey, position: &Pubkey, sol: u64, usdc: u64, strategy: u8) -> Instruction {
     let (lower, upper) = range_of(env, position);
     let mut metas = pluribus::accounts::DlmmAdd {
         owner: *owner,
@@ -170,7 +177,7 @@ fn add_ix(env: &Env, pair: &Pair, owner: &Pubkey, position: &Pubkey, sol: u64, u
     }
     .to_account_metas(None);
     metas.extend(pair.bins(lower, upper));
-    let data = pluribus::instruction::DlmmAdd { amount_x: sol, amount_y: usdc, active_id: pair.active, max_active_bin_slippage: 200, strategy: SPOT };
+    let data = pluribus::instruction::DlmmAdd { amount_x: sol, amount_y: usdc, active_id: pair.active, max_active_bin_slippage: 200, strategy };
     Instruction::new_with_bytes(pluribus::ID, &data.data(), metas)
 }
 
@@ -418,6 +425,30 @@ fn the_pool_owns_the_position_it_opens_and_the_owner_funds_it() {
     let meta = expect_ok(env.send(&[env.draw_ix(&me, limit)], &[&user]));
     println!("draw against one 70-bin position: {} compute units", meta.compute_units_consumed);
     expect_err(env.draw(&user, USDC), PluribusError::ExceedsCreditLimit);
+}
+
+#[test]
+fn curve_and_bid_ask_lay_the_liquidity_out_in_their_own_shapes() {
+    let Some((mut env, pair)) = real_pair() else { return };
+    let user = env.user();
+    let me = user.pubkey();
+    let usdc_mint = env.usdc;
+    // Whether the bins near the active one hold more than the edges: Spot neither, Curve yes, Bid Ask the reverse
+    for (strategy, peaked) in [(SPOT, None), (CURVE, Some(true)), (BID_ASK, Some(false))] {
+        let position = Keypair::new();
+        fund_sol(&mut env, &me, 70 * SOL);
+        env.fund(&usdc_mint, &me, 5_000 * USDC);
+        expect_ok(env.send(&[open_ix(&env, &pair, &me, &position.pubkey(), pair.active - 34, 70)], &[&user, &position]));
+        expect_ok(env.send(&[budget(), add_shaped_ix(&env, &pair, &me, &position.pubkey(), 70 * SOL, 5_000 * USDC, strategy)], &[&user]));
+        // Slot 34 is the active bin, with USDC in the slots under it and SOL in those over it
+        let shares = shares_of(&env, &position.pubkey());
+        let [edge_usdc, near_usdc, near_sol, edge_sol] = [shares[0], shares[30], shares[38], shares[69]];
+        match peaked {
+            None => assert!(near_usdc.abs_diff(edge_usdc) < edge_usdc / 10 && near_sol.abs_diff(edge_sol) < edge_sol / 10, "spot {shares:?}"),
+            Some(true) => assert!(near_usdc > edge_usdc * 2 && near_sol > edge_sol * 2, "curve {shares:?}"),
+            Some(false) => assert!(edge_usdc > near_usdc * 2 && edge_sol > near_sol * 2, "bid ask {shares:?}"),
+        }
+    }
 }
 
 #[test]

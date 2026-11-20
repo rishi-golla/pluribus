@@ -1,25 +1,57 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ArrowRight, Info } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ArrowLeftRight, ArrowRight, ChevronDown, Info, RotateCcw, Wallet } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { KV, Label, Token } from "@/components/ui";
 import { useToast, type Live } from "@/components/app/providers";
 import { displayAmount, healthOf, healthTone, money, shortKey, usd } from "@/lib/account";
 import { deployment } from "@/lib/cluster";
+import { fetchPairLiquidity, type PairLiquidity } from "@/lib/dlmmBins";
 import type { Collateral, DlmmMarket, Risk } from "@/lib/live";
-import { MAX_BINS, math } from "@/lib/pluribus/sdk";
+import { MAX_BINS, binArrayIndexes, math } from "@/lib/pluribus/sdk";
 import { iconSrc, tokenIcon } from "@/lib/tokens";
+import {
+  BASE_COLOR,
+  DEFAULT_RANGE,
+  DistributionChart,
+  PriceBox,
+  REACH,
+  RangeSlider,
+  STRATEGIES,
+  StrategyPicker,
+  Switch,
+  USDC_COLOR,
+  autoFill,
+  fmtPrice,
+  idAt,
+  moveEdge,
+  plan,
+  positionOf,
+  type Range,
+  type Strategy,
+} from "./DlmmRange";
 
 export const MAX_POSITIONS = 16;
 export const DLMM_ICON = "met.webp";
 export const health = (h: number) => (Number.isFinite(h) ? h.toFixed(2) : "No debt");
 export const rangePrice = (v: number) => money(v, v >= 100 ? 0 : 2);
-const DEFAULT_WIDTH = 30;
-// Left in the wallet when SOL goes into a position: the position's rent, which comes back on close, bin arrays the range may
-// be the first to touch, which Meteora keeps, and fees
-const SOL_RESERVE = 0.25;
+/** Rent for an account of `bytes`: 6960 lamports a byte, counting its 128-byte header */
+const rentSol = (bytes: number) => ((bytes + 128) * 6960) / 1e9;
+/** A Meteora position's rent, which comes back when it is closed */
+const POSITION_RENT = rentSol(8120);
+/** A bin array's rent, paid by whoever touches it first and kept by Meteora */
+const BIN_ARRAY_RENT = rentSol(10_136);
+/** Left in the wallet besides the rent: transaction fees and the wrapped SOL account, closed again in the same transaction */
+const FEE_BUFFER = 0.02;
+const QUICK = [
+  { label: "25%", pct: 0.25 },
+  { label: "50%", pct: 0.5 },
+  { label: "Max", pct: 1 },
+] as const;
 const PERCENTS = [25, 50, 75, 100] as const;
+/** A typed amount, floored to what the input shows */
+const trim = (v: number, dp: number) => (v > 0 ? String(Math.floor(v * 10 ** dp) / 10 ** dp) : "");
 const arrow = <ArrowRight size={13} strokeWidth={1.75} className="text-t3" />;
 
 type Status = "idle" | "signing" | "confirming";
@@ -28,22 +60,6 @@ type Status = "idle" | "signing" | "confirming";
 function rangeSides(market: DlmmMarket, lower: number, upper: number) {
   const [usdc, base] = market.baseIsX ? [lower <= market.activeId, upper >= market.activeId] : [upper >= market.activeId, lower <= market.activeId];
   return { usdc, base };
-}
-
-/**
- * What a range holds once Meteora's Spot strategy has filled it, as bins the SDK can value: USDC evenly over the bins at or under the
- * active price and the base token evenly over those at or over it. Only for the preview, the program works out the real mix
- */
-export function spotBins(market: DlmmMarket, lower: number, upper: number, base: number, usdc: number): math.DlmmBin[] {
-  const ids = Array.from({ length: upper - lower + 1 }, (_, i) => lower + i);
-  const usdcSide = (id: number) => (market.baseIsX ? id <= market.activeId : id >= market.activeId);
-  const baseSide = (id: number) => (market.baseIsX ? id >= market.activeId : id <= market.activeId);
-  const [nUsdc, nBase] = [ids.filter(usdcSide).length, ids.filter(baseSide).length];
-  return ids.flatMap((id) => {
-    const price = market.binPrice(id);
-    const liquidity = (usdcSide(id) && nUsdc ? usdc / nUsdc : 0) + (baseSide(id) && nBase ? (base / nBase) * price : 0);
-    return liquidity > 0 ? [{ price, usdc: liquidity }] : [];
-  });
 }
 
 const binsOf = (risk: Risk) => ("bins" in risk ? risk.bins : []);
@@ -99,7 +115,8 @@ function Note({ children }: { children: ReactNode }) {
   );
 }
 
-function AmountBox({
+/** One token of the deposit, laid out as Meteora's amount cards are: the token, the amount and its worth, then the wallet balance and quick picks */
+function TokenCard({
   symbol,
   icon,
   value,
@@ -117,39 +134,53 @@ function AmountBox({
   /** Why this side takes nothing, which greys it out */
   off?: string;
 }) {
+  const amount = Number(value) || 0;
   return (
-    <label className={`block rounded-[10px] border border-line bg-bg px-4 py-3 transition-colors focus-within:border-line-2 ${off ? "opacity-55" : ""}`}>
-      <div className="flex items-center justify-between">
-        <Label>{symbol}</Label>
-        <Label>Available {money(max, 4)}</Label>
+    <label className={`block rounded-[10px] border border-line bg-bg px-3.5 pb-2.5 pt-3 transition-colors focus-within:border-line-2 ${off ? "opacity-55" : ""}`}>
+      <div className="flex items-center gap-2.5">
+        <Token src={iconSrc(icon)} size={24} />
+        <span className="text-[15px] font-medium">{symbol}</span>
+        <div className="ml-auto min-w-0 flex-1 text-right">
+          <input
+            inputMode="decimal"
+            aria-label={`${symbol} to add`}
+            placeholder="0.00"
+            disabled={!!off}
+            value={displayAmount(value)}
+            onChange={(e) => {
+              const v = e.target.value.replace(/,/g, "");
+              if (/^\d*\.?\d{0,4}$/.test(v)) onChange(v);
+            }}
+            className="w-full min-w-0 bg-transparent text-right text-[20px] font-medium tracking-[-0.02em] text-t1 outline-none placeholder:text-t3"
+          />
+          <div className="text-[12px] text-t3">{usd(amount * price)}</div>
+        </div>
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2.5">
-        <input
-          inputMode="decimal"
-          aria-label={`${symbol} to add`}
-          placeholder="0.00"
-          disabled={!!off}
-          value={displayAmount(value)}
-          onChange={(e) => {
-            const v = e.target.value.replace(/,/g, "");
-            if (/^\d*\.?\d{0,4}$/.test(v)) onChange(v);
-          }}
-          className="w-full min-w-0 bg-transparent text-[24px] font-medium tracking-[-0.03em] text-t1 outline-none placeholder:text-t3"
-        />
-        <button
-          type="button"
-          disabled={!!off}
-          onClick={() => onChange((Math.floor(max * 1e4) / 1e4).toString())}
-          className="cursor-pointer rounded border border-line px-2 py-0.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed"
-        >
-          Max
-        </button>
-        <span className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border border-line-2 bg-s3 pl-1.5 pr-2.5 text-[13.5px] font-medium">
-          <Token src={iconSrc(icon)} size={18} />
-          {symbol}
+      <div className="mt-2 flex items-center justify-between text-[12px] text-t3">
+        <span className="flex items-center gap-1.5">
+          <Wallet size={12} strokeWidth={1.75} />
+          {money(max, 4)}
         </span>
+        {off ? (
+          <span>{off}</span>
+        ) : (
+          <span className="flex gap-1">
+            {QUICK.map((q) => (
+              <button
+                key={q.label}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onChange(trim(max * q.pct, 4));
+                }}
+                className="cursor-pointer rounded px-1.5 py-0.5 font-medium text-t2 transition-colors hover:bg-s3 hover:text-t1"
+              >
+                {q.label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
-      <div className="mt-1 text-[12.5px] text-t3">{off ?? usd((Number(value) || 0) * price)}</div>
     </label>
   );
 }
@@ -161,21 +192,74 @@ function AmountBox({
 export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; market: DlmmMarket | undefined; row?: Collateral; onClose: () => void }) {
   const toast = useToast();
   const d = deployment!;
-  const [width, setWidth] = useState(DEFAULT_WIDTH);
-  const [rawBase, setRawBase] = useState("");
-  const [rawUsdc, setRawUsdc] = useState("");
+  const [range, setRange] = useState<Range>(DEFAULT_RANGE);
+  const [strategy, setStrategy] = useState<Strategy>("Spot");
+  const [autoOn, setAutoOn] = useState(true);
+  const [raw, setRaw] = useState({ base: "", usdc: "" });
+  // The side typed last: with Auto-Fill on the other one follows it
+  const [lead, setLead] = useState<"base" | "usdc">("base");
+  const [flip, setFlip] = useState(false);
+  const [details, setDetails] = useState(false);
+  const [pool, setPool] = useState<PairLiquidity | null>(null);
   const [status, setStatus] = useState<Status>("idle");
 
   const baseSymbol = market?.symbol ?? "SOL";
-  const baseHeld = !market ? 0 : market.baseMint === d.solMint ? Math.max(0, live.wallet.sol - SOL_RESERVE) : (live.wallet.tokens[market.baseMint] ?? 0);
-  const lowerBin = row?.dlmm ? row.dlmm.lowerBin : market ? market.activeId - Math.floor(width / 2) : 0;
-  const upperBin = row?.dlmm ? row.dlmm.upperBin : lowerBin + width - 1;
+  const lowerBin = row?.dlmm ? row.dlmm.lowerBin : market ? Math.min(idAt(market, range.lo), idAt(market, range.hi)) : 0;
+  const upperBin = row?.dlmm ? row.dlmm.upperBin : market ? Math.max(idAt(market, range.lo), idAt(market, range.hi)) : 0;
+  const width = upperBin - lowerBin + 1;
+
+  // The pair's liquidity over everything the slider reaches, or over the position's own range, and which bin arrays exist
+  const [from, to] = row?.dlmm ? [lowerBin, upperBin] : market ? [market.activeId - REACH, market.activeId + REACH] : [0, -1];
+  useEffect(() => {
+    if (!market || to < from) return;
+    let alive = true;
+    fetchPairLiquidity(market, from, to).then(
+      (p) => alive && setPool(p),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [market, from, to]);
+
   const sides = market ? rangeSides(market, lowerBin, upperBin) : { base: false, usdc: false };
+  const auto = autoOn && sides.base && sides.usdc;
+  const typed = { base: Number(raw.base) || 0, usdc: Number(raw.usdc) || 0 };
+  const filled = (side: "base" | "usdc", amount: number) => (market ? autoFill(market, lowerBin, upperBin, strategy, side, amount) : 0);
   // A side the range has no bins for takes nothing
-  const [base, usdc] = [sides.base ? Number(rawBase) || 0 : 0, sides.usdc ? Number(rawUsdc) || 0 : 0];
-  const risk = market ? market.risk([...(row ? binsOf(row.risk) : []), ...spotBins(market, lowerBin, upperBin, base, usdc)]) : null;
+  const base = !sides.base ? 0 : auto && lead === "usdc" ? filled("usdc", typed.usdc) : typed.base;
+  const usdc = !sides.usdc ? 0 : auto && lead === "base" ? filled("base", typed.base) : typed.usdc;
+  const edit = (side: "base" | "usdc") => (v: string) => {
+    setLead(side);
+    setRaw((r) => ({ ...r, [side]: v }));
+  };
+  const toggleAuto = (on: boolean) => {
+    // Turned off, both amounts stay where Auto-Fill left them
+    if (!on) setRaw({ base: trim(base, 4), usdc: trim(usdc, 4) });
+    setAutoOn(on);
+  };
+
+  const planned = market ? plan(market, lowerBin, upperBin, strategy, base, usdc) : [];
+  const shape = market ? plan(market, lowerBin, upperBin, strategy, sides.base ? 1 : 0, sides.usdc ? (sides.base ? filled("base", 1) : market.price) : 0) : [];
+  const fresh = planned.flatMap((b) => {
+    const value = b.usdc + b.base * b.price;
+    return value > 0 ? [{ price: b.price, usdc: value }] : [];
+  });
+  const risk = market ? market.risk([...(row ? binsOf(row.risk) : []), ...fresh]) : null;
   const next = limitsWith(live, row?.mint ?? null, risk);
-  const [low, high] = market ? [market.binPrice(lowerBin), market.binPrice(upperBin)].sort((a, b) => a - b) : [0, 0];
+
+  // A new position pays its own rent, which comes back on close, and each bin array of the range nobody has created yet
+  const arrays = binArrayIndexes(lowerBin, upperBin);
+  const newArrays = pool ? arrays.filter((i) => pool.missing.has(i)).length : arrays.length;
+  const cost = (row ? 0 : POSITION_RENT) + newArrays * BIN_ARRAY_RENT;
+  const baseHeld = !market ? 0 : market.baseMint === d.solMint ? Math.max(0, live.wallet.sol - cost - FEE_BUFFER) : (live.wallet.tokens[market.baseMint] ?? 0);
+
+  const pairLabel = flip ? `${baseSymbol}/USDC` : `USDC/${baseSymbol}`;
+  const disp = (p: number) => (flip ? 1 / p : p);
+  const priceAt = (k: number) => (market ? market.binPrice(idAt(market, k)) : 0);
+  // Shown lowest first: flipped, the lowest shown price is the range's highest dollar price
+  const edges = (flip ? [["Min Price", "hi"], ["Max Price", "lo"]] : [["Min Price", "lo"], ["Max Price", "hi"]]) as [string, "lo" | "hi"][];
+  const [low, high] = market ? [market.binPrice(lowerBin), market.binPrice(upperBin)].map(disp).sort((a, b) => a - b) : [0, 0];
 
   const error = !market
     ? "This pair is no longer listed"
@@ -193,7 +277,12 @@ export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; ma
 
   const submit = async () => {
     if (error || status !== "idle" || !market) return;
-    const result = row ? ((await live.addDlmm(row.mint, base, usdc, setStatus)) ? "funded" : "failed") : await live.openDlmm(market.pair, lowerBin, width, base, usdc, setStatus);
+    const value = STRATEGIES.find((s) => s.name === strategy)!.value;
+    const result = row
+      ? (await live.addDlmm(row.mint, base, usdc, setStatus, value))
+        ? "funded"
+        : "failed"
+      : await live.openDlmm(market.pair, lowerBin, width, base, usdc, setStatus, value);
     setStatus("idle");
     if (result === "failed") return;
     // A position that opened without its liquidity has already been reported, with what to do next
@@ -203,63 +292,138 @@ export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; ma
 
   return (
     <>
-      {!row && market && (
-        <div className="mt-3.5 rounded-[10px] border border-line bg-bg px-4 py-3">
-          <div className="flex items-center justify-between">
-            <Label>Range width</Label>
-            <span className="text-[13.5px] font-medium">{width === 1 ? "1 bin" : `${width} bins`}</span>
-          </div>
-          <input
-            type="range"
-            min={1}
-            max={MAX_BINS}
-            value={width}
-            aria-label="Range width in bins"
-            onChange={(e) => setWidth(Number(e.target.value))}
-            className="mt-2.5 w-full cursor-pointer accent-brand"
-          />
-          <div className="mt-1 flex justify-between text-xs text-t3">
-            <span>Narrower earns more fees</span>
-            <span>Wider holds its value longer</span>
-          </div>
-        </div>
-      )}
-      <div className="mt-3 grid gap-2">
-        <AmountBox
+      <div className="mb-2 mt-[18px] flex items-center justify-between">
+        <Label>Amount</Label>
+        <Switch on={autoOn} onChange={toggleAuto} label="Auto-Fill" />
+      </div>
+      <div className="grid gap-2">
+        <TokenCard
           symbol={baseSymbol}
           icon={tokenIcon(baseSymbol)}
-          value={rawBase}
-          onChange={setRawBase}
+          value={sides.base && auto && lead === "usdc" ? trim(base, 4) : raw.base}
+          onChange={edit("base")}
           max={baseHeld}
           price={market?.price ?? 0}
-          off={market && !sides.base ? "This range is under the active price, so it takes no " + baseSymbol : undefined}
+          off={market && !sides.base ? "Range is under the pool price" : undefined}
         />
-        <AmountBox
+        <TokenCard
           symbol="USDC"
           icon={tokenIcon("USDC")}
-          value={rawUsdc}
-          onChange={setRawUsdc}
+          value={sides.usdc && auto && lead === "base" ? trim(usdc, 2) : raw.usdc}
+          onChange={edit("usdc")}
           max={live.wallet.usdc}
           price={1}
-          off={market && !sides.usdc ? "This range is over the active price, so it takes no USDC" : undefined}
+          off={market && !sides.usdc ? "Range is over the pool price" : undefined}
         />
       </div>
+
+      <div className="mb-2 mt-[18px]">
+        <Label>Strategy</Label>
+      </div>
+      <StrategyPicker value={strategy} onChange={setStrategy} />
+
       {market && (
-        <div className="mt-3">
-          <KV k="Price range">
-            {usd(low)} to {usd(high)}
-          </KV>
-          <KV k="Active price">{usd(market.price)}</KV>
-          <KV k="Bin step">{money(market.binStep / 100, 2)}%</KV>
+        <>
+          <div className="mb-1 mt-[18px] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Label>Price Range</Label>
+              {!row && (
+                <button type="button" aria-label="Reset the price range" onClick={() => setRange(DEFAULT_RANGE)} className="cursor-pointer text-t3 transition-colors hover:text-t1">
+                  <RotateCcw size={12} strokeWidth={1.75} />
+                </button>
+              )}
+            </div>
+            <button type="button" onClick={() => setFlip((f) => !f)} className="flex cursor-pointer items-center gap-1.5 text-[12.5px] text-t3 transition-colors hover:text-t1">
+              {pairLabel}
+              <ArrowLeftRight size={12} strokeWidth={1.75} />
+            </button>
+          </div>
+          <div className="mb-1 flex gap-3 text-[11.5px] text-t3">
+            <span className="flex items-center gap-1.5">
+              <i className="size-2 rounded-full" style={{ background: BASE_COLOR }} />
+              {baseSymbol}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <i className="size-2 rounded-full" style={{ background: USDC_COLOR }} />
+              USDC
+            </span>
+          </div>
+          <DistributionChart market={market} bins={planned} shape={shape} flip={flip} pair={pairLabel} />
+          {row ? (
+            <div className="mt-2">
+              <KV k="Price range">
+                {fmtPrice(low)} to {fmtPrice(high)} {pairLabel}
+              </KV>
+            </div>
+          ) : (
+            <>
+              <div className="mt-3">
+                <RangeSlider market={market} pool={pool?.value ?? null} lo={range.lo} hi={range.hi} flip={flip} onChange={setRange} />
+              </div>
+              <div className="mt-3 grid gap-2.5">
+                {edges.map(([label, which]) => (
+                  <PriceBox
+                    key={label}
+                    label={label}
+                    price={disp(priceAt(range[which]))}
+                    pool={disp(market.price)}
+                    onPrice={(p) => setRange((r) => moveEdge(r, which, positionOf(market, flip ? 1 / p : p)))}
+                    onStep={(step) => setRange((r) => moveEdge(r, which, r[which] + (flip ? -step : step)))}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          <div className="mt-2.5 flex items-center justify-between text-[12.5px]">
+            <span className="text-t3">
+              Total bins <span className="font-medium text-t1">{width}</span>
+              <span> of {MAX_BINS}</span>
+            </span>
+            <span className="text-t3">Bin step {money(market.binStep / 100, 2)}%</span>
+          </div>
+        </>
+      )}
+
+      {market && (
+        <div className="mt-3.5 border-t border-line pt-3 text-[12.5px]">
+          <div className="flex justify-between py-0.5">
+            <span className="text-t2">{row ? "Cost to add liquidity" : "Cost required to create 1 position"}</span>
+            <span className="font-medium">{money(cost, 4)} SOL</span>
+          </div>
+          {!row && (
+            <div className="flex justify-between py-0.5">
+              <span className="text-t2">Refunded upon closing the position</span>
+              <span className="font-medium">{money(POSITION_RENT, 4)} SOL</span>
+            </div>
+          )}
+          <button type="button" onClick={() => setDetails((v) => !v)} className="mt-1 flex cursor-pointer items-center gap-1 text-t3 transition-colors hover:text-t1">
+            View details
+            <ChevronDown size={12} strokeWidth={1.75} className={`transition-transform ${details ? "rotate-180" : ""}`} />
+          </button>
+          {details && (
+            <div className="mt-1.5 grid gap-0.5 text-t3">
+              {!row && (
+                <div className="flex justify-between">
+                  <span>Position rent, back when you close it</span>
+                  <span>{money(POSITION_RENT, 4)} SOL</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>
+                  {newArrays} new bin {newArrays === 1 ? "array" : "arrays"}, kept by Meteora
+                </span>
+                <span>{money(newArrays * BIN_ARRAY_RENT, 4)} SOL</span>
+              </div>
+              {!row && (
+                <Note>
+                  The Pluribus pool holds this position, because a Meteora position can never change owner, so one already in your wallet cannot be deposited.
+                </Note>
+              )}
+            </div>
+          )}
         </div>
       )}
       <Impact live={live} next={next} />
-      {!row && (
-        <Note>
-          This opens a new position that the Pluribus pool holds, because a Meteora position can never change owner, so one already in your wallet cannot be deposited. Opening it
-          costs about 0.06 SOL in rent, returned when you close it, plus 0.07 SOL for each bin array nobody has created yet.
-        </Note>
-      )}
       <Submit label={row ? "Add liquidity" : "Open position and add liquidity"} error={error} status={status} onClick={submit} />
     </>
   );
