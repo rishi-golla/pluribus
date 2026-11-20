@@ -1,0 +1,21 @@
+web/src/app/page.tsx
+  s_464a89dce9f21f::t_b3d742cecc73f7 124-125,131-132
+web/src/components/landing/ProductTour.tsx
+  s_464a89dce9f21f::t_e59453eb6cbad1 635-637
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ee7426fb7ad507e7965182aa69c4b1274fefa21",
+  "prompts": {},
+  "sessions": {
+    "s_464a89dce9f21f": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_464a89dce9f21f",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
