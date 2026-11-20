@@ -1,11 +1,11 @@
 <p align="center">
-  <a href="https://pluribus-dun.vercel.app">
+  <a href="https://pluribus.finance">
     <img src="docs/images/banner.png" alt="Pluribus: borrow against everything you hold" width="100%" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://pluribus-dun.vercel.app"><b>Live demo</b></a>
+  <a href="https://pluribus.finance"><b>Live demo</b></a>
   &nbsp;·&nbsp;
   <a href="docs/users.md">User guide</a>
   &nbsp;·&nbsp;
