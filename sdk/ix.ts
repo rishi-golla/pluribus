@@ -895,6 +895,14 @@ export async function demoSetLivePrice(program: PluribusProgram, admin: PublicKe
   ];
 }
 
+// Demo mode only: sets an asset's variance back to `sigmaBps` of annual volatility, as its listing seeded it, and restarts
+// sampling, for a demo whose volatility a test or a price-source switch has thrown off
+export async function demoResetVol(program: PluribusProgram, admin: PublicKey, mint: PublicKey, sigmaBps: number): Ixs {
+  return [
+    await program.methods.demoResetVol(sigmaBps).accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) }).instruction(),
+  ];
+}
+
 // Demo mode only: puts every waiting change into effect now, for the pool and for each of `accounts`, the assets and LP
 // markets that wait on something, and ends their listings' activation delay
 export async function demoActivate(program: PluribusProgram, admin: PublicKey, accounts: PublicKey[]): Ixs {
