@@ -36,6 +36,8 @@ export function dlmmAmounts(bins: DlmmBin[], price: number) {
 export type ShockParams = { numScenarios: number; initShockBps: number[]; maintShockBps: number[]; maxShockBps?: number; only?: number };
 
 const BPS = 10_000;
+// Mirrors the program: the junior multiple stops rising below a tenth of the target share
+const JUNIOR_FLOOR_DIVISOR = 10;
 export const MAX_GROUPS = 6;
 
 // Mirrors `PoolParams::shocks_for`: the scenario where the group falls hardest takes all of the dynamic shock `d`,
@@ -170,12 +172,17 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const lenderAssets = Math.max(cash + debt - reserves - protocolFees - yieldBuffer, 0);
   const juniorAssets = Math.min(num(pool.juniorAssets) / 1e6, lenderAssets);
   const seniorAssets = lenderAssets - juniorAssets;
-  // Mirrors `Pool::split_weights`: payouts split senior : junior as S : J + premium x filled x S,
-  // the premium in full once junior lenders hold the target share of the pool
-  const target = p.juniorTargetBps / BPS;
+  // Mirrors `Pool::split_weights`: payouts split senior : junior as S : J + premium x covered, the senior dollars juniors
+  // cover counted as at most what they would cover at a tenth of the target share, so the junior multiple rises as
+  // juniors thin out and stops rising at a tenth of the target
+  const target = Math.max(p.juniorTargetBps / BPS, 1 / BPS);
   const premiumRate = p.juniorPremiumBps / BPS;
-  const filled = lenderAssets > 0 ? Math.min(juniorAssets / lenderAssets / target, 1) : 0;
-  const juniorWeight = juniorAssets + premiumRate * filled * seniorAssets;
+  const cover = (share: number) => (1 - share) / share;
+  const most = cover(target / JUNIOR_FLOOR_DIVISOR);
+  const covered = Math.min(seniorAssets, juniorAssets * most);
+  const juniorWeight = juniorAssets + premiumRate * covered;
+  // Junior rate over senior rate, or for an empty tranche what its first dollar would get
+  const juniorMultiple = 1 + premiumRate * (juniorAssets > 0 ? covered / juniorAssets : most);
   const weights = seniorAssets + juniorWeight;
   const interest = (borrowRateBps / BPS) * debt;
   const toLenders = interest * (1 - (p.reserveFactorBps + p.protocolFeeBps) / BPS);
@@ -196,10 +203,10 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
   const lenderYear = weekly ? (now < epochEnd ? streaming : stale ? toLenders * (1 - p.yieldMarginBps / BPS) : next) : toLenders + streaming;
   const seniorYear = weights > 0 ? (lenderYear * seniorAssets) / weights : lenderYear;
   const juniorYear = weights > 0 ? (lenderYear * juniorWeight) / weights : 0;
-  // An empty tranche shows what its first dollar would earn: the senior rate, and for juniors the premium per unit of target on top
+  // An empty tranche shows what its first dollar would earn: the senior rate, and for juniors the most the multiple can be
   const seniorRate = seniorAssets > 0 ? seniorYear / seniorAssets : lenderAssets > 0 ? lenderYear / lenderAssets : 0;
   const seniorApyBps = seniorRate * BPS;
-  const juniorApyBps = (juniorAssets > 0 ? juniorYear / juniorAssets : seniorRate * (1 + (premiumRate * seniorAssets) / Math.max(lenderAssets * target, 1e-9))) * BPS;
+  const juniorApyBps = (juniorAssets > 0 ? juniorYear / juniorAssets : seniorRate * juniorMultiple) * BPS;
   // The program counts one virtual share and one virtual dollar in each tranche, and never pays above the plain price
   const perShare = (assets: number, units?: Numeric) => {
     const shares = units === undefined ? 0 : num(units) / 1e6;
@@ -218,8 +225,10 @@ export function poolStats(pool: PoolLike, supply: { senior?: Numeric; junior?: N
     seniorShareValue: perShare(seniorAssets, supply.senior),
     juniorShareValue: perShare(juniorAssets, supply.junior),
     yieldBuffer,
-    // The premium juniors earn on senior yield right now, after scaling below the target share
-    juniorPremium: premiumRate * filled,
+    // Junior rate over senior rate: now, its cap while juniors are thin, and what it is at the target share
+    juniorMultiple,
+    juniorMultipleMax: 1 + premiumRate * most,
+    juniorMultipleAtTarget: 1 + premiumRate * cover(target),
     // Shares of the lenders' interest each tranche gets
     seniorShare: weights > 0 ? seniorAssets / weights : 1,
     juniorShare: weights > 0 ? juniorWeight / weights : 0,
