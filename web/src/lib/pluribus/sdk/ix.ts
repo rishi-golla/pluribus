@@ -167,8 +167,8 @@ export async function withdrawMany(program: PluribusProgram, d: Deployment, owne
   ]);
   const gone = new Set<string>();
   const out: TransactionInstruction[] = [
-    // Each health check costs up to about 125k units over many positions, within the 1.4M a transaction can ask for
-    ComputeBudgetProgram.setComputeUnitLimit({ units: Math.min(1_400_000, 200_000 + 200_000 * items.length) }),
+    // Every item runs its own health check, so the batch asks for the most a transaction can have, as one check alone may need
+    budget(),
   ];
   for (const [i, w] of items.entries()) {
     const target = "positionMint" in w ? w.positionMint : w.mint;
