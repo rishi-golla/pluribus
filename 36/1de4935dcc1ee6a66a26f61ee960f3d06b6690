@@ -1,0 +1,19 @@
+web/src/components/reactbits/FadeContent.tsx
+  s_b7508c48edeaab::t_78f3b2b86f523c 1-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "361de4935dcc1ee6a66a26f61ee960f3d06b6690",
+  "prompts": {},
+  "sessions": {
+    "s_b7508c48edeaab": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_b7508c48edeaab",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
