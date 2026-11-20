@@ -229,7 +229,7 @@ These need a program upgrade to change.
 | `MIN_JUNIOR_EXIT_WINDOW_SECS` / `MAX_JUNIOR_EXIT_WINDOW_SECS` | 60s / 3d | The claim window; the max also sets the minimum pause gap |
 | `MAX_JUNIOR_EXIT_FEE_BPS` | 100 | The exit fee |
 | `JUNIOR_FLOOR_DIVISOR` | 10 | The junior multiple stops rising below a tenth of the target share |
-| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 6 / 3 | Account and table sizes (changing these is a migration) |
+| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 16 / 4 / 6 / 3 | Account and table sizes (changing these is a migration). 16 slots keep every health-checked path of a full account inside one transaction with room spare: a Meteora liquidation, the dearest, takes about 1.06M of the 1.4M compute units, and a liquidation through the deployment's lookup table about 1040 of the 1232 bytes. Past about 21 a liquidation no longer fits the transaction, and past 32 the credit account overflows the stack when it is read |
 | `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
 | `MIN_EPOCH_SECS` / `MAX_EPOCH_SECS` | 60s / 30d | Yield epoch length when not 0 |
 | `STAKE_POOL_PROGRAMS` | SPL stake pool, Sanctum multi-validator | Programs whose pools can back an LST |

@@ -16,7 +16,7 @@ Every figure the rules below depend on is a setting. The values in force are in 
 
 ### Collateral
 
-A credit account holds up to 5 positions. You borrow USDC against all of them together.
+A credit account holds up to 16 positions. You borrow USDC against all of them together.
 
 | Collateral | In the web app |
 |---|---|

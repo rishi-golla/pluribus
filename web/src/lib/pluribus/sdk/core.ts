@@ -472,8 +472,8 @@ export async function fetchHealth(program: PluribusProgram, d: Deployment, owner
   const message = new TransactionMessage({
     payerKey: new PublicKey(d.admin),
     recentBlockhash: PublicKey.default.toBase58(),
-    // Five LP positions cost more than the default 200000 compute units
-    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), view],
+    // The view values every slot under both limits, about 760k units with all 16 holding LP positions
+    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), view],
   }).compileToV0Message();
   const { value } = await program.provider.connection.simulateTransaction(new VersionedTransaction(message), {
     sigVerify: false,

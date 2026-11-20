@@ -123,7 +123,7 @@ Each instruction takes the health-check accounts as remaining accounts, in the o
 - **Orca or Raydium liquidity position:** the LP market, the position account on Orca or Raydium, the base asset, the base price account.
 - **Meteora position:** the LP market, the pair, the position account, the base asset, the base price account. The bin arrays the position covers come first, before all the health-check accounts.
 
-The SDK builders `ix.liquidate`, `ix.liquidateLp`, `ix.dlmmLiquidate` and `ix.repayFromCollateral` add them, set a compute budget and create your token accounts.
+The SDK builders `ix.liquidate`, `ix.liquidateLp`, `ix.dlmmLiquidate` and `ix.repayFromCollateral` add them, set a compute budget and create your token accounts. An account holds up to 16 positions, and the check walks every one: with all 16 full, a liquidation takes about 550k compute units, or about 1.06M for a Meteora position, so the builders ask for 1.4M.
 
 Send a v0 transaction through the deployment's lookup table with `buildTransaction`. A legacy transaction for an account with several Token-2022, staking or liquidity positions passes the 1232-byte limit.
 

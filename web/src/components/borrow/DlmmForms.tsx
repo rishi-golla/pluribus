@@ -11,7 +11,7 @@ import type { Collateral, DlmmMarket, Risk } from "@/lib/live";
 import { MAX_BINS, math } from "@/lib/pluribus/sdk";
 import { iconSrc, tokenIcon } from "@/lib/tokens";
 
-export const MAX_POSITIONS = 5;
+export const MAX_POSITIONS = 16;
 export const DLMM_ICON = "met.webp";
 export const health = (h: number) => (Number.isFinite(h) ? h.toFixed(2) : "No debt");
 export const rangePrice = (v: number) => money(v, v >= 100 ? 0 : 2);

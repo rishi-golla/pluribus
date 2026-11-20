@@ -855,15 +855,29 @@ fn only_a_listed_and_live_pair_takes_positions() {
 fn health_checks_with_meteora_positions_need_a_raised_compute_budget() {
     let Some((mut env, pair)) = real_pair() else { return };
     env.lender(1_000_000 * USDC);
-    let user = env.user();
-    let me = user.pubkey();
+    let (user, liquidator) = (env.user(), env.wallet());
+    let (me, buyer) = (user.pubkey(), liquidator.pubkey());
+    // Every slot full, which also shows the heap holds out: each position's curve reuses the one before
+    let mut positions = vec![];
     for held in 1..=MAX_POSITIONS {
-        open_position(&mut env, &pair, &user, 70 * SOL, 5_000 * USDC);
+        positions.push(open_position(&mut env, &pair, &user, 70 * SOL, 5_000 * USDC));
         let meta = expect_ok(env.send(&[budget(), env.draw_ix(&me, 100 * USDC)], &[&user]));
         println!("draw against {held} 70-bin positions: {} compute units", meta.compute_units_consumed);
-        // Under the most one transaction can ask for, with room left for the rest of it
-        assert!(meta.compute_units_consumed < 600_000);
+        // Under the most one transaction can ask for, with a quarter of it spare
+        assert!(meta.compute_units_consumed < 1_050_000);
     }
+
+    // Liquidating one of them is the dearest path there is, and still fits with every slot full
+    let h = env.health(&me);
+    expect_ok(env.send(&[budget(), env.draw_ix(&me, h.credit_limit - h.debt)], &[&user]));
+    let (sol, usdc) = (env.sol, env.usdc);
+    env.fund(&usdc, &buyer, 100_000 * USDC);
+    fund_sol(&mut env, &buyer, 0);
+    env.set_price(&sol, pair.price * 80 / 100);
+    let debt = env.debt(&me);
+    let meta = expect_ok(env.send(&[budget(), liquidate_ix(&env, &pair, &buyer, &me, &positions[0], debt / 20)], &[&liquidator]));
+    println!("liquidate one of {MAX_POSITIONS} 70-bin positions: {} compute units", meta.compute_units_consumed);
+    assert!(meta.compute_units_consumed < 1_250_000);
 }
 
 fn compound_ix(env: &Env, pair: &Pair, caller: &Pubkey, owner: &Pubkey, position: &Pubkey, recipient: &Pubkey) -> Instruction {

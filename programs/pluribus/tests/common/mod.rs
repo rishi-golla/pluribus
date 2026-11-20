@@ -1411,7 +1411,7 @@ impl Env {
         );
         let payer = self.admin.insecure_clone();
         self.svm.expire_blockhash();
-        // The view values every position under both limits, which five LP positions push past the default budget
+        // The view values every position under both limits, which a handful of LP positions push past the default budget
         // It only ever runs in simulation, where asking for more compute costs nothing
         let budget = Instruction::new_with_bytes(
             pubkey!("ComputeBudget111111111111111111111111111111"),
@@ -1497,6 +1497,11 @@ pub fn expect_err(res: TxResult, err: PluribusError) {
 }
 
 #[track_caller]
+/// Asks for the most compute one transaction can have, as the SDK does for every instruction that checks health
+pub fn budget() -> Instruction {
+    Instruction::new_with_bytes(pubkey!("ComputeBudget111111111111111111111111111111"), &[&[2u8][..], &1_400_000u32.to_le_bytes()].concat(), vec![])
+}
+
 pub fn expect_ok(res: TxResult) -> TransactionMetadata {
     match res {
         Ok(meta) => meta,

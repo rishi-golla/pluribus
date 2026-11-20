@@ -7813,6 +7813,9 @@ export type Pluribus = {
           },
           {
             "name": "positions",
+            "docs": [
+              "Grew from `OLD_MAX_POSITIONS` slots after launch: `migrate_account` moves the fields after them on an older account"
+            ],
             "type": {
               "array": [
                 {
@@ -7820,7 +7823,7 @@ export type Pluribus = {
                     "name": "position"
                   }
                 },
-                5
+                16
               ]
             }
           },
@@ -7849,7 +7852,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u16",
-                5
+                16
               ]
             }
           }
@@ -8015,7 +8018,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u64",
-                5
+                16
               ]
             }
           },
@@ -8024,7 +8027,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u64",
-                5
+                16
               ]
             }
           },
@@ -8036,7 +8039,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "bool",
-                5
+                16
               ]
             }
           },

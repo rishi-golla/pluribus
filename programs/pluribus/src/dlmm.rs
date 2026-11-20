@@ -151,6 +151,8 @@ fn mul_shr(a: u128, b: u64) -> u128 {
 /// all token X when the price is under P, all token Y when it is over. That is also what arbitrage leaves there
 /// So the shares, the bin prices and the oracle price give a value the position can always pay, without reading the
 /// pair's active bin or its reserves, which a swap can move inside one transaction
+/// One curve is refilled for each position, since the heap is never freed and a curve per position would run out of it
+#[derive(Default)]
 pub struct Curve {
     /// Bin prices from the lowest up, in Q64.64 base units of token Y per base unit of token X
     prices: Vec<u128>,
@@ -164,8 +166,8 @@ pub struct Curve {
     unit: u128,
 }
 
-/// Builds the curve of the position at `position` in the listed pair `pair`, whose base token has `decimals`
-pub fn curve(pool: &Pool, market: &LpMarket, pair: &AccountInfo, position: &AccountInfo, decimals: u8) -> Result<Curve> {
+/// Fills `curve` for the position at `position` in the listed pair `pair`, whose base token has `decimals`
+pub fn read_curve(curve: &mut Curve, pool: &Pool, market: &LpMarket, pair: &AccountInfo, position: &AccountInfo, decimals: u8) -> Result<()> {
     require_keys_eq!(market.dex_program, METEORA_DLMM_PROGRAM_ID, PluribusError::NotDlmmMarket);
     require_keys_eq!(pair.key(), market.whirlpool, PluribusError::PoolNotWhitelisted);
     let step = read_pair(pair)?.bin_step;
@@ -174,7 +176,7 @@ pub fn curve(pool: &Pool, market: &LpMarket, pair: &AccountInfo, position: &Acco
 
     let d = position.try_borrow_data()?;
     let share = |i: usize| u128::from_le_bytes(d[72 + 16 * i..88 + 16 * i].try_into().unwrap());
-    Curve::new(held.lower, step, (held.upper - held.lower + 1) as usize, share, market.base_first, decimals)
+    curve.fill(held.lower, step, (held.upper - held.lower + 1) as usize, share, market.base_first, decimals)
 }
 
 /// a * num / den rounded down, through 256 bits only when the product needs them
@@ -187,13 +189,21 @@ fn scale(a: u128, num: u128, den: u128) -> Result<u128> {
 
 impl Curve {
     /// From the liquidity share held in each of `n` bins, the first of them bin `lower`
-    fn new(lower: i32, bin_step: u16, n: usize, share: impl Fn(usize) -> u128, base_first: bool, decimals: u8) -> Result<Curve> {
+    /// Reuses the buffers of the curve before, so refilling it allocates nothing once they are big enough
+    fn fill(&mut self, lower: i32, bin_step: u16, n: usize, share: impl Fn(usize) -> u128, base_first: bool, decimals: u8) -> Result<()> {
         let overflow = || error!(PluribusError::MathOverflow);
         let step = u128::from(bin_step);
         // One bin step as a fraction of 2^64 rounded up, and the factor that undoes a step rounded down
         let (grow, shrink) = ((step << 64).div_ceil(BPS) as u64, ((BPS << 64) / (BPS + step)) as u64);
 
-        let (mut prices, mut y_below) = (Vec::with_capacity(n), Vec::with_capacity(n + 1));
+        let (prices, y_below, x_shares) = (&mut self.prices, &mut self.y_below, &mut self.x_shares);
+        prices.clear();
+        y_below.clear();
+        x_shares.clear();
+        x_shares.resize(n, 0);
+        // Sized in one step, since a vector grown by doubling would leave each smaller buffer behind on the heap
+        prices.reserve(n);
+        y_below.reserve(n + 1);
         let (mut price, mut y) = (bin_price(lower, bin_step)?, 0u64);
         for i in 0..n {
             prices.push(price);
@@ -206,12 +216,13 @@ impl Curve {
         }
         y_below.push(y);
 
-        let (mut x_shares, mut carry) = (vec![0u128; n], 0u128);
+        let mut carry = 0u128;
         for i in (0..n).rev() {
             carry = mul_shr(carry, shrink).checked_add(share(i)).ok_or_else(overflow)?;
             x_shares[i] = carry;
         }
-        Ok(Curve { prices, y_below, x_shares, base_first, decimals, unit: pow10(decimals)? })
+        (self.base_first, self.decimals, self.unit) = (base_first, decimals, pow10(decimals)?);
+        Ok(())
     }
 
     /// Value in USDC base units at `price`, with the USDC side marked down by `usdc_shock`
@@ -252,7 +263,9 @@ mod tests {
 
     /// A curve over bins of `step` starting at `lower`, holding these liquidity shares
     fn flat(lower: i32, step: u16, shares: &[u128], base_first: bool) -> Curve {
-        Curve::new(lower, step, shares.len(), |i| shares[i], base_first, SOL).unwrap()
+        let mut curve = Curve::default();
+        curve.fill(lower, step, shares.len(), |i| shares[i], base_first, SOL).unwrap();
+        curve
     }
 
     #[test]

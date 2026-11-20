@@ -1099,8 +1099,8 @@ fn the_health_view_of_a_full_lp_account_fits_the_compute_budget_the_sdk_asks_for
         env.deposit_lp(&user, 120.0, 180.0, liquidity_for(10_000, 120.0, 180.0, 150));
     }
     let compute = health_with_budget(&mut env, &user.pubkey()).1;
-    // Five positions pass the 200000 default, so the SDK simulates the view with 400000
-    assert!(compute < 400_000, "health view used {compute} compute units");
+    // A full account passes the 200000 default, so the SDK simulates the view with 1400000, and keeps a quarter of it spare
+    assert!(compute < 1_050_000, "health view used {compute} compute units");
 }
 
 #[test]

@@ -194,12 +194,13 @@ pub fn handle_health(ctx: Context<ViewHealth>) -> Result<HealthView> {
         tier: credit.tier,
         position_value: [0; MAX_POSITIONS],
         position_price: [0; MAX_POSITIONS],
-        position_unclear: h.unclear,
+        position_unclear: [false; MAX_POSITIONS],
         premium_rate_bps: premium.min(u16::MAX as u128) as u16,
     };
     for i in 0..MAX_POSITIONS {
         view.position_value[i] = to_u64(h.market[i])?;
         view.position_price[i] = to_u64(h.price[i])?;
+        view.position_unclear[i] = h.unclear[i];
     }
     Ok(view)
 }

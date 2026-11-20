@@ -27,7 +27,11 @@ pub const SENIOR_ESCROW_SEED: &[u8] = b"senior_escrow";
 #[constant]
 pub const SENIOR_EXIT_SEED: &[u8] = b"senior_exit";
 
-pub const MAX_POSITIONS: usize = 5;
+/// Position slots in a credit account. With all of them full, every health-checked path still fits one transaction:
+/// the dearest, liquidating a Meteora position, takes about 1.06M of the 1.4M compute units
+pub const MAX_POSITIONS: usize = 16;
+/// Slots a credit account had before it grew to `MAX_POSITIONS`, which `migrate_account` moves an account on from
+pub const OLD_MAX_POSITIONS: usize = 5;
 pub const MAX_GROUPS: usize = 6;
 pub const MAX_SCENARIOS: usize = 4;
 pub const TIERS: usize = 3;

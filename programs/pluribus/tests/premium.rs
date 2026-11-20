@@ -1,7 +1,7 @@
 mod common;
 
 use {
-    anchor_lang::{prelude::*, solana_program::instruction::Instruction},
+    anchor_lang::{prelude::*, solana_program::instruction::Instruction, Discriminator},
     common::*,
     pluribus::{constants::*, error::PluribusError, state::*},
     solana_keypair::Keypair,
@@ -9,6 +9,8 @@ use {
 };
 
 const TIERS_HALVING: [u16; TIERS] = [10_000, 5_000, 2_500];
+/// A credit account's discriminator, header and its five slots: all it held before the premium came and the slots grew
+const FIVE_SLOT_HEADER_AND_SLOTS: usize = 8 + 32 + 1 + 1 + 8 + 16 + OLD_MAX_POSITIONS * Position::INIT_SPACE;
 
 /// A pool with both tranches, 1M senior and 100k junior, and the premium charged in full at the base tier
 fn pool_with_juniors(stock_premium: u16) -> Env {
@@ -165,7 +167,8 @@ fn accounts_from_before_the_premium_grow_with_its_fields_at_zero() {
     };
     let (credit, asset) = (env.credit_pda(&user.pubkey()), env.asset_pda(&stock));
     let draw = env.draw_ix(&user.pubkey(), USDC);
-    shrink(&mut env, credit, 2 + 8 + 2 * MAX_POSITIONS);
+    // A credit account then ended after its slots, of which it had fewer, and the stock sits in the first
+    shrink(&mut env, credit, 8 + CreditAccount::INIT_SPACE - FIVE_SLOT_HEADER_AND_SLOTS);
     shrink(&mut env, asset, 2 + 2 + 8);
     assert!(env.send(&[draw], &[&user]).is_err(), "an old account can't be read until it grows");
 
@@ -176,6 +179,8 @@ fn accounts_from_before_the_premium_grow_with_its_fields_at_zero() {
     let (c, a): (CreditAccount, Asset) = (env.load(&credit), env.load(&asset));
     assert_eq!((c.premium_bps, c.premium_since, a.premium_bps, a.premium_pending_at), (0, 0, 0, 0));
     assert!(c.compound_slippage_bps.iter().all(|s| *s == 0));
+    assert_eq!((c.positions[0].kind, c.positions[0].mint, c.positions[0].amount), (KIND_TOKEN, stock, 100 * STOCK));
+    assert!(c.positions[1..].iter().all(|p| p.kind == KIND_EMPTY));
     // Rent exempt at the new size, and a second run changes nothing
     let lamports = env.svm.get_account(&credit).unwrap().lamports;
     assert_eq!(lamports, env.svm.minimum_balance_for_rent_exemption(8 + CreditAccount::INIT_SPACE));
@@ -194,6 +199,46 @@ fn accounts_from_before_the_premium_grow_with_its_fields_at_zero() {
     expect_err(env.send(&[env.migrate_account_ix(&payer.pubkey(), &pool)], &[&payer]), PluribusError::AccountMismatch);
     let vault = env.vault_pda(&usdc);
     expect_err(env.send(&[env.migrate_account_ix(&payer.pubkey(), &vault)], &[&payer]), PluribusError::WrongOwner);
+}
+
+#[test]
+fn five_slot_accounts_grow_to_sixteen_slots_with_every_field_kept() {
+    let mut env = Env::new();
+    let user = env.user();
+    let credit = env.credit_pda(&user.pubkey());
+    // An account as the five-slot program left it: every slot taken, a premium on its clock and a compound setting per slot
+    let mut c: CreditAccount = env.load(&credit);
+    for i in 0..OLD_MAX_POSITIONS {
+        c.positions[i] = Position { kind: KIND_TOKEN, mint: Pubkey::new_unique(), amount: 1_000 + i as u64, bump: i as u8 };
+        c.compound_slippage_bps[i] = 10 + i as u16;
+    }
+    (c.tier, c.healthy_since, c.debt_shares, c.premium_bps, c.premium_since) = (2, 1_700_000_000, 12_345, 321, 1_750_000_000);
+    let mut data = CreditAccount::DISCRIMINATOR.to_vec();
+    c.serialize(&mut data).unwrap();
+    // Its fields after the slots sat right after the fifth slot
+    let tail_at = 8 + CreditAccount::INIT_SPACE - (2 + 8 + 2 * MAX_POSITIONS);
+    let mut old = data[..FIVE_SLOT_HEADER_AND_SLOTS].to_vec();
+    old.extend_from_slice(&data[tail_at..tail_at + 2 + 8 + 2 * OLD_MAX_POSITIONS]);
+    let refresh = env.refresh_tier_ix(&user.pubkey());
+    env.set_raw(credit, pluribus::ID, old.clone());
+    assert!(env.send(&[refresh], &[&user]).is_err(), "an old account can't be read until it grows");
+
+    let payer = env.wallet();
+    expect_ok(env.send(&[env.migrate_account_ix(&payer.pubkey(), &credit)], &[&payer]));
+    assert_eq!(env.svm.get_account(&credit).unwrap().data.len(), 8 + CreditAccount::INIT_SPACE);
+    let grown: CreditAccount = env.load(&credit);
+    assert_eq!((grown.owner, grown.bump, grown.tier, grown.healthy_since, grown.debt_shares), (c.owner, c.bump, 2, 1_700_000_000, 12_345));
+    assert_eq!((grown.premium_bps, grown.premium_since), (321, 1_750_000_000));
+    // The old slots and their compound settings in place, and the new slots empty
+    assert_eq!(grown.positions, c.positions);
+    assert_eq!(grown.compound_slippage_bps, c.compound_slippage_bps);
+    assert!(grown.positions[OLD_MAX_POSITIONS..].iter().all(|p| p.kind == KIND_EMPTY));
+
+    // A length no older layout had is refused rather than guessed at
+    let mut odd = old;
+    odd.push(0);
+    env.set_raw(credit, pluribus::ID, odd);
+    expect_err(env.send(&[env.migrate_account_ix(&payer.pubkey(), &credit)], &[&payer]), PluribusError::AccountMismatch);
 }
 
 #[test]

@@ -1,4 +1,5 @@
-// Grows the pool, the assets and the credit accounts created before fields were appended to them, right after a program upgrade
+// Grows the pool, the assets and the credit accounts created before fields were appended to them, or before the credit
+// account's position slots grew from 5 to 16, right after a program upgrade
 // The admin pays the extra rent, and accounts the program has not grown yet fail every instruction that reads them
 // Safe to rerun: an account already at the current size is left alone, and DRY_RUN=1 only counts what would grow
 //   npm run migrate:accounts -- --url https://api.devnet.solana.com
