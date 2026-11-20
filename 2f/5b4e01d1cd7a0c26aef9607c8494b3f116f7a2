@@ -1,0 +1,31 @@
+web/eslint.config.mjs
+  s_a346162249b35b::t_f48cbd6ad3689f 17-18
+web/package-lock.json
+  s_a346162249b35b::t_a7145dba3f74d1 18,9166-9171
+web/package.json
+  s_a346162249b35b::t_743a4a640664cd 19
+web/src/components/reactbits/CursorGrid.tsx
+  s_a346162249b35b::t_6f6a7686635c3e 1-661
+web/src/components/reactbits/FadeContent.tsx
+  s_a346162249b35b::t_7436bbbe81fa70 1-415
+web/src/components/reactbits/ScrollReveal.tsx
+  s_a346162249b35b::t_03e054b0c68678 1-348
+web/src/components/reactbits/WakeSlider.tsx
+  s_a346162249b35b::t_23b1bf370bb715 1-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f5b4e01d1cd7a0c26aef9607c8494b3f116f7a2",
+  "prompts": {},
+  "sessions": {
+    "s_a346162249b35b": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_a346162249b35b",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
