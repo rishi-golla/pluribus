@@ -1,0 +1,21 @@
+web/src/app/page.tsx
+  s_70d0dc94f4adb7::t_cca3c719c06b34 4,138-153
+web/src/components/landing/Closing.tsx
+  s_70d0dc94f4adb7::t_2c4eda7101c553 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5887206323c195ef3afbee8ad1ecfe07de371c1c",
+  "prompts": {},
+  "sessions": {
+    "s_70d0dc94f4adb7": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_70d0dc94f4adb7",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
