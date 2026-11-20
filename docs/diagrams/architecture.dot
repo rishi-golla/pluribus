@@ -1,0 +1,72 @@
+// The README's architecture figure. Render it with Graphviz (dot -Tsvg) and save a PNG to docs/images/architecture.png
+digraph architecture {
+  graph [rankdir=LR, newrank=true, bgcolor="#0c0c0c", fontname="Arial", fontsize=12, nodesep=0.25, ranksep=0.7, pad=0.3, splines=spline, labeljust=l];
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fontcolor="#f0f0f0", fillcolor="#1b1b1b", color="#3a3a3a", penwidth=1.1, margin="0.14,0.07"];
+  edge [fontname="Arial", fontsize=9, color="#7a7a7a", fontcolor="#a3a3a3", arrowsize=0.7, penwidth=1.1];
+
+  subgraph cluster_users {
+    label=<<b>Users</b>>; style="rounded,filled"; fillcolor="#121212"; color="#2c2c2c"; fontcolor="#a3a3a3"; margin=12;
+    borrower [label=<<b>Borrower</b><br/><font point-size="9" color="#a3a3a3">SOL · staked SOL · LPs<br/>stocks · memecoins</font>>];
+    senior [label=<<b>Senior lender</b><br/><font point-size="9" color="#a3a3a3">sUSDC · paid first, loses last</font>>];
+    junior [label=<<b>Junior lender</b><br/><font point-size="9" color="#f59a3d">jUSDC · first loss<br/>higher rate</font>>, color="#f59a3d"];
+    anyone [label=<<b>Anyone</b><br/><font point-size="9" color="#a3a3a3">liquidators · fee collectors<br/>paid a bonus or bounty</font>>];
+  }
+
+  subgraph cluster_off {
+    label=<<b>App + off-chain</b>>; style="rounded,filled"; fillcolor="#121212"; color="#2c2c2c"; fontcolor="#a3a3a3"; margin=12;
+    keeper [label=<<b>Keeper</b><br/><font point-size="9" color="#a3a3a3">liquidator · rate tiers<br/>senior exit queue</font>>];
+    streams [label=<<b>QuickNode Streams</b><br/><font point-size="9" color="#a3a3a3">program events, or RPC replay</font>>];
+    indexer [label=<<b>Indexer + API</b><br/><font point-size="9" color="#a3a3a3">events → statements</font>>];
+    web [label=<<b>Web app</b><br/><font point-size="9" color="#a3a3a3">Overview · Borrow · Earn · Statements</font>>];
+  }
+
+  subgraph cluster_prog {
+    label=<<b>Pluribus program (Anchor)</b>>; style="rounded,filled"; fillcolor="#141a08"; color="#5f7518"; fontcolor="#c6f432"; margin=12;
+    ops [label=<<b>Autopay, compound + liquidation</b>>];
+    subgraph cluster_bside {
+      label=<<font point-size="9" color="#9bbf27">borrow side</font>>; style="rounded,dashed"; color="#5f7518"; margin=8;
+      risk [label=<<b>Risk engine</b><br/><font point-size="9" color="#a3a3a3">crash-test valuer · health</font>>];
+      credit [label=<<b>Credit accounts</b><br/><font point-size="9" color="#a3a3a3">deposit · draw · repay</font>>];
+      rate [label=<<b>Rate model</b><br/><font point-size="9" color="#a3a3a3">base + risk premium − loyalty tier</font>>];
+    }
+    lend [label=<<b>Lending pool</b><br/><font point-size="9" color="#a3a3a3">supply · withdraw · tranches · exit queues</font>>];
+  }
+
+  subgraph cluster_ext {
+    label=<<b>External</b>>; style="rounded,filled"; fillcolor="#121212"; color="#2c2c2c"; fontcolor="#a3a3a3"; margin=12;
+    clmm [label=<<b>Liquidity venues</b><br/><font point-size="9" color="#a3a3a3">Orca · Raydium · Meteora</font>>];
+    pyth [label=<<b>Pyth</b><br/><font point-size="9" color="#a3a3a3">price feeds</font>>];
+  }
+
+  subgraph cluster_cust {
+    label=<<b>Custody (program PDAs)</b>>; style="rounded,filled"; fillcolor="#121212"; color="#2c2c2c"; fontcolor="#a3a3a3"; margin=12;
+    vaults [label=<<b>Collateral vaults</b><br/><font point-size="9" color="#a3a3a3">tokens · LP positions</font>>];
+    pool [label=<<b>USDC pool</b><br/><font point-size="9" color="#a3a3a3">senior + junior shares</font>>];
+    reserve [label=<<b>Insurance reserve</b><br/><font point-size="9" color="#a3a3a3">takes losses before lenders</font>>];
+  }
+
+  {rank=same; borrower; senior; junior; anyone;}
+  {rank=same; keeper; streams; indexer; web;}
+  {rank=same; ops; risk; credit; rate; lend;}
+  {rank=same; clmm; pyth; vaults; pool; reserve;}
+
+  streams -> indexer;
+  indexer -> web [label="history"];
+  risk -> credit [label="limit · health"];
+  rate -> credit [label="accrue"];
+  pyth -> clmm [style=invis];
+  pool -> vaults [style=invis];
+  pool -> reserve [label="reserve cut"];
+  borrower -> web; senior -> web; junior -> web [color="#f59a3d"];
+  anyone -> ops [label="liquidate · collect fees"];
+  web -> credit [label="borrow"];
+  web -> lend [label="lend"];
+  keeper -> ops [label="liquidate"];
+  ops -> clmm [label="fees · unwind"];
+  ops -> pool [label="repay"];
+  clmm -> risk [label="ranges · liquidity"];
+  pyth -> risk [label="prices"];
+  credit -> vaults [label="collateral"];
+  credit -> pool [label="draw · repay", dir=both];
+  lend -> pool [label="sUSDC / jUSDC"];
+}

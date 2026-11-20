@@ -133,43 +133,19 @@ A loss is booked when a borrower's account has debt and no collateral left. It i
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  subgraph Clients
-    web["Web app<br/>Next.js"]
-    keeper["Keeper<br/>liquidations, tiers, queue"]
-    bounty["Bounty callers<br/>collect LP fees"]
-  end
+<p align="center">
+  <img src="docs/images/architecture.png" alt="Architecture: users act through the web app, the Pluribus program values collateral, holds custody and lends from one USDC pool with senior and junior shares" width="100%" />
+</p>
 
-  sdk["TypeScript SDK"]
-
-  subgraph Solana
-    program["Pluribus program<br/>Anchor"]
-    orca["Orca Whirlpools"]
-    raydium["Raydium CLMM"]
-    meteora["Meteora DLMM"]
-    pyth["Pyth price feeds"]
-  end
-
-  indexer["Indexer<br/>event store"]
-
-  web --> sdk
-  keeper --> sdk
-  bounty --> sdk
-  sdk --> program
-  program --> orca
-  program --> raydium
-  program --> meteora
-  pyth --> program
-  program -- events --> indexer
-  indexer --> web
-```
-
-- **Program.** One Anchor program holds the pool, the credit accounts, both tranches and the risk engine. It calls into Orca, Raydium and Meteora to hold positions, collect their fees and unwind them in a liquidation.
-- **SDK.** Builds every instruction and mirrors the program's maths, so the app can show a limit or a health figure before anything is sent. The web app uses a synced copy of it.
-- **Web app.** The landing page, the four app pages and the docs. With no wallet connected it shows preview data.
+- **Users.** Borrowers and lenders act through the web app. Anyone can also liquidate an account past its limit, or collect a position's fees, and is paid a bonus or a bounty for it.
+- **Program.** One Anchor program holds everything on chain. The risk engine values every position under the crash scenarios and sets each account's limit and health. The rate model accrues interest from pool utilization, the risk premium and the loyalty tier. The lending pool runs both tranches and their exit queues.
+- **Custody.** Collateral sits in vaults the program owns, and lenders' USDC in one pool with senior and junior shares. A cut of borrower interest builds the insurance reserve, which takes losses before any lender does.
+- **External.** The program calls into Orca, Raydium and Meteora to hold positions, read their ranges and liquidity, collect their fees and unwind them in a liquidation. Prices come from Pyth.
+- **SDK.** Builds every instruction and mirrors the program's maths, so the app can show a limit or a health figure before anything is sent. The web app, the keeper and the scripts all go through it.
 - **Keeper.** One loop that liquidates, refreshes rate tiers and risk premiums, pays the head of the senior withdrawal queue and keeps the demo price feeds fresh. It does not collect LP fees: anyone can, for the bounty.
 - **Indexer.** Stores the program's events, pushed by QuickNode Streams or replayed from plain RPC, and serves the history behind the Statements and Earn pages.
+
+The figure's source is `docs/diagrams/architecture.dot`.
 
 ## What is in this repository
 
