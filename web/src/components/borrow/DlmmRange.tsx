@@ -9,8 +9,9 @@ import { money } from "@/lib/account";
 import type { DlmmMarket } from "@/lib/live";
 import { BID_ASK, CURVE, MAX_BINS, SPOT } from "@/lib/pluribus/sdk";
 
-export const BASE_COLOR = "#a98bff";
-export const USDC_COLOR = "var(--color-blue)";
+// The app's own palette: the base token in the brand lime, USDC in its neutral grey
+export const BASE_COLOR = "var(--color-brand)";
+export const USDC_COLOR = "var(--color-t2)";
 /** Positions either side of the active bin the slider reaches, so a range can sit wholly on one side of the price */
 export const REACH = MAX_BINS - 1;
 /** Meteora's default range: 69 bins centred on the active one */
