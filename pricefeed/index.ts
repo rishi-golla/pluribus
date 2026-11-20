@@ -2,7 +2,7 @@
 // A local validator has no Pyth receiver, so the program reads each asset's demo price there; this keeps those at Pyth's
 //
 // Sources, per feed, best first:
-//   1. Pyth Hermes, when HERMES_ACCESS_TOKEN is set: every feed the deployment names
+//   1. Pyth Hermes, when HERMES_ACCESS_TOKEN is set: every feed the key's plan covers, which may not be all of them
 //   2. Pyth's push-feed accounts on mainnet, read over plain RPC with no token: only feeds Pyth keeps posting there,
 //      which today are SOL and the liquid staking tokens
 // A source older than the asset's limit is not used, and the asset keeps its last price, which the keeper keeps fresh
@@ -65,16 +65,32 @@ function scale(value: string, expo: number, exponent: number): BN {
   return expo < 0 ? n.div(new BN(10).pow(new BN(-expo))) : n.mul(new BN(10).pow(new BN(expo)));
 }
 
+// A key only covers the feeds its plan is entitled to, and one feed outside the plan fails a whole request,
+// so each feed is asked for on its own and a refused one is left alone for an hour before it is tried again
+const refusedUntil = new Map<string, number>();
+const REFUSED_RETRY_MS = 3_600_000;
 async function fromHermes(): Promise<Map<string, Quote>> {
   const out = new Map<string, Quote>();
   if (!hermes) return out;
-  const ids = [...new Set(assets.map((a) => a.feedId))];
-  const res = await hermes.getLatestPriceUpdates(ids, { parsed: true });
-  for (const p of res.parsed ?? []) {
-    for (const a of assets.filter((x) => x.feedId === p.id.replace(/^0x/, ""))) {
-      out.set(a.symbol, { price: scale(p.price.price, p.price.expo, a.exponent), conf: scale(p.price.conf, p.price.expo, a.exponent), publishTime: p.price.publish_time, source: "hermes" });
-    }
-  }
+  const ids = [...new Set(assets.map((a) => a.feedId))].filter((id) => (refusedUntil.get(id) ?? 0) <= Date.now());
+  await Promise.all(
+    ids.map(async (id) => {
+      const res = await hermes.getLatestPriceUpdates([id], { parsed: true }).catch((e) => {
+        const names = assets.filter((a) => a.feedId === id).map((a) => a.symbol).join("/");
+        if (/status: 40[13]/.test(String(e?.message))) {
+          if (!refusedUntil.has(id)) log(`Hermes refused ${names}: the key's plan does not cover this feed, trying again hourly`);
+          refusedUntil.set(id, Date.now() + REFUSED_RETRY_MS);
+        } else log(`Hermes failed for ${names}: ${e?.message ?? e}`);
+        return null;
+      });
+      for (const p of res?.parsed ?? []) {
+        refusedUntil.delete(id);
+        for (const a of assets.filter((x) => x.feedId === p.id.replace(/^0x/, ""))) {
+          out.set(a.symbol, { price: scale(p.price.price, p.price.expo, a.exponent), conf: scale(p.price.conf, p.price.expo, a.exponent), publishTime: p.price.publish_time, source: "hermes" });
+        }
+      }
+    }),
+  );
   return out;
 }
 
