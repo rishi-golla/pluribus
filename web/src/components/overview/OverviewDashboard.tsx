@@ -19,7 +19,7 @@ import { iconSrc } from "@/lib/tokens";
 const RANGES = ["7D", "30D", "90D"] as const;
 type Range = (typeof RANGES)[number];
 const DAYS: Record<Range, number> = { "7D": 7, "30D": 30, "90D": 90 };
-const CLASSES: AssetClass[] = ["SOL", "LSTs", "LP positions", "Stocks", "Memes"];
+const CLASSES: AssetClass[] = ["SOL", "LSTs", "LP positions", "Stocks", "Memes", "Stablecoins"];
 const pct = (v: number, d = 1) => `${(v * 100).toFixed(d)}%`;
 const sum = (markets: Market[], field: "collateral" | "borrowed") => markets.reduce((s, m) => s + m[field], 0);
 
@@ -63,7 +63,7 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
     : [
         { label: "Total supplied", value: POOL.supplied, sub: "$9.2M senior, $800K junior" },
         { label: "Total borrowed", value: TOTALS.borrowed, sub: `${pct(TOTALS.borrowed / POOL.supplied)} utilization` },
-        { label: "Collateral locked", value: TOTALS.collateral, sub: `${MARKETS.length} markets, 5 asset classes` },
+        { label: "Collateral locked", value: TOTALS.collateral, sub: `${MARKETS.length} markets, ${new Set(MARKETS.map((m) => m.cls)).size} asset classes` },
         { label: "Fees, 30D", value: TOTALS.fees, sub: `${pct(TOTALS.avgApr)} avg borrow APR` },
         { label: "Volume, 24H", value: TOTALS.volume, sub: "Draws, repays and autopay" },
         { label: "Bad debt", value: 0, sub: `${compactUsd(POOL.insurance)} insurance fund` },
@@ -306,14 +306,14 @@ function MixPanel({ markets }: { markets: Market[] }) {
     <section className="panel mt-4 grid grid-cols-[1fr_1fr_1.1fr] items-center gap-10 px-[22px] py-5">
       <MixBar title="Collateral by asset class" markets={markets} field="collateral" />
       <MixBar title="Borrowed by asset class" markets={markets} field="borrowed" />
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-6 gap-3">
         {CLASSES.map((c) => {
           const share = collateral > 0 ? sum(markets.filter((m) => m.cls === c), "collateral") / collateral : 0;
           return (
             <div key={c}>
               <div className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-t2">
                 <Swatch color={CLASS_COLORS[c]} />
-                {c === "LP positions" ? "LPs" : c}
+                {c === "LP positions" ? "LPs" : c === "Stablecoins" ? "Stables" : c}
               </div>
               <div className="mt-1 font-medium">{pct(share)}</div>
             </div>

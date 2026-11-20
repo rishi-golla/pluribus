@@ -383,8 +383,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       interest: params.reserveFactorBps ? (stats.reserves * 1e4) / params.reserveFactorBps : 0,
     },
     markets: {
-      // Each whitelisted token, under the overview's market id, which is its symbol in lower case
-      ...Object.fromEntries([...assets].filter(([mint]) => mint !== d.usdcMint).map(([mint, asset]) => [d.assets[mint].symbol.toLowerCase(), tokenMarket(mint, asset)])),
+      // Each whitelisted token, USDC collateral included, under the overview's market id, which is its symbol in lower case
+      ...Object.fromEntries([...assets].map(([mint, asset]) => [d.assets[mint].symbol.toLowerCase(), tokenMarket(mint, asset)])),
       "orca-lp": lpTotalsMarket(lpTotals, lpMarket.liqCostBps),
       ...(dlmmListed.length ? { "met-lp": lpTotalsMarket(math.limits(poolDlmm, shock, prices), dlmmListed[0].market.liqCostBps) } : {}),
     } as Record<string, LiveMarket>,

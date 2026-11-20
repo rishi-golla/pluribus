@@ -12,7 +12,7 @@ export const juniorMultipleAt = (share: number, premium: number) => 1 + (premium
 /** Pool-level figures from the ARCHITECTURE.pdf example ($10M pool, 80% utilization). */
 export const POOL = { supplied: 10_000_000, borrowed: 8_000_000, senior: 9_200_000, junior: 800_000, insurance: 100_000, reserveFactor: 0.1 };
 
-export type AssetClass = "SOL" | "LSTs" | "LP positions" | "Stocks" | "Memes";
+export type AssetClass = "SOL" | "LSTs" | "LP positions" | "Stocks" | "Memes" | "Stablecoins";
 export type Market = {
   id: string;
   name: string;
@@ -42,6 +42,8 @@ export const MARKETS: Market[] = [
   { id: "met-lp", name: "SOL-USDC", sub: "Meteora DLMM", cls: "LP positions", icon: "sol.webp", lpBadge: "met.webp", dex: "meteora", collateral: 880_000, borrowed: 450_000, crashLtv: 0.689, borrowApr: 0.118, volume24h: 34_000, change24h: 0.01, liquidity: 4 },
   { id: "nvdax", name: "NVDAx", sub: "NVIDIA xStock", cls: "Stocks", icon: "nvdax.webp", collateral: 940_000, borrowed: 360_000, crashLtv: 0.58, borrowApr: 0.134, volume24h: 52_000, change24h: -0.006, liquidity: 3 },
   { id: "aaplx", name: "AAPLx", sub: "Apple xStock, Token-2022", cls: "Stocks", icon: tokenIcon("AAPLx"), collateral: 410_000, borrowed: 150_000, crashLtv: 0.585, borrowApr: 0.134, volume24h: 21_000, change24h: 0.004, liquidity: 3 },
+  // USDC deposited as collateral backs credit too, and counts toward what is locked
+  { id: "usdc", name: "USDC", sub: "USD Coin", cls: "Stablecoins", icon: "usdc.webp", collateral: 820_000, borrowed: 610_000, crashLtv: 0.95, borrowApr: 0.098, volume24h: 74_000, change24h: 0, liquidity: 5 },
   { id: "bonk", name: "BONK", sub: "Bonk memecoin", cls: "Memes", icon: "bonk.webp", collateral: 630_000, borrowed: 150_000, crashLtv: 0.35, borrowApr: 0.178, volume24h: 38_000, change24h: -0.041, liquidity: 2 },
 ];
 
@@ -89,6 +91,7 @@ export const CLASS_COLORS: Record<AssetClass, string> = {
   "LP positions": "#c6f432",
   Stocks: "#f59a3d",
   Memes: "#ff5c8a",
+  Stablecoins: "#5b8def",
 };
 
 /** 90 days of protocol activity. The last day matches today's 24h volume. */
