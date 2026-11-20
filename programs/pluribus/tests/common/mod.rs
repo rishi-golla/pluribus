@@ -970,6 +970,14 @@ impl Env {
         )
     }
 
+    pub fn demo_reset_vol_ix(&self, admin: &Pubkey, mint: &Pubkey, sigma_bps: u32) -> Instruction {
+        self.ix(
+            pluribus::instruction::DemoResetVol { sigma_bps }.data(),
+            pluribus::accounts::DemoAsset { admin: *admin, pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
     /// `targets` are the asset and LP market accounts whose waits end now
     pub fn demo_activate_ix(&self, admin: &Pubkey, targets: &[Pubkey]) -> Instruction {
         let mut metas = pluribus::accounts::DemoActivate { admin: *admin, pool: self.pool }.to_account_metas(None);

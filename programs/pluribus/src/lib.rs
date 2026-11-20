@@ -248,6 +248,10 @@ pub mod pluribus {
         admin::handle_demo_set_live_price(ctx, live)
     }
 
+    pub fn demo_reset_vol(ctx: Context<DemoAsset>, sigma_bps: u32) -> Result<()> {
+        admin::handle_demo_reset_vol(ctx, sigma_bps)
+    }
+
     pub fn demo_activate(ctx: Context<DemoActivate>) -> Result<()> {
         admin::handle_demo_activate(ctx)
     }

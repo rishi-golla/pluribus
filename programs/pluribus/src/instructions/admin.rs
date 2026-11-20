@@ -318,7 +318,31 @@ pub fn handle_demo_set_live_price(ctx: Context<DemoAsset>, live: bool) -> Result
     let asset = &mut ctx.accounts.asset;
     // A fixed-price asset has no feed, and a live one needs a feed to read
     require!(!live || (asset.params.oracle == ORACLE_PYTH && asset.params.pyth_feed_id != [0; 32]), PluribusError::InvalidParams);
+    if asset.live_price != live {
+        // The last sample is on the other source, and the gap between a demo price and the market would read as a crash or
+        // a spike, so sampling starts again from the new source's first price
+        asset.vol_price = 0;
+        asset.vol_time = 0;
+        crate::token2022::clear_jump(asset);
+    }
     asset.live_price = live;
+    emit!(ChangeApplied { target: asset.key() });
+    Ok(())
+}
+
+/// Demo mode only: sets both of the asset's variance averages to `sigma_bps` of annual volatility, as a listing seeds them,
+/// and starts sampling again from the next price
+/// For a demo whose volatility a test or a price-source switch has thrown off; an admin who writes the prices already
+/// decides every shock, so this adds no power, and with demo mode off it is gone for good
+pub fn handle_demo_reset_vol(ctx: Context<DemoAsset>, sigma_bps: u32) -> Result<()> {
+    require!(sigma_bps <= 100_000, PluribusError::InvalidParams);
+    let asset = &mut ctx.accounts.asset;
+    let seed = Asset::seed_variance(sigma_bps);
+    asset.var_fast = seed;
+    asset.var_slow = seed;
+    asset.vol_price = 0;
+    asset.vol_time = 0;
+    crate::token2022::clear_jump(asset);
     emit!(ChangeApplied { target: asset.key() });
     Ok(())
 }

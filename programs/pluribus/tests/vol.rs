@@ -220,3 +220,54 @@ fn volatility_settings_that_make_no_sense_are_rejected() {
     let fixed = AssetParams { vol_horizon_secs: DAY as u32, ..asset_params(u8::MAX, ORACLE_FIXED, [0; 32], 0) };
     assert!(failed_with(&env.send(&[env.set_asset_ix(&admin.pubkey(), &usdc, fixed)], &[&admin]), PluribusError::InvalidParams));
 }
+
+#[test]
+fn switching_between_the_demo_price_and_the_feed_restarts_sampling_instead_of_reading_as_a_move() {
+    let mut env = Env::new();
+    let admin = env.admin.insecure_clone();
+    let mint = volatile(&mut env, 0);
+    let keeper = env.wallet();
+    // A sample on the demo price, $100
+    expect_ok(env.send(&[env.update_vol_ix(&mint)], &[&keeper]));
+    expect_ok(env.send(&[env.demo_set_live_price_ix(&admin.pubkey(), &mint, true)], &[&admin]));
+    let a = asset(&env, &mint);
+    assert_eq!((a.vol_price, a.vol_time), (0, 0));
+    // The feed says $50: half the demo price, which must not count as a 50% fall
+    env.warp(60);
+    let pyth = Pubkey::new_unique();
+    let now = env.now();
+    env.set_pyth(pyth, SOL_FEED, 5_000_000_000, 0, -8, now);
+    let mut sample = env.update_vol_ix(&mint);
+    let demo = env.price_account(&mint);
+    sample.accounts.iter_mut().filter(|m| m.pubkey == demo).for_each(|m| m.pubkey = pyth);
+    expect_ok(env.send(&[sample], &[&keeper]));
+    let a = asset(&env, &mint);
+    assert_eq!((a.vol_price, a.var_fast, a.var_slow), (50 * USDC, 0, 0));
+    // Switching to the source it already reads changes nothing
+    expect_ok(env.send(&[env.demo_set_live_price_ix(&admin.pubkey(), &mint, true)], &[&admin]));
+    assert_eq!(asset(&env, &mint).vol_price, 50 * USDC);
+}
+
+#[test]
+fn in_demo_mode_the_admin_can_reset_an_assets_volatility_to_a_seed() {
+    let mut env = Env::new();
+    let admin = env.admin.insecure_clone();
+    env.lender(100_000 * USDC);
+    let wild = volatile(&mut env, 30_000);
+    let shocked = limit_for(&mut env, &wild, 10);
+    // Only the admin, and within the bound a listing's seed has
+    let stranger = env.wallet();
+    assert!(env.send(&[env.demo_reset_vol_ix(&stranger.pubkey(), &wild, 8_000)], &[&stranger]).is_err());
+    expect_err(env.send(&[env.demo_reset_vol_ix(&admin.pubkey(), &wild, 100_001)], &[&admin]), PluribusError::InvalidParams);
+    expect_ok(env.send(&[env.demo_reset_vol_ix(&admin.pubkey(), &wild, 8_000)], &[&admin]));
+    let a = asset(&env, &wild);
+    assert_eq!((a.var_fast, a.var_slow), (Asset::seed_variance(8_000), Asset::seed_variance(8_000)));
+    assert_eq!((a.vol_price, a.vol_time), (0, 0));
+    // 80% a year leaves the table's 30% crypto crash in charge again: $1000 x 70% x 95%
+    let calm = limit_for(&mut env, &wild, 10);
+    assert!(calm > shocked);
+    assert!(((calm as f64 / USDC as f64) / (1_000.0 * 0.7 * 0.95) - 1.0).abs() < 0.01, "limit {calm}");
+    // Gone with demo mode
+    expect_ok(env.send(&[env.set_flags_ix(&admin.pubkey(), false, false)], &[&admin]));
+    expect_err(env.send(&[env.demo_reset_vol_ix(&admin.pubkey(), &wild, 8_000)], &[&admin]), PluribusError::DemoDisabled);
+}
