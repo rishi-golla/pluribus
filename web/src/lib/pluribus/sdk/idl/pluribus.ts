@@ -5145,6 +5145,77 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "setAssetLiqBonus",
+      "discriminator": [
+        68,
+        140,
+        68,
+        151,
+        138,
+        191,
+        159,
+        61
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "asset"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "liqBonusBps",
+          "type": "u16"
+        },
+        {
+          "name": "lpLiqBonusBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "setAssetPremium",
       "discriminator": [
         95,
@@ -7018,6 +7089,11 @@ export type Pluribus = {
       "code": 6048,
       "name": "compoundOverdrawn",
       "msg": "The dex took more than the position's fees"
+    },
+    {
+      "code": 6049,
+      "name": "notFirstInOrder",
+      "msg": "Another position comes first in the liquidation order"
     }
   ],
   "types": [
@@ -7204,6 +7280,18 @@ export type Pluribus = {
             "type": "u8"
           },
           {
+            "name": "liqBonusBps",
+            "docs": [
+              "The liquidator's bonus in bps on this token, and on a liquidity position in it, where 0 takes the pool's",
+              "Carved out of `reserved`, so an asset listed before them reads zero"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "lpLiqBonusBps",
+            "type": "u16"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Room for fields added later without moving the ones above"
@@ -7211,7 +7299,7 @@ export type Pluribus = {
             "type": {
               "array": [
                 "u8",
-                5
+                1
               ]
             }
           },

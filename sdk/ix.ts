@@ -902,6 +902,13 @@ export async function setAssetPremium(program: PluribusProgram, admin: PublicKey
   ];
 }
 
+// The liquidator's bonus in bps on an asset and on liquidity positions in it, 0 for the pool's and never above it; applies at once
+export async function setAssetLiqBonus(program: PluribusProgram, admin: PublicKey, mint: PublicKey, liqBonusBps: number, lpLiqBonusBps: number): Ixs {
+  return [
+    await program.methods.setAssetLiqBonus(liqBonusBps, lpLiqBonusBps).accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) }).instruction(),
+  ];
+}
+
 // Quotes an asset per 10^exponent whole tokens, for a token worth a fraction of a cent; only before anything is deposited
 export async function setPriceExponent(program: PluribusProgram, admin: PublicKey, mint: PublicKey, exponent: number): Ixs {
   return [await program.methods.setPriceExponent(exponent).accountsStrict({ admin, pool: pda.pool(), asset: pda.asset(mint) }).instruction()];
