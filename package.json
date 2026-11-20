@@ -27,6 +27,7 @@
     "e2e": "tsx scripts/e2e.ts",
     "smoke": "tsx scripts/smoke.ts",
     "keeper": "tsx keeper/index.ts",
+    "pricefeed": "tsx pricefeed/index.ts",
     "keeper:e2e": "tsx scripts/keeper-e2e.ts",
     "indexer": "tsx indexer/server.ts",
     "indexer:replay": "tsx indexer/replay.ts",
