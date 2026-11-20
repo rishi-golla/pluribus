@@ -1,0 +1,198 @@
+{
+  "cluster": "localnet",
+  "programId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  "wallet": "ppJdRigfa8zDA5tKKnS4GPP8j9aGP5o5CXxjstQDusQ",
+  "config": "FcrweFY1G9HJAHG5inkGB6pKg1HZ6x9UC2WioAfWrGkR",
+  "feeTier": "nhg1SS1hNFnJKZrJ9FBf3L6SxTjwEnkehN7dmAbg25t",
+  "whirlpool": "GQ7NqM3Hv3jbxj4HuUCQsVT9uDzFfSvsoBfLeRWkwHGL",
+  "oracle": "4xfa6YGvDaayfMuN7GoY3WXSsBKeTdkvr6NbjzNpjUaQ",
+  "tickSpacing": 64,
+  "feeRate": 2000,
+  "protocolFeeRate": 300,
+  "sqrtPrice": "7144452082511258990",
+  "tickCurrentIndex": -18972,
+  "price": "150.0024700696844841312427947610590604292",
+  "liquidity": "1050655849787",
+  "rewardLastUpdatedTimestamp": "1794830148",
+  "tokenA": {
+    "mint": "So11111111111111111111111111111111111111112",
+    "decimals": 9,
+    "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "vault": "E87v15zEyA8B5vTycP6oYiKAgxnSzR4GXuaBJuoHCpMy",
+    "walletTokenAccount": "9cGadqMhw2j6G3Df9d8cqd9b7ZaEk4kB6hghgyzmQafp"
+  },
+  "tokenB": {
+    "mint": "5CxbvzkqLgpPQ7ohu2QTu85jCuB1C4fQxgPjSyC3wJ7N",
+    "decimals": 6,
+    "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "vault": "5smdoYwdreXmJAegsb8bWSiE8ChZXcxmK8jrMQeFSX2c",
+    "walletTokenAccount": "DdZ6yVrciGM2fQwxmDsjoXuSWGh6G37aER7d8bcrENXj"
+  },
+  "tickArrays": [
+    {
+      "startTickIndex": -444928,
+      "address": "3eJGXuFVvknJBytnEBk2K1BE2nrbBzCUHa6v2Vy3y6hX"
+    },
+    {
+      "startTickIndex": -28160,
+      "address": "BtEKTDU33rCwLSvG1HTPJ4A9r3rz9io4HPMNcZtzvx3i"
+    },
+    {
+      "startTickIndex": -22528,
+      "address": "7g5KnebtkadWES42LtNEdaP1HSaaNdPjzf2NTmN8rZSF"
+    },
+    {
+      "startTickIndex": -16896,
+      "address": "E5pBr4JSVDFSddNti2987Eg921Xrw5kx8ZPvpkqJKEG6"
+    },
+    {
+      "startTickIndex": 439296,
+      "address": "FsPDb12T2Ybm4E4fZnZ9jb2usbXqSba4Jx4uFQRWzoib"
+    }
+  ],
+  "positions": [
+    {
+      "name": "p1",
+      "position": "EwCkXcmv9diFng2qbZxeAs7eGqnUGjAWdeqcn4bJQTiz",
+      "positionMint": "HNc51Fs7Fjc1mCwxLKxD21YPVuVRxaeDBUNtby49C4HS",
+      "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "ownerTokenAccount": "GCrhsoFdwhsJBwzeXtjzxDK3hvTdKWwiDDagS9xjHn3a",
+      "tickLowerIndex": -21184,
+      "tickUpperIndex": -17152,
+      "tickArrayLower": "7g5KnebtkadWES42LtNEdaP1HSaaNdPjzf2NTmN8rZSF",
+      "tickArrayUpper": "7g5KnebtkadWES42LtNEdaP1HSaaNdPjzf2NTmN8rZSF",
+      "liquidity": "134705539285",
+      "amountA": "30251201584",
+      "amountB": "5462319765",
+      "uncollectedFeeA": "2732722",
+      "uncollectedFeeB": "410403"
+    },
+    {
+      "name": "p2",
+      "position": "3bEF2QHqwQLFe9EhWwtaS2JZsFJgn1pmKKnZ6FY8THUy",
+      "positionMint": "AgU3A3meANA8xYhiuCstYFKNWv6ey5yXApFir9p9qifY",
+      "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "ownerTokenAccount": "EzCXzaxPzgehi21JUXDPqcCiNTJukDyjrM6EK1pZzEqM",
+      "tickLowerIndex": -19264,
+      "tickUpperIndex": -18688,
+      "tickArrayLower": "7g5KnebtkadWES42LtNEdaP1HSaaNdPjzf2NTmN8rZSF",
+      "tickArrayUpper": "7g5KnebtkadWES42LtNEdaP1HSaaNdPjzf2NTmN8rZSF",
+      "liquidity": "903040366011",
+      "amountA": "32871549256",
+      "amountB": "5069267635",
+      "uncollectedFeeA": "18319650",
+      "uncollectedFeeB": "2751264"
+    },
+    {
+      "name": "p3",
+      "position": "2VSqkZFQNiMu44vscvsRdLnxBRrYZRG2jt5Khr4nr1av",
+      "positionMint": "H4r3kg4jzLBCGyRZczTbs1WRQWPR4KNk13hTGbeb96gc",
+      "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "ownerTokenAccount": "2Rn25ZoJa9CtocXBaXeHy8DJnF96q4ajQ3RVDL4uqBhP",
+      "tickLowerIndex": -443584,
+      "tickUpperIndex": 443584,
+      "tickArrayLower": "3eJGXuFVvknJBytnEBk2K1BE2nrbBzCUHa6v2Vy3y6hX",
+      "tickArrayUpper": "FsPDb12T2Ybm4E4fZnZ9jb2usbXqSba4Jx4uFQRWzoib",
+      "liquidity": "12909944491",
+      "amountA": "33333058890",
+      "amountB": "5000041166",
+      "uncollectedFeeA": "261899",
+      "uncollectedFeeB": "39332"
+    }
+  ],
+  "program": "whirlpool.so",
+  "accounts": {
+    "config": {
+      "address": "FcrweFY1G9HJAHG5inkGB6pKg1HZ6x9UC2WioAfWrGkR",
+      "file": "config.json"
+    },
+    "fee_tier": {
+      "address": "nhg1SS1hNFnJKZrJ9FBf3L6SxTjwEnkehN7dmAbg25t",
+      "file": "fee_tier.json"
+    },
+    "whirlpool": {
+      "address": "GQ7NqM3Hv3jbxj4HuUCQsVT9uDzFfSvsoBfLeRWkwHGL",
+      "file": "whirlpool.json"
+    },
+    "token_mint_a": {
+      "address": "So11111111111111111111111111111111111111112",
+      "file": "token_mint_a.json"
+    },
+    "token_mint_b": {
+      "address": "5CxbvzkqLgpPQ7ohu2QTu85jCuB1C4fQxgPjSyC3wJ7N",
+      "file": "token_mint_b.json"
+    },
+    "token_vault_a": {
+      "address": "E87v15zEyA8B5vTycP6oYiKAgxnSzR4GXuaBJuoHCpMy",
+      "file": "token_vault_a.json"
+    },
+    "token_vault_b": {
+      "address": "5smdoYwdreXmJAegsb8bWSiE8ChZXcxmK8jrMQeFSX2c",
+      "file": "token_vault_b.json"
+    },
+    "wallet_token_account_a": {
+      "address": "9cGadqMhw2j6G3Df9d8cqd9b7ZaEk4kB6hghgyzmQafp",
+      "file": "wallet_token_account_a.json"
+    },
+    "wallet_token_account_b": {
+      "address": "DdZ6yVrciGM2fQwxmDsjoXuSWGh6G37aER7d8bcrENXj",
+      "file": "wallet_token_account_b.json"
+    },
+    "tick_array_-444928": {
+      "address": "3eJGXuFVvknJBytnEBk2K1BE2nrbBzCUHa6v2Vy3y6hX",
+      "file": "tick_array_-444928.json"
+    },
+    "tick_array_-28160": {
+      "address": "BtEKTDU33rCwLSvG1HTPJ4A9r3rz9io4HPMNcZtzvx3i",
+      "file": "tick_array_-28160.json"
+    },
+    "tick_array_-22528": {
+      "address": "7g5KnebtkadWES42LtNEdaP1HSaaNdPjzf2NTmN8rZSF",
+      "file": "tick_array_-22528.json"
+    },
+    "tick_array_-16896": {
+      "address": "E5pBr4JSVDFSddNti2987Eg921Xrw5kx8ZPvpkqJKEG6",
+      "file": "tick_array_-16896.json"
+    },
+    "tick_array_439296": {
+      "address": "FsPDb12T2Ybm4E4fZnZ9jb2usbXqSba4Jx4uFQRWzoib",
+      "file": "tick_array_439296.json"
+    },
+    "p1_position": {
+      "address": "EwCkXcmv9diFng2qbZxeAs7eGqnUGjAWdeqcn4bJQTiz",
+      "file": "p1_position.json"
+    },
+    "p1_mint": {
+      "address": "HNc51Fs7Fjc1mCwxLKxD21YPVuVRxaeDBUNtby49C4HS",
+      "file": "p1_mint.json"
+    },
+    "p1_token_account": {
+      "address": "GCrhsoFdwhsJBwzeXtjzxDK3hvTdKWwiDDagS9xjHn3a",
+      "file": "p1_token_account.json"
+    },
+    "p2_position": {
+      "address": "3bEF2QHqwQLFe9EhWwtaS2JZsFJgn1pmKKnZ6FY8THUy",
+      "file": "p2_position.json"
+    },
+    "p2_mint": {
+      "address": "AgU3A3meANA8xYhiuCstYFKNWv6ey5yXApFir9p9qifY",
+      "file": "p2_mint.json"
+    },
+    "p2_token_account": {
+      "address": "EzCXzaxPzgehi21JUXDPqcCiNTJukDyjrM6EK1pZzEqM",
+      "file": "p2_token_account.json"
+    },
+    "p3_position": {
+      "address": "2VSqkZFQNiMu44vscvsRdLnxBRrYZRG2jt5Khr4nr1av",
+      "file": "p3_position.json"
+    },
+    "p3_mint": {
+      "address": "H4r3kg4jzLBCGyRZczTbs1WRQWPR4KNk13hTGbeb96gc",
+      "file": "p3_mint.json"
+    },
+    "p3_token_account": {
+      "address": "2Rn25ZoJa9CtocXBaXeHy8DJnF96q4ajQ3RVDL4uqBhP",
+      "file": "p3_token_account.json"
+    }
+  }
+}

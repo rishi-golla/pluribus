@@ -1,0 +1,106 @@
+{
+  "cluster": "devnet",
+  "rpcUrl": "https://api.devnet.solana.com",
+  "programId": "A4UnuBwwBLbvxj3AnUtCDzkj11kp1wdPh8CydUn5quc7",
+  "whirlpoolProgramId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  "admin": "6sXC8nQJ4wx6yyn1LLQpfXMKkpU5FxF6eWdBxXPASrCk",
+  "usdcMint": "75bxZeFLwNKqezhQ2KHhUASsuxVBJN31g9D8EuSuRW5U",
+  "solMint": "So11111111111111111111111111111111111111112",
+  "stockMint": "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij",
+  "shareMint": "CLB5PVk3hyTEiSSq5DwV341JC2Js7NLTzRmcZE1uMtFR",
+  "juniorMint": "Gwx2etGL6TmfYarNe1QbZf9C3eoAgKq3LUW8Big5E5Fy",
+  "whirlpool": "EHXKciegvkuBAm2P2TUChpkTvRNm4ewwaBa6JmfN8357",
+  "whirlpoolVaultA": "AjgMAv3UGjLr94XWpoymSYcjpi19kVJ4Zzntdk1TZqZf",
+  "whirlpoolVaultB": "AcKWCm9DvQBQBxQC955aJn2j6LrnxukAvxFexANHKKko",
+  "tickSpacing": 64,
+  "demoMode": true,
+  "assets": {
+    "75bxZeFLwNKqezhQ2KHhUASsuxVBJN31g9D8EuSuRW5U": {
+      "symbol": "USDC",
+      "name": "USD Coin (mock)",
+      "decimals": 6,
+      "priceAccount": null
+    },
+    "So11111111111111111111111111111111111111112": {
+      "symbol": "SOL",
+      "name": "Solana",
+      "decimals": 9,
+      "priceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+      "feedId": "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+      "pythAccount": "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+    },
+    "3mGpn5jTL25imzYaSNwUtthQ7cJgpMsJnXmf1vJf4Gij": {
+      "symbol": "NVDAx",
+      "name": "NVIDIA tokenized stock (mock)",
+      "decimals": 6,
+      "priceAccount": "FZTCogzKJELoVztPu5GQ9ErJK89dMgqqZbFECJ3ZgwVb",
+      "feedId": "b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+      "pythAccount": "2w1Tg1XTZbUib7srfRoStJ4v5JXVsK7roQEGMsMaGZFC"
+    },
+    "HDgRzeChz6fKBY1P5Ytdie3JigAteiq2eqphD5xeMEcm": {
+      "symbol": "AAPLx",
+      "name": "Apple tokenized stock (mock)",
+      "decimals": 8,
+      "priceAccount": "BgZXgJwLeaioJHiyVYafUvX2kBVCBLuxsTWCr5YBzvdC",
+      "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "feedId": "49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
+      "pythAccount": "DJ2FyTgUAkEtXW3U5P9PF19meFTRtW4ZWKKFgACfVbUy"
+    },
+    "2FpbByvzXNwxQrq5cqDoGLf2bx8nHdMWx3dcugayk4er": {
+      "symbol": "JitoSOL",
+      "name": "Jito staked SOL (mock)",
+      "decimals": 9,
+      "priceAccount": "7yxnoVNkG2LgptLs33qQ5dRZs4GoEnjy4tvDEQbmpAT2",
+      "backing": {
+        "solPriceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+        "fixedRate": 1.31,
+        "solPythAccount": "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+      },
+      "feedId": "67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb",
+      "pythAccount": "AxaxyeDT8JnWERSaTKvFXvPKkEdxnamKSqpWbsSjYg1g"
+    },
+    "F1FZjjvG7DRRvF3tnUVp9N8y6a46i7rH2qfYLhnA1dK6": {
+      "symbol": "JupSOL",
+      "name": "Jupiter staked SOL (mock)",
+      "decimals": 9,
+      "priceAccount": "CRD3G47a8NwXAEPKSQohk2DMdiF6cGJcfHF5XUWLApVS",
+      "backing": {
+        "solPriceAccount": "A3R2XKL7sD3y4hhWmRcmFu2NeKUsqgqPUJFy7r7TZkL7",
+        "fixedRate": 1.22,
+        "solPythAccount": "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+      },
+      "feedId": "67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb",
+      "pythAccount": "AxaxyeDT8JnWERSaTKvFXvPKkEdxnamKSqpWbsSjYg1g"
+    },
+    "CSAKKN1szfgwzr8KohREVtTB7GGdc9NdG4YCMU6KYZPM": {
+      "symbol": "BONK",
+      "name": "Bonk (mock)",
+      "decimals": 5,
+      "priceAccount": "2HTbY53W3tjc9N39N2QDDp8ZbVKDH18pmtpTThpxaDWB",
+      "priceExponent": 6,
+      "feedId": "72b021217ca3fe68922a19aaf990109cb9d84e9ad004b4d2025ad6f529314419",
+      "pythAccount": "DBE3N8uNjhKPRHfANdwGvCZghWXyLPdqdSbEW2XFwBiX"
+    }
+  },
+  "lookupTable": "A9KAGTcNirqiHQePpGe1pgvjdJrKAS62PemxoZeiiENS",
+  "lpMarkets": [
+    {
+      "pool": "5ZnKViaNwjT2iCZsgAchihmUurnaKTau4MWPUj1MQSnP",
+      "dexProgram": "DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH",
+      "baseMint": "So11111111111111111111111111111111111111112"
+    },
+    {
+      "pool": "Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi",
+      "dexProgram": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+      "baseMint": "So11111111111111111111111111111111111111112",
+      "accounts": [
+        "8EDkMkJUdGo1HzBVhnBZkE5AffTC9c5NKQTQohgVyUa2",
+        "J2LcK5DJhZGfpX4ffHzTd2gTVVmhes54ZtzZQb5Y9dLs",
+        "FmqmeXaYQtSurZK67fzRbXPE28tyb1qHhsunNS5mBtwz",
+        "FAzAMC4zLRXAfRJZh8jvVkPktU6rrUj1BoesoWpuaTuY",
+        "5c6zFaMoDwgSCTzB6pQDjz9pkZLdH6axpEb2m24JRSsG",
+        "29EYcpwKj2YRjbSLjtuVyUoJ2UXYPQwoqg7Ywn2NXoZZ"
+      ]
+    }
+  ]
+}

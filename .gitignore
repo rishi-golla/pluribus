@@ -1,6 +1,7 @@
 # Local architecture notes and agent instructions
 ARCHITECTURE.pdf
 AGENTS.md
+.empryo
 
 # Generated design mockups and reference screenshots
 mockups/
@@ -18,3 +19,20 @@ mockups/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Build output and dependencies
+target/
+.anchor/
+node_modules/
+test-ledger/
+.env
+.env.*
+scripts/.keys/
+scripts/out/
+programs/pluribus/tests/fixtures/orca/whirlpool.so
+programs/pluribus/tests/fixtures/raydium/*.so
+programs/pluribus/tests/fixtures/dlmm/lb_clmm*.so
+
+# Local chain addresses differ per machine
+deployments/localnet.json
+web/src/lib/pluribus/deployments/localnet.json

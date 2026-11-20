@@ -1,141 +1,177 @@
 import Link from "next/link";
-import { ArrowRight, MousePointerClick } from "lucide-react";
-import { BorrowPreview } from "@/components/landing/BorrowPreview";
+import type { ReactNode } from "react";
+import { BorrowLimit } from "@/components/landing/BorrowLimit";
+import { Closing } from "@/components/landing/Closing";
 import { Features } from "@/components/landing/Features";
-import { FadeUp, Num } from "@/components/motion";
-import { Brandmark, Button, Token } from "@/components/ui";
+import { MARKS, type MarkName } from "@/components/landing/marks";
+import { EarnUpTo, PoolStats } from "@/components/landing/PoolFacts";
+import { PortfolioGrid } from "@/components/landing/PortfolioGrid";
+import { ProductTour } from "@/components/landing/ProductTour";
+import { FadeUp } from "@/components/motion";
+import { SiteNav } from "@/components/SiteNav";
+import ScrollReveal from "@/components/reactbits/ScrollReveal";
+import { Brandmark, Button } from "@/components/ui";
+import { CLUSTER } from "@/lib/cluster";
 
-const partners = [
-  { name: "Solana", icon: "/tokens/sol.webp" },
-  { name: "Pyth", icon: "/tokens/pyth.webp" },
-  { name: "Orca", icon: "/tokens/orca.png" },
-  { name: "Raydium", icon: "/tokens/ray.webp" },
-  { name: "Meteora", icon: "/tokens/met.webp" },
-  { name: "Jupiter", icon: "/tokens/jup.webp" },
+// what devnet takes today, by kind, with the marks of the assets in it; LP venues are named, since the venue is what a holder looks for
+const collateral: [MarkName[], string][] = [
+  [["sol"], "SOL"],
+  [["jitosol", "jupsol"], "Staked SOL"],
+  [["orca"], "Orca LPs"],
+  [["ray"], "Raydium LPs"],
+  [["met"], "Meteora LPs"],
+  [["nvdax", "aaplx"], "Tokenized stocks"],
+  [["bonk"], "Memecoins"],
 ];
 
-const stats = [
-  { label: "Total supplied", value: 10, decimals: 1, prefix: "$", suffix: "M" },
-  { label: "Credit drawn", value: 8, decimals: 1, prefix: "$", suffix: "M" },
-  { label: "Collateral types", value: 4 },
-  { label: "Bad debt", value: 0, prefix: "$" },
+const footer = [
+  ["/overview", "Overview"],
+  ["/borrow", "Borrow"],
+  ["/earn", "Earn"],
+  ["/statements", "Statements"],
+  ["/docs", "Docs"],
 ];
+
+function Cta({ href, primary, children }: { href: string; primary?: boolean; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex h-12 items-center justify-center whitespace-nowrap rounded-lg border px-6 text-[15px] font-medium transition-colors md:px-4 lg:px-6 ${
+        primary ? "border-brand bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]" : "border-line-2 bg-white/[0.03] text-t1 hover:bg-white/[0.07]"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="relative">
-      <div className="landing-grid pointer-events-none absolute inset-x-0 top-0 h-[980px]" />
-      <FadeUp onMount y={0} delay={0.45} duration={1.6} className="pointer-events-none absolute left-1/2 top-[560px] h-[620px] w-[1300px] -translate-x-1/2">
-        <div className="landing-halo size-full" />
-      </FadeUp>
-
-      <div className="relative z-[1]">
-        <FadeUp onMount y={-8} duration={0.6}>
-          <header className="flex h-[72px] items-center gap-10 px-10">
-            <Brandmark />
-            <nav className="flex gap-0.5">
-              {[["Borrow", "/borrow"], ["Earn", "/earn"], ["Risk", "#"], ["Docs", "#"]].map(([l, href]) => (
-                <Link key={l} href={href} className="rounded-[9px] px-3.5 py-2 text-sm font-medium text-t2 transition-colors hover:text-t1">
-                  {l}
-                </Link>
-              ))}
-            </nav>
-            <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" href="#">
-                Architecture
-              </Button>
-              <Button variant="white" href="/overview">
-                Launch app
-              </Button>
+    <div className="min-h-screen">
+      <SiteNav>
+        <Button variant="white" href="/overview">
+          Launch app
+        </Button>
+      </SiteNav>
+      <div className="mx-auto max-w-[1280px] px-4 sm:px-10">
+        {/* from tablet width up the headline, the board and the collateral strip share the first screen, sized in globals.css */}
+        <div className="first-screen md:flex md:flex-col">
+        <section className="grid gap-14 pt-12 sm:pt-16 md:min-h-0 md:flex-1 md:grid-cols-[minmax(0,1fr)_var(--hero-board)] md:pt-[var(--hero-pad)]">
+          <div className="flex flex-col">
+            {/* equal space above and below keeps the text centred on the board, whatever sits under it */}
+            <div className="hidden flex-1 md:block" />
+            <div>
+            <FadeUp onMount delay={0.08} y={20}>
+              <h1 className="text-[44px] font-semibold leading-[0.98] tracking-[-0.035em] sm:text-[60px] md:text-[length:var(--hero-h1)]">
+                Borrow against
+                <br />
+                everything
+                <br />
+                you hold.
+              </h1>
+              <p className="mt-6 max-w-[520px] text-[16px] leading-[1.55] text-t2 sm:text-[18px] md:text-[16px] lg:text-[18px]">
+                Basket your SOL, LSTs, LPs, stocks and memecoins into one USDC loan. No maturity, and your LP fees pay it down.
+              </p>
+            </FadeUp>
+            <FadeUp onMount delay={0.18} className="mt-10 flex flex-wrap gap-3 md:mt-[var(--hero-gap)]">
+              <Cta href="/borrow" primary>
+                Open a credit line
+              </Cta>
+              <Cta href="/earn">Earn on USDC</Cta>
+            </FadeUp>
             </div>
-          </header>
-        </FadeUp>
+            <div className="relative md:flex-1">
+              {/* beside the board this box runs from the buttons down to the strip's rule, and the line sits in its middle */}
+              <FadeUp onMount delay={0.32} className="mt-8 md:absolute md:inset-x-0 md:top-0 md:mt-0 md:flex md:h-[calc(100%+var(--strip-gap))] md:items-center">
+                <EarnUpTo className="text-[17px] font-bold tracking-[-0.01em] text-t1 md:text-[15px] lg:text-[17px]" />
+              </FadeUp>
+            </div>
+          </div>
 
-        <section className="pt-[92px] text-center">
-          <FadeUp onMount delay={0.05}>
-            <Link
-              href="/borrow"
-              className="inline-flex h-8 items-center gap-2 rounded-full border border-line-2 bg-white/[0.03] pl-1.5 pr-3 text-[13px] text-t2 transition-colors hover:border-white/20 hover:text-t1"
-            >
-              <span className="rounded-full bg-brand-dim px-2 py-0.5 text-xs font-medium text-brand">New</span>
-              Tokenized stocks and CLMM LPs as collateral
-              <ArrowRight size={14} strokeWidth={1.75} />
-            </Link>
-          </FadeUp>
-          <FadeUp onMount delay={0.12} y={20}>
-            <h1 className="mt-7 text-[84px] font-medium leading-[0.98] tracking-[-0.055em]">
-              Borrow against
-              <br />
-              <span className="text-fade">everything you hold.</span>
-            </h1>
-          </FadeUp>
-          <FadeUp onMount delay={0.2}>
-            <p className="mx-auto mt-[26px] max-w-[620px] text-lg leading-[1.55] text-t2">
-              One credit line for your SOL, LSTs, LP positions and tokenized stocks. Every asset is valued under one crash scenario, there&apos;s no maturity, and
-              your LP fees pay the loan down.
-            </p>
-          </FadeUp>
-          <FadeUp onMount delay={0.28} className="mt-9 flex justify-center gap-3">
-            <Button variant="white" size="lg" href="/borrow">
-              Open a credit line
-            </Button>
-            <Button size="lg" href="/earn">
-              Earn up to 24.2% APY
-              <ArrowRight size={15} strokeWidth={1.75} />
-            </Button>
+          <FadeUp onMount delay={0.12} y={12} className="md:relative md:top-[var(--hero-drop)] md:self-center">
+            <PortfolioGrid />
           </FadeUp>
         </section>
 
-        <FadeUp onMount delay={0.4} y={48} duration={1.1}>
-          <div className="shot-frame relative mx-auto mt-[72px] w-[1180px] rounded-[20px] p-2">
-            <div className="absolute -top-4 left-1/2 z-10 -translate-x-1/2">
-              <span className="inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full border border-line-2 bg-s2/90 px-3 text-[12.5px] text-t2 shadow-[0_8px_24px_rgb(0_0_0/0.5)] backdrop-blur">
-                <MousePointerClick size={14} strokeWidth={1.75} className="text-brand" />
-                Live preview. Pick an amount and draw, or hover the chart.
+        <FadeUp onMount delay={0.34} className="mt-16 border-y border-line py-6 sm:mt-20 md:mb-[var(--hero-end)] md:mt-[var(--strip-gap)] md:shrink-0 md:py-[var(--strip-pad)]">
+          <div className="text-[12px] uppercase tracking-[0.06em] text-t3">Collateral on Solana</div>
+          {/* one row on desktop and two under it, so the strip's height is known to the first screen's sums */}
+          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4 lg:flex-nowrap lg:justify-between lg:gap-x-4">
+            {collateral.map(([marks, name]) => (
+              <span key={name} className="flex items-center gap-2.5 whitespace-nowrap text-[14px] font-medium text-t1">
+                <span className="flex items-center gap-1.5">
+                  {marks.map((mark) => (
+                    <svg key={mark} viewBox="0 0 100 100" className="size-[22px] shrink-0" aria-hidden>
+                      <path fill="currentColor" fillRule="evenodd" d={MARKS[mark]} />
+                    </svg>
+                  ))}
+                </span>
+                {name}
               </span>
-            </div>
-            <div className="relative h-[804px] overflow-hidden rounded-[14px] border border-line-2 bg-bg">
-              <div className="w-[1440px] origin-top-left scale-[0.8083]">
-                <BorrowPreview />
-              </div>
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg" />
-            </div>
+            ))}
           </div>
         </FadeUp>
+        </div>
 
-        <FadeUp className="mt-10 flex items-center justify-center gap-11 text-sm text-t3">
-          <span>Built on</span>
-          {partners.map((p) => (
-            <span key={p.name} className="flex items-center gap-[9px] text-[15px] font-medium text-t2 transition-colors hover:text-t1">
-              <Token src={p.icon} size={20} className="opacity-85 brightness-[1.3] grayscale" />
-              {p.name}
-            </span>
-          ))}
-        </FadeUp>
+        <main>
+          <ScrollReveal
+            containerClassName="mt-24 max-w-[1040px] sm:mt-[144px] !mb-0"
+            textClassName="!text-[30px] !leading-[1.18] tracking-[-0.03em] sm:!text-[52px]"
+            baseOpacity={0.12}
+            blurStrength={6}
+            wordAnimationEnd="center center"
+          >
+            Pluribus values everything you hold together, as it would stand after a sharp price drop, and lends you USDC against what is left.
+          </ScrollReveal>
 
-        <main className="mx-auto max-w-[1280px] px-10 pb-16">
-          <FadeUp className="mt-[104px] text-center" y={20}>
-            <h2 className="text-[44px] font-medium leading-[1.05] tracking-[-0.045em]">
-              Credit that understands
-              <br />
-              what you actually hold.
+          <BorrowLimit />
+
+          <div className="mt-24 sm:mt-[144px]">
+            <ProductTour />
+          </div>
+
+          <FadeUp className="mt-24 sm:mt-[160px]" y={20}>
+            <h2 className="text-[32px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[40px]">
+              What Pluribus does differently
             </h2>
-            <p className="mt-3.5 text-base text-t2">Built from the ground up for concentrated liquidity and multi-asset portfolios.</p>
           </FadeUp>
-
           <Features />
 
-          <FadeUp className="mt-[72px] grid grid-cols-4 border-y border-line">
-            {stats.map((s, i) => (
-              <div key={s.label} className={i === 0 ? "py-7" : "border-l border-line py-7 pl-7"}>
-                <div className="text-[12.5px] text-t3">{s.label}</div>
-                <div className="mt-2 text-[40px] font-medium tracking-[-0.045em]">
-                  <Num value={s.value} decimals={s.decimals} prefix={s.prefix} suffix={s.suffix} countUp />
-                </div>
+          <FadeUp className="mt-20 sm:mt-[112px]">
+            <div className="mb-5 text-[13px] text-t3">On {CLUSTER} now</div>
+            <div className="grid grid-cols-2 border-y border-line md:grid-cols-4 [&>*:nth-child(3)]:border-l-0 [&>*:nth-child(3)]:pl-0 md:[&>*:nth-child(3)]:border-l md:[&>*:nth-child(3)]:pl-7">
+              <PoolStats />
+            </div>
+          </FadeUp>
+
+          <FadeUp y={20} className="mt-24 sm:mt-[160px]">
+            <Closing>
+              <h2 className="text-[40px] font-semibold leading-[1] tracking-[-0.035em] sm:text-[64px]">
+                One loan against
+                <br />
+                everything you hold.
+              </h2>
+              <div className="flex flex-wrap gap-3">
+                <Cta href="/borrow" primary>
+                  Open a credit line
+                </Cta>
+                <Cta href="/earn">Earn on USDC</Cta>
               </div>
-            ))}
+            </Closing>
           </FadeUp>
         </main>
+
+        <footer className="mt-24 flex flex-col gap-6 border-t border-line py-10 text-[13.5px] text-t2 sm:mt-[128px] sm:flex-row sm:items-center sm:justify-between">
+          <Brandmark className="text-[17px] text-t1" />
+          <nav className="flex flex-wrap gap-x-7 gap-y-2">
+            {footer.map(([href, label]) => (
+              <Link key={href} href={href} className="transition-colors hover:text-t1">
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <span className="text-t3">Running on {CLUSTER}</span>
+        </footer>
       </div>
     </div>
   );

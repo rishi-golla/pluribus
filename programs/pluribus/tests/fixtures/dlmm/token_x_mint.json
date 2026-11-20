@@ -1,0 +1,13 @@
+{
+  "pubkey": "So11111111111111111111111111111111111111112",
+  "account": {
+    "lamports": 1931300895922,
+    "data": [
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "base64"
+    ],
+    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "executable": false,
+    "space": 82
+  }
+}

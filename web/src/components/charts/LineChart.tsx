@@ -20,6 +20,8 @@ type Props = {
   yTicks: number[];
   fmtY: (v: number) => string;
   xLabels: string[];
+  /** Names what the x axis measures, centred under the tick labels. Leave room for it in `pad.bottom`. */
+  xTitle?: string;
   /** Tooltip heading for a data index. */
   titleAt: (i: number) => string;
   fmtValue: (v: number) => string;
@@ -29,6 +31,8 @@ type Props = {
   focus?: string | null;
   /** Changing this redraws the lines from scratch (e.g. on range change). */
   animKey?: string;
+  /** Joins points with straight segments, for readings that jump and would overshoot when smoothed */
+  straight?: boolean;
   ariaLabel: string;
   overlay?: (s: Scale) => ReactNode;
 };
@@ -45,11 +49,13 @@ export function LineChart({
   yTicks,
   fmtY,
   xLabels,
+  xTitle,
   titleAt,
   fmtValue,
   restIndex,
   focus = null,
   animKey = "",
+  straight = false,
   ariaLabel,
   overlay,
 }: Props) {
@@ -101,14 +107,19 @@ export function LineChart({
           </g>
         ))}
         {xLabels.map((lab, i) => (
-          <text key={`${lab}-${i}`} x={pad.left + (i / (xLabels.length - 1)) * iw} y={H - 6} textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>
+          <text key={`${lab}-${i}`} x={pad.left + (i / (xLabels.length - 1)) * iw} y={xTitle ? H - 24 : H - 6} textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>
             {lab}
           </text>
         ))}
+        {xTitle && (
+          <text x={pad.left + iw / 2} y={H - 4} textAnchor="middle" className="font-medium">
+            {xTitle}
+          </text>
+        )}
         {overlay?.({ x, y, innerWidth: iw, innerHeight: ih, pad })}
         {lines.map((l, k) => {
           const pts: Point[] = l.data.map((v, i) => [x(i), y(v)]);
-          const d = smoothPath(pts);
+          const d = smoothPath(pts, straight ? 0 : undefined);
           const dim = focus !== null && focus !== l.key;
           return (
             <motion.g key={`${l.key}-${animKey}`} animate={{ opacity: dim ? 0.35 : 1 }} transition={{ duration: 0.3 }}>
@@ -155,14 +166,14 @@ export function LineChart({
             return (
               <g key={l.key}>
                 <motion.circle r={7} fill={l.color} fillOpacity={0.18} initial={false} animate={{ cx, cy }} transition={SPRING} />
-                <motion.circle r={3.5} fill={l.color} stroke="#0d0f12" strokeWidth={1.5} initial={false} animate={{ cx, cy }} transition={SPRING} />
+                <motion.circle r={3.5} fill={l.color} stroke="#121212" strokeWidth={1.5} initial={false} animate={{ cx, cy }} transition={SPRING} />
               </g>
             );
           })}
         </motion.g>
       </svg>
       <motion.div
-        className="glass-tip pointer-events-none absolute top-[18px] min-w-[170px] rounded-[10px] border border-line-2 px-3 py-2.5 text-xs"
+        className="glass-tip pointer-events-none absolute top-[18px] min-w-[170px] rounded-lg border border-line-2 px-3 py-2.5 text-xs"
         initial={{ opacity: 0, left: cx > 230 ? cx - 196 : cx + 16 }}
         animate={{ opacity: inView ? 1 : 0, left: cx > 230 ? cx - 196 : cx + 16 }}
         transition={{ left: SPRING, opacity: { duration: 0.4, delay: 1.2 } }}
@@ -185,6 +196,6 @@ export function LineChart({
 const DAY = 86_400_000;
 const END = Date.UTC(2026, 10, 14);
 /** UTC formatting so server and client render the same string. */
-export const dateLabel = (daysAgo: number, year = false) =>
-  new Date(END - daysAgo * DAY).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(year && { year: "numeric" }), timeZone: "UTC" });
-export const axisDates = (n: number) => Array.from({ length: 7 }, (_, k) => dateLabel(n - 1 - Math.round((k / 6) * (n - 1))));
+export const dateLabel = (daysAgo: number, year = false, end = END) =>
+  new Date(end - daysAgo * DAY).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(year && { year: "numeric" }), timeZone: "UTC" });
+export const axisDates = (n: number, end = END) => Array.from({ length: 7 }, (_, k) => dateLabel(n - 1 - Math.round((k / 6) * (n - 1)), false, end));

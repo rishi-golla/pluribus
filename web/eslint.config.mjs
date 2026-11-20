@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Copied in by `npm run sdk:sync` and linted where it is written
+    "src/lib/pluribus/**",
+    // Copied in from reactbits.dev and kept as published
+    "src/components/reactbits/**",
   ]),
 ]);
 

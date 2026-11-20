@@ -1,0 +1,54 @@
+{
+  "name": "pluribus",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "npm --prefix web install",
+    "dev": "npm --prefix web run dev",
+    "orca:fixture": "tsx scripts/orca-fixture.ts",
+    "orca:snapshot": "tsx scripts/orca-snapshot.ts",
+    "orca:verify": "tsx scripts/orca-verify.ts",
+    "raydium:snapshot": "tsx scripts/raydium-snapshot.ts",
+    "dlmm:snapshot": "tsx scripts/dlmm-snapshot.ts",
+    "idl": "mkdir -p sdk/idl && cp target/idl/pluribus.json target/types/pluribus.ts sdk/idl/",
+    "sdk:sync": "mkdir -p deployments web/src/lib/pluribus && rsync -a --delete sdk deployments web/src/lib/pluribus/",
+    "localnet": "tsx scripts/localnet.ts",
+    "setup": "tsx scripts/setup.ts",
+    "list:meme": "tsx scripts/list-meme.ts",
+    "migrate:accounts": "tsx scripts/migrate-accounts.ts",
+    "faucet": "tsx scripts/faucet.ts",
+    "faucet:stock": "tsx scripts/faucet-stock.ts",
+    "price": "tsx scripts/price.ts",
+    "e2e": "tsx scripts/e2e.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "keeper": "tsx keeper/index.ts",
+    "keeper:e2e": "tsx scripts/keeper-e2e.ts",
+    "indexer": "tsx indexer/server.ts",
+    "indexer:replay": "tsx indexer/replay.ts",
+    "dlmm:market": "tsx scripts/dlmm-market.ts"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "1.2.2",
+    "@coral-xyz/anchor": "~0.32.1",
+    "@orca-so/common-sdk": "^0.7.1",
+    "@orca-so/whirlpools-sdk": "^0.22.0",
+    "@pythnetwork/hermes-client": "^3.1.0",
+    "@pythnetwork/pyth-solana-receiver": "^0.17.0",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "bn.js": "^5.2.5",
+    "decimal.js": "^10.6.0"
+  },
+  "devDependencies": {
+    "@raydium-io/raydium-sdk-v2": "0.2.83-alpha",
+    "@types/bn.js": "~5.1.6",
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "jito-ts": {
+      "@solana/web3.js": "$@solana/web3.js"
+    }
+  }
+}

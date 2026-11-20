@@ -1,7 +1,9 @@
 "use client";
 
-import { series } from "@/lib/chart";
+import { axisTimes, inRange, niceMax, series, timeLabel } from "@/lib/chart";
+import { compactUsd } from "@/lib/markets";
 import { LineChart, axisDates, dateLabel } from "@/components/charts/LineChart";
+import type { Sample } from "@/components/app/providers";
 
 export const RANGES = ["7D", "30D", "90D", "1Y"] as const;
 export type Range = (typeof RANGES)[number];
@@ -25,12 +27,18 @@ const debt = collateral.map((_, i) => {
 const DAYS: Record<Range, number> = { "7D": 7, "30D": 30, "90D": 90, "1Y": 365 };
 const MOCK_90D_LABELS = ["Aug 16", "Sep 1", "Sep 15", "Oct 1", "Oct 15", "Nov 1", "Nov 14"];
 
-export function PortfolioChart({ range, focus }: { range: Range; focus: SeriesKey | null }) {
+/** Pass `samples` to chart on-chain readings from this session instead of the demo history */
+export function PortfolioChart({ range, focus, samples }: { range: Range; focus: SeriesKey | null; samples?: Sample[] }) {
   const n = DAYS[range];
+  const live = samples && inRange(samples, n);
+  const data = live
+    ? { collateral: live.map((s) => s.collateral), limit: live.map((s) => s.limit), debt: live.map((s) => s.debt) }
+    : { collateral: collateral.slice(-n), limit: limit.slice(-n), debt: debt.slice(-n) };
+  const yMax = live ? niceMax(Math.max(...data.collateral, ...data.limit, ...data.debt)) : 60000;
   const lines = [
-    { key: "Value", label: "Collateral", color: "#9e8cff", data: collateral.slice(-n), fill: 0.28, width: 2 },
-    { key: "Credit", label: "Credit limit", color: "#ededef", data: limit.slice(-n), width: 1.5, dash: "4 4" },
-    { key: "Debt", label: "Debt", color: "#ffa24c", data: debt.slice(-n), fill: 0.1, width: 1.75 },
+    { key: "Value", label: "Collateral", color: "#c6f432", data: data.collateral, fill: 0.28, width: 2 },
+    { key: "Credit", label: "Credit limit", color: "#f0f0f0", data: data.limit, width: 1.5, dash: "4 4" },
+    { key: "Debt", label: "Debt", color: "#f59a3d", data: data.debt, fill: 0.1, width: 1.75 },
   ];
   return (
     <div className="mt-2">
@@ -38,15 +46,16 @@ export function PortfolioChart({ range, focus }: { range: Range; focus: SeriesKe
         width={754}
         height={372}
         lines={lines}
-        yMax={60000}
-        yTicks={[0, 15000, 30000, 45000, 60000]}
-        fmtY={(v) => (v === 0 ? "$0" : `$${v / 1000}K`)}
-        xLabels={range === "90D" ? MOCK_90D_LABELS : axisDates(n)}
-        titleAt={(i) => dateLabel(n - 1 - i, true)}
+        yMax={yMax}
+        yTicks={[0, 0.25, 0.5, 0.75, 1].map((f) => f * yMax)}
+        fmtY={live ? compactUsd : (v) => (v === 0 ? "$0" : `$${v / 1000}K`)}
+        xLabels={live ? axisTimes(live) : range === "90D" ? MOCK_90D_LABELS : axisDates(n)}
+        titleAt={(i) => (live ? timeLabel(live[i].at, true) : dateLabel(n - 1 - i, true))}
         fmtValue={(v) => `$${Math.round(v).toLocaleString("en-US")}`}
-        restIndex={Math.round((n - 1) * (71 / 89))}
+        restIndex={live ? live.length - 1 : Math.round((n - 1) * (71 / 89))}
         focus={focus}
         animKey={range}
+        straight={!!live}
         ariaLabel={`Collateral, credit limit and debt over the last ${range}`}
       />
     </div>

@@ -7,11 +7,13 @@ export const COLLATERAL_VALUE = 48230;
 
 export const money = (v: number, decimals = 2) => v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 export const usd = (v: number, decimals = 2) => `$${money(v, decimals)}`;
-export const healthOf = (debt: number) => (debt > 0 ? CREDIT_LIMIT / debt : Infinity);
+/** Health is the liquidation limit over the debt, so liquidation starts at 1, and debt that rounds to no cents counts as none */
+export const healthOf = (debt: number, limit: number) => (debt >= 0.005 ? limit / debt : Infinity);
 export const healthTone = (h: number) => (h >= 1.5 ? "text-green" : h >= 1.2 ? "text-orange" : "text-red");
 /** Position (0-100) on the 1.00 / 1.50 / 2.00 / 3.00+ health scale, which is piecewise linear. */
 export const healthPos = (h: number) => (h <= 1 ? 0 : h <= 2 ? ((h - 1) / 0.5) * 33.333 : Math.min(100, 66.667 + (h - 2) * 33.333));
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const shortKey = (key: string) => `${key.slice(0, 4)}...${key.slice(-4)}`;
 
 /** Shows a raw numeric input string with thousands separators, keeping whatever decimals were typed. */
 export const displayAmount = (raw: string) => {
@@ -20,7 +22,7 @@ export const displayAmount = (raw: string) => {
   return dec !== undefined ? `${grouped}.${dec}` : grouped;
 };
 
-export type EventKind = "draw" | "repay" | "autopay" | "interest" | "tier";
+export type EventKind = "draw" | "repay" | "autopay" | "interest" | "premium" | "tier" | "closed";
 export type AccountEvent = {
   id: string;
   /** ISO date, yyyy-mm-dd */
@@ -34,7 +36,8 @@ export type AccountEvent = {
 };
 
 /** Signed effect on debt. */
-export const debtDelta = (e: AccountEvent) => (e.kind === "draw" || e.kind === "interest" ? e.amount : e.kind === "tier" ? 0 : -e.amount);
+export const debtDelta = (e: AccountEvent) =>
+  e.kind === "draw" || e.kind === "interest" || e.kind === "premium" ? e.amount : e.kind === "tier" || e.kind === "closed" ? 0 : -e.amount;
 
 const ev = (date: string, kind: EventKind, amount: number, detail: string, tx: string, source?: AccountEvent["source"]): AccountEvent => ({
   id: `${date}-${kind}-${tx}`,
@@ -135,7 +138,7 @@ export type MonthSummary = {
   rows: (AccountEvent & { balance: number })[];
 };
 
-/** Openings are derived backwards from today's debt so every month chains exactly. */
+/** Openings are derived backwards from today's debt so every month chains exactly. The risk premium is booked as debt like interest, so it counts in the interest total. */
 export function summarize(months: Month[], currentDebt: number): Record<string, MonthSummary> {
   const out: Record<string, MonthSummary> = {};
   let closing = currentDebt;
@@ -145,7 +148,7 @@ export function summarize(months: Month[], currentDebt: number): Record<string, 
     const opening = closing - events.reduce((s, e) => s + debtDelta(e), 0);
     let bal = opening;
     const rows = events.map((e) => ({ ...e, balance: (bal += debtDelta(e)) }));
-    out[months[m].key] = { opening, draws: sum("draw"), interest: sum("interest"), repayments: sum("repay"), autopay: sum("autopay"), closing, rows: rows.reverse() };
+    out[months[m].key] = { opening, draws: sum("draw"), interest: sum("interest") + sum("premium"), repayments: sum("repay"), autopay: sum("autopay"), closing, rows: rows.reverse() };
     closing = opening;
   }
   return out;

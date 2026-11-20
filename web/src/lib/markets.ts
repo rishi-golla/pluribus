@@ -1,4 +1,5 @@
 import { series } from "./chart";
+import { tokenIcon } from "./tokens";
 
 /** Pool-level figures from the ARCHITECTURE.pdf example ($10M pool, 80% utilization). */
 export const POOL = { supplied: 10_000_000, borrowed: 8_000_000, senior: 9_000_000, junior: 1_000_000, insurance: 100_000, reserveFactor: 0.1 };
@@ -12,6 +13,8 @@ export type Market = {
   icon: string;
   /** For LP markets: the protocol badge on the USDC side of the pair. */
   lpBadge?: string;
+  /** For LP markets: the exchange whose positions it takes, which is how a deployment lists it. */
+  dex?: "orca" | "raydium" | "meteora";
   collateral: number;
   borrowed: number;
   crashLtv: number;
@@ -26,10 +29,12 @@ export const MARKETS: Market[] = [
   { id: "jitosol", name: "JitoSOL", sub: "Jito liquid staking", cls: "LSTs", icon: "jitosol.webp", collateral: 3_180_000, borrowed: 1_620_000, crashLtv: 0.65, borrowApr: 0.106, volume24h: 188_000, change24h: 0.022, liquidity: 5 },
   { id: "jupsol", name: "JupSOL", sub: "Jupiter liquid staking", cls: "LSTs", icon: "jupsol.webp", collateral: 1_120_000, borrowed: 560_000, crashLtv: 0.64, borrowApr: 0.109, volume24h: 61_000, change24h: 0.021, liquidity: 4 },
   { id: "msol", name: "mSOL", sub: "Marinade liquid staking", cls: "LSTs", icon: "msol.png", collateral: 860_000, borrowed: 420_000, crashLtv: 0.635, borrowApr: 0.11, volume24h: 44_000, change24h: 0.023, liquidity: 4 },
-  { id: "orca-lp", name: "SOL-USDC", sub: "Orca Whirlpools", cls: "LP positions", icon: "sol.webp", lpBadge: "orca.png", collateral: 2_740_000, borrowed: 1_460_000, crashLtv: 0.708, borrowApr: 0.118, volume24h: 236_000, change24h: 0.011, liquidity: 4 },
-  { id: "ray-lp", name: "SOL-USDC", sub: "Raydium CLMM", cls: "LP positions", icon: "sol.webp", lpBadge: "ray.webp", collateral: 1_310_000, borrowed: 690_000, crashLtv: 0.74, borrowApr: 0.119, volume24h: 97_000, change24h: 0.009, liquidity: 4 },
+  { id: "orca-lp", name: "SOL-USDC", sub: "Orca Whirlpool", cls: "LP positions", icon: "sol.webp", lpBadge: "orca.png", dex: "orca", collateral: 2_740_000, borrowed: 1_460_000, crashLtv: 0.708, borrowApr: 0.118, volume24h: 236_000, change24h: 0.011, liquidity: 4 },
+  { id: "ray-lp", name: "SOL-USDC", sub: "Raydium CLMM", cls: "LP positions", icon: "sol.webp", lpBadge: "ray.webp", dex: "raydium", collateral: 1_310_000, borrowed: 690_000, crashLtv: 0.74, borrowApr: 0.119, volume24h: 97_000, change24h: 0.009, liquidity: 4 },
+  { id: "met-lp", name: "SOL-USDC", sub: "Meteora DLMM", cls: "LP positions", icon: "sol.webp", lpBadge: "met.webp", dex: "meteora", collateral: 880_000, borrowed: 450_000, crashLtv: 0.689, borrowApr: 0.118, volume24h: 34_000, change24h: 0.01, liquidity: 4 },
   { id: "nvdax", name: "NVDAx", sub: "NVIDIA xStock", cls: "Stocks", icon: "nvdax.webp", collateral: 940_000, borrowed: 360_000, crashLtv: 0.58, borrowApr: 0.134, volume24h: 52_000, change24h: -0.006, liquidity: 3 },
-  { id: "bonk", name: "BONK", sub: "Bonk", cls: "Memes", icon: "bonk.webp", collateral: 630_000, borrowed: 150_000, crashLtv: 0.35, borrowApr: 0.178, volume24h: 38_000, change24h: -0.041, liquidity: 2 },
+  { id: "aaplx", name: "AAPLx", sub: "Apple xStock, Token-2022", cls: "Stocks", icon: tokenIcon("AAPLx"), collateral: 410_000, borrowed: 150_000, crashLtv: 0.585, borrowApr: 0.134, volume24h: 21_000, change24h: 0.004, liquidity: 3 },
+  { id: "bonk", name: "BONK", sub: "Bonk memecoin", cls: "Memes", icon: "bonk.webp", collateral: 630_000, borrowed: 150_000, crashLtv: 0.35, borrowApr: 0.178, volume24h: 38_000, change24h: -0.041, liquidity: 2 },
 ];
 
 /** Interest paid by borrowers against each market over 30 days. */
@@ -46,11 +51,11 @@ export const TOTALS = (() => {
 })();
 
 export const CLASS_COLORS: Record<AssetClass, string> = {
-  SOL: "#9e8cff",
-  LSTs: "#6aa8ff",
-  "LP positions": "#3ddc97",
-  Stocks: "#ffa24c",
-  Memes: "#ff6166",
+  SOL: "#a98bff",
+  LSTs: "#33c3d6",
+  "LP positions": "#c6f432",
+  Stocks: "#f59a3d",
+  Memes: "#ff5c8a",
 };
 
 /** 90 days of protocol activity. The last day matches today's 24h volume. */
