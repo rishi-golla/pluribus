@@ -1,20 +1,19 @@
-// Mirrors real Pyth prices into a local chain's demo price accounts, so a localnet values collateral at market prices
-// A local validator has no Pyth receiver, so the program reads each asset's demo price there; this keeps those at Pyth's
-//
-// Sources, per feed, best first:
-//   1. Pyth Hermes, when HERMES_ACCESS_TOKEN is set: every feed the key's plan covers, which may not be all of them
-//   2. Pyth's push-feed accounts on mainnet, read over plain RPC with no token: only feeds Pyth keeps posting there,
-//      which today are SOL and the liquid staking tokens
-// A source older than the asset's limit is not used, and the asset keeps its last price, which the keeper keeps fresh
+// Mirrors real mainnet prices into a local chain's demo price accounts, so a localnet values collateral at market prices
+// A local validator has no Pyth receiver, so the program reads each asset's demo price there; this keeps those at mainnet's
+// Every source is on-chain, read from Solana mainnet over plain RPC, with no API key:
+//   - Pyth's push-feed accounts, for the feeds Pyth keeps posting there: SOL and the liquid staking tokens
+//   - Orca Whirlpool pools, for assets Pyth leaves stale on-chain: NVDAx and AAPLx from their USDC pools, and BONK from
+//     the SOL/BONK pool times Pyth's SOL price. A pool's price is its last trade, so its fee is taken as the band around it
+// A Pyth quote older than the asset's limit is not used, and the asset keeps its last price, which the keeper keeps fresh
 //
 //   npm run pricefeed                        the deployment for CLUSTER, localnet by default
 //   PRICEFEED_SYMBOLS=SOL,BONK npm run pricefeed   only these assets, so the others can be set by hand with npm run price
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { HermesClient } from "@pythnetwork/hermes-client";
 import { Connection, Keypair, PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import BN from "bn.js";
+import Decimal from "decimal.js";
 import { type Deployment, buildTransaction, decodePriceUpdate, getProgram, ix, pda } from "../sdk/index.ts";
 
 const env = process.env;
@@ -26,9 +25,17 @@ const positive = (name: string, fallback: number) => {
 const intervalMs = positive("PRICEFEED_INTERVAL_MS", 10_000);
 // A move smaller than this is not worth a transaction, unless the demo price is getting old
 const minMoveBps = positive("PRICEFEED_MIN_MOVE_BPS", 1);
-// Crypto trades all the time, so an old quote is a broken feed; stocks stop for nights, weekends and holidays
-const cryptoMaxAge = positive("PRICEFEED_CRYPTO_MAX_AGE_SECS", 600);
-const stockMaxAge = positive("PRICEFEED_STOCK_MAX_AGE_SECS", 4 * 86_400);
+// A Pyth push feed this much older than now counts as stale
+const maxPythAge = positive("PRICEFEED_MAX_AGE_SECS", 600);
+
+// Mainnet Orca Whirlpools by asset symbol, with the side the asset sits on and what it is quoted in
+// The deepest pool for each when this was written: NVDAx/USDC about $233k, AAPLx/USDC $20k, SOL/BONK $224k
+const WHIRLPOOL_PROGRAM = new PublicKey("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc");
+const POOLS: Record<string, { pool: PublicKey; side: "A" | "B"; quote: "USDC" | "SOL" }> = {
+  NVDAx: { pool: new PublicKey("6R4r93V5fcMzc13CL2enEepDSYcr4Qx3ptZBDwudTXCo"), side: "A", quote: "USDC" },
+  AAPLx: { pool: new PublicKey("9JsDnmZonykBmrybuYaZUYxr4DCbZZQTdYQzdFXtDr5F"), side: "A", quote: "USDC" },
+  BONK: { pool: new PublicKey("5zpyutJu9ee6jFymDGoK7F6S5Kczqtc9FomP3ueKuyA9"), side: "B", quote: "SOL" },
+};
 
 const cluster = env.CLUSTER ?? "localnet";
 const file = path.join(import.meta.dirname, "../deployments", `${cluster}.json`);
@@ -40,76 +47,76 @@ const admin = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(env.DEMO_ADMIN_SE
 const connection = new Connection(env.RPC_URL ?? d.rpcUrl, "confirmed");
 const program = getProgram(connection);
 const mainnet = new Connection(env.MAINNET_RPC_URL ?? "https://api.mainnet-beta.solana.com", "confirmed");
-const token = env.HERMES_ACCESS_TOKEN || undefined;
-const hermes = token ? new HermesClient(env.HERMES_URL ?? "https://hermes.pyth.network", { accessToken: token }) : null;
 
 const only = env.PRICEFEED_SYMBOLS?.split(",").map((s) => s.trim().toUpperCase());
-// Every asset with a demo price account and a Pyth feed; USDC is fixed at $1 and has neither
+// Every asset with a demo price account and a source; USDC is fixed at $1 and has neither
 const assets = Object.entries(d.assets).flatMap(([mint, a]) =>
-  a.priceAccount && a.feedId && (!only || only.includes(a.symbol.toUpperCase()))
-    ? [{ mint: new PublicKey(mint), symbol: a.symbol, feedId: a.feedId.replace(/^0x/, ""), exponent: a.priceExponent ?? 0,
-         // xStocks are Token-2022, and the stock mint is the mock stock
-         maxAge: a.tokenProgram || mint === d.stockMint ? stockMaxAge : cryptoMaxAge }]
+  a.priceAccount && (POOLS[a.symbol] || a.feedId) && (!only || only.includes(a.symbol.toUpperCase()))
+    ? [{ mint: new PublicKey(mint), symbol: a.symbol, feedId: a.feedId?.replace(/^0x/, ""), pool: POOLS[a.symbol], exponent: a.priceExponent ?? 0 }]
     : [],
 );
-if (!assets.length) throw new Error("No asset has both a demo price account and a Pyth feed");
+if (!assets.length) throw new Error("No asset has both a demo price account and a source");
+// SOL's Pyth feed prices the pools quoted in SOL, whether or not SOL itself is being fed
+const solFeed = d.assets[d.solMint]?.feedId?.replace(/^0x/, "");
 
 const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
 const dollars = (micro: BN) => (Number(micro.toString()) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 8 });
 type Quote = { price: BN; conf: BN; publishTime: number; source: string };
+// Micro-dollars per 10^exponent whole tokens, the unit set_demo_price takes
+const micro = (usd: Decimal, exponent: number) => new BN(usd.mul(1e6).mul(Decimal.pow(10, exponent)).floor().toFixed(0));
 
-// Hermes quotes in units of 10^expo; the program wants micro-dollars per 10^exponent whole tokens, as decodePriceUpdate does
-const E6 = new BN(1_000_000);
-function scale(value: string, expo: number, exponent: number): BN {
-  const n = new BN(value).mul(E6).mul(new BN(10).pow(new BN(exponent)));
-  return expo < 0 ? n.div(new BN(10).pow(new BN(-expo))) : n.mul(new BN(10).pow(new BN(expo)));
-}
-
-// A key only covers the feeds its plan is entitled to, and one feed outside the plan fails a whole request,
-// so each feed is asked for on its own and a refused one is left alone for an hour before it is tried again
-const refusedUntil = new Map<string, number>();
-const REFUSED_RETRY_MS = 3_600_000;
-async function fromHermes(): Promise<Map<string, Quote>> {
-  const out = new Map<string, Quote>();
-  if (!hermes) return out;
-  const ids = [...new Set(assets.map((a) => a.feedId))].filter((id) => (refusedUntil.get(id) ?? 0) <= Date.now());
-  await Promise.all(
-    ids.map(async (id) => {
-      const res = await hermes.getLatestPriceUpdates([id], { parsed: true }).catch((e) => {
-        const names = assets.filter((a) => a.feedId === id).map((a) => a.symbol).join("/");
-        if (/status: 40[13]/.test(String(e?.message))) {
-          if (!refusedUntil.has(id)) log(`Hermes refused ${names}: the key's plan does not cover this feed, trying again hourly`);
-          refusedUntil.set(id, Date.now() + REFUSED_RETRY_MS);
-        } else log(`Hermes failed for ${names}: ${e?.message ?? e}`);
-        return null;
-      });
-      for (const p of res?.parsed ?? []) {
-        refusedUntil.delete(id);
-        for (const a of assets.filter((x) => x.feedId === p.id.replace(/^0x/, ""))) {
-          out.set(a.symbol, { price: scale(p.price.price, p.price.expo, a.exponent), conf: scale(p.price.conf, p.price.expo, a.exponent), publishTime: p.price.publish_time, source: "hermes" });
-        }
-      }
-    }),
-  );
-  return out;
+// Whirlpool layout: fee rate u16 at 45 in millionths, sqrt price u128 Q64.64 at 65, token mint A at 101 and B at 181
+const decimals = new Map<string, number>();
+async function poolPrice(data: Buffer): Promise<{ aInB: Decimal; fee: Decimal }> {
+  const [mintA, mintB] = [new PublicKey(data.subarray(101, 133)), new PublicKey(data.subarray(181, 213))];
+  const missing = [mintA, mintB].filter((m) => !decimals.has(m.toBase58()));
+  if (missing.length) {
+    // A mint keeps its decimals at byte 44, under either token program
+    const infos = await mainnet.getMultipleAccountsInfo(missing);
+    missing.forEach((m, i) => decimals.set(m.toBase58(), infos[i]!.data[44]));
+  }
+  const sqrt = new Decimal(new BN(data.subarray(65, 81), "le").toString()).div(Decimal.pow(2, 64));
+  const shift = decimals.get(mintA.toBase58())! - decimals.get(mintB.toBase58())!;
+  return { aInB: sqrt.pow(2).mul(Decimal.pow(10, shift)), fee: new Decimal(data.readUInt16LE(45)).div(1e6) };
 }
 
 async function fromMainnet(): Promise<Map<string, Quote>> {
-  const infos = await mainnet.getMultipleAccountsInfo(assets.map((a) => pda.pythFeed(a.feedId)));
+  const feeds = [...new Set([solFeed, ...assets.map((a) => a.feedId)].filter((f): f is string => !!f))];
+  const pools = assets.filter((a) => a.pool);
+  const infos = await mainnet.getMultipleAccountsInfo([...feeds.map((f) => pda.pythFeed(f)), ...pools.map((a) => a.pool!.pool)]);
   const out = new Map<string, Quote>();
-  assets.forEach((a, i) => {
-    const q = infos[i] && decodePriceUpdate(infos[i]!.data, a.exponent);
-    if (q) out.set(a.symbol, { ...q, source: "mainnet" });
-  });
+  const now = Math.floor(Date.now() / 1000);
+  // Pyth first, since the pools quoted in SOL need SOL's price
+  const pyth = new Map(feeds.map((f, i) => [f, infos[i] && decodePriceUpdate(infos[i]!.data)]));
+  const sol = solFeed ? pyth.get(solFeed) : null;
+  for (const a of assets) {
+    if (a.pool || !a.feedId) continue;
+    const q = infos[feeds.indexOf(a.feedId)] && decodePriceUpdate(infos[feeds.indexOf(a.feedId)]!.data, a.exponent);
+    if (q && now - q.publishTime <= maxPythAge) out.set(a.symbol, { ...q, source: "pyth" });
+  }
+  for (const [j, a] of pools.entries()) {
+    const info = infos[feeds.length + j];
+    if (!info?.owner.equals(WHIRLPOOL_PROGRAM)) {
+      log(`${a.symbol}: ${a.pool!.pool.toBase58()} is not an Orca Whirlpool on mainnet`);
+      continue;
+    }
+    const { aInB, fee } = await poolPrice(info.data);
+    let usd = a.pool!.side === "A" ? aInB : new Decimal(1).div(aInB);
+    if (a.pool!.quote === "SOL") {
+      if (!sol || now - sol.publishTime > maxPythAge) continue;
+      usd = usd.mul(new Decimal(sol.price.toString()).div(1e6));
+    }
+    const price = micro(usd, a.exponent);
+    out.set(a.symbol, { price, conf: new BN(new Decimal(price.toString()).mul(fee).ceil().toFixed(0)), publishTime: now, source: "orca" });
+  }
   return out;
 }
 
 const warned = new Set<string>();
 async function tick() {
   const now = Math.floor(Date.now() / 1000);
-  const [hermesQuotes, mainnetQuotes, demo, assetAccounts] = await Promise.all([
-    fromHermes().catch((e) => (log(`Hermes failed: ${e?.message ?? e}`), new Map<string, Quote>())),
-    fromMainnet().catch((e) => (log(`Mainnet feeds failed: ${e?.message ?? e}`), new Map<string, Quote>())),
+  const [quotes, demo, assetAccounts] = await Promise.all([
+    fromMainnet(),
     program.account.demoPrice.fetchMultiple(assets.map((a) => pda.demoPrice(a.mint))),
     program.account.asset.fetchMultiple(assets.map((a) => pda.asset(a.mint))),
   ]);
@@ -118,9 +125,9 @@ async function tick() {
   for (const [i, a] of assets.entries()) {
     // An asset switched to its live feed reads Pyth itself, and its demo account no longer counts
     if (assetAccounts[i]?.livePrice) continue;
-    const fresh = [hermesQuotes.get(a.symbol), mainnetQuotes.get(a.symbol)].find((q) => q && now - q.publishTime <= a.maxAge);
+    const fresh = quotes.get(a.symbol);
     if (!fresh) {
-      if (!warned.has(a.symbol)) log(`${a.symbol}: no Pyth price newer than ${a.maxAge}s${hermes ? "" : ", set HERMES_ACCESS_TOKEN for every feed"}; keeping its current price`);
+      if (!warned.has(a.symbol)) log(`${a.symbol}: no fresh on-chain price; keeping its current price`);
       warned.add(a.symbol);
       continue;
     }
@@ -131,7 +138,7 @@ async function tick() {
     const aging = !current || (now - current.publishTime.toNumber()) * 2 > maxAge;
     if (moveBps < minMoveBps && !aging) continue;
     ixs.push(...(await ix.setDemoPrice(program, admin.publicKey, a.mint, fresh.price, fresh.conf)));
-    moved.push(`${a.symbol} $${dollars(fresh.price)} (${fresh.source}, ${now - fresh.publishTime}s old)`);
+    moved.push(`${a.symbol} $${dollars(fresh.price)} (${fresh.source}${fresh.source === "pyth" ? `, ${now - fresh.publishTime}s old` : ""})`);
   }
   if (!ixs.length) return;
   const latest = await connection.getLatestBlockhash();
@@ -143,7 +150,7 @@ async function tick() {
   log(`Set ${moved.join(", ")}`);
 }
 
-log(`Price feed for ${cluster} at ${env.RPC_URL ?? d.rpcUrl}: ${assets.map((a) => a.symbol).join(", ")}, every ${intervalMs} ms, from ${hermes ? "Hermes, then " : ""}mainnet push feeds`);
+log(`Price feed for ${cluster} at ${env.RPC_URL ?? d.rpcUrl}: ${assets.map((a) => `${a.symbol} (${a.pool ? "orca" : "pyth"})`).join(", ")}, every ${intervalMs} ms from mainnet`);
 for (;;) {
   await tick().catch((e) => log(`Tick failed: ${e?.message ?? e}`));
   await new Promise((r) => setTimeout(r, intervalMs));

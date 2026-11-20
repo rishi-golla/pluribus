@@ -25,10 +25,6 @@ mkdir -p "$LOGS" "$AGENTS"
 TOKEN_FILE=$REPO/deploy/macmini/.streams-token
 [[ -f $TOKEN_FILE ]] || openssl rand -hex 32 > "$TOKEN_FILE"
 TOKEN=$(<"$TOKEN_FILE")
-# Optional: a Pyth Hermes access token lets the price feed mirror every asset, not only the feeds Pyth posts on mainnet
-HERMES_FILE=$REPO/deploy/macmini/.hermes-token
-HERMES=""
-[[ -f $HERMES_FILE ]] && HERMES=$(tr -d "[:space:]" < "$HERMES_FILE")
 
 # agent <name> <extra env as KEY=VALUE...> -- <npm args...>
 agent() {
@@ -67,7 +63,7 @@ agent localnet -- run localnet -- --url "http://127.0.0.1:$RPC_PORT" --keep
 agent keeper -- run keeper
 agent indexer "PORT=$INDEXER_PORT" "STREAMS_TOKEN=$TOKEN" -- run indexer
 agent replay "PORT=$INDEXER_PORT" "STREAMS_TOKEN=$TOKEN" -- run indexer:replay -- --follow
-agent pricefeed "HERMES_ACCESS_TOKEN=$HERMES" -- run pricefeed
+agent pricefeed -- run pricefeed
 
 # Each service on its own path of one public port; Funnel strips the path before passing a request on
 $TS funnel --bg --https=$FUNNEL_PORT --set-path=/rpc "http://127.0.0.1:$RPC_PORT"

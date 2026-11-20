@@ -44,4 +44,3 @@ web/src/lib/pluribus/deployments/localnet.json
 # Mac mini runtime state
 deploy/macmini/logs/
 deploy/macmini/.streams-token
-deploy/macmini/.hermes-token
