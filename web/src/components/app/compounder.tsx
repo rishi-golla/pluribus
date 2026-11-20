@@ -64,7 +64,9 @@ function reason(error: string) {
 
 /** Finds the positions whose fees are worth the bounty and collects them, for the connected wallet */
 export function CompounderProvider({ children }: { children: ReactNode }) {
-  const { live } = useAccount();
+  const { live: read, signedOut } = useAccount();
+  // Signed out, the account read is an empty viewer's, which has no fees to find and no wallet to sign with
+  const live = signedOut ? null : read;
   const toast = useToast();
   const owner = live?.owner ?? null;
   const liveRef = useRef(live);

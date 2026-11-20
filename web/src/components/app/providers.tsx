@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Info, TriangleAlert, Wallet } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { WalletProvider, useWallet, type WalletContextState } from "@solana/wallet-adapter-react";
 import { Keypair, PublicKey, type Signer, type TransactionInstruction, type VersionedTransaction } from "@solana/web3.js";
@@ -60,6 +61,8 @@ const SENIOR_PRICE = 1.0412;
 const JUNIOR_PRICE = 1.1876;
 const POLL_MS = 15_000;
 const MAX_SAMPLES = 240;
+// An address nobody holds, whose account reads as empty: what a visitor with no wallet sees is only what the chain shows
+const VIEWER = Keypair.generate().publicKey.toBase58();
 
 export type OnStage = (stage: Stage) => void;
 /** One piece of collateral to move: a token mint and whole tokens, or an LP position's NFT mint */
@@ -192,27 +195,33 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   const [canHarvest, setCanHarvest] = useState(false);
   const [failed, setFailed] = useState<string>();
   const owner = wallet?.publicKey?.toBase58();
-  const current = loaded?.owner === owner ? loaded : null;
   // A wallet remembered from the last visit is selected before it reconnects, and a failed connect clears it again
   const reconnecting = !!wallet?.wallet && !owner && [WalletReadyState.Installed, WalletReadyState.Loadable].includes(wallet.wallet.readyState);
-  const loading = !!wallet?.connecting || reconnecting || (!!owner && !!deployment && !current && failed !== owner);
   // The landing page's frame has no wallet at all and keeps its demo figures
-  const signedOut = !!wallet && !owner && !loading;
+  const signedOut = !!wallet && !owner && !wallet.connecting && !reconnecting;
+  // Whose account is read: the wallet's, or with none connected an address that owns nothing, which leaves only what the
+  // whole chain shows, so the public pages load for a visitor too
+  const reader = owner ?? (signedOut ? VIEWER : undefined);
+  const current = loaded?.owner === reader ? loaded : null;
+  const loading = !!wallet?.connecting || reconnecting || (!!reader && !!deployment && !current && failed !== reader);
   // a connected wallet that could not be read used to fall through to the demo figures, whose buttons report success
   const error = useMemo(() => {
-    if (!owner || current) return null;
+    if (!reader || current) return null;
     if (!deployment) return { title: `No ${CLUSTER} deployment found`, detail: "Run npm run localnet, then reload", retry: false };
-    if (failed !== owner) return null;
+    if (failed !== reader) return null;
     return {
       title: "Could not load on-chain data",
       detail: `Nothing is shown until the ${CLUSTER} RPC answers. Trying again every ${POLL_MS / 1000} seconds`,
       retry: true,
     };
-  }, [owner, current, failed]);
+  }, [reader, current, failed]);
 
   const refresh = useCallback(async () => {
-    if (!owner || !deployment) return;
-    const [data, events] = await Promise.all([loadLive(getConnection(), deployment, new PublicKey(owner)), fetchEvents(owner).catch(() => [])]);
+    if (!reader || !deployment) return;
+    const [data, events] = await Promise.all([
+      loadLive(getConnection(), deployment, new PublicKey(reader)),
+      owner ? fetchEvents(owner).catch(() => []) : Promise.resolve([] as AccountEvent[]),
+    ]);
     const { senior, junior, utilization } = data.pool;
     const sample = {
       at: Date.now(),
@@ -223,11 +232,11 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       apy: { senior: senior.apy ?? 0, junior: junior?.apy ?? 0 },
       supplied: { senior: senior.assets, junior: junior?.assets ?? 0 },
     };
-    setLoaded((prev) => ({ owner, data, events, samples: [...(prev?.owner === owner ? prev.samples : []), sample].slice(-MAX_SAMPLES) }));
-  }, [owner]);
+    setLoaded((prev) => ({ owner: reader, data, events, samples: [...(prev?.owner === reader ? prev.samples : []), sample].slice(-MAX_SAMPLES) }));
+  }, [owner, reader]);
 
   useEffect(() => {
-    if (!owner) return;
+    if (!reader) return;
     if (!deployment) {
       toast({ title: `No ${CLUSTER} deployment found`, detail: "Run npm run localnet, then reload", tone: "error" });
       return;
@@ -237,17 +246,17 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       refresh().catch(() => {
         if (!warned) toast({ title: "Could not load on-chain data", detail: `Check that the ${CLUSTER} RPC is reachable`, tone: "error" });
         warned = true;
-        setFailed(owner);
+        setFailed(reader);
       });
     tick();
     const id = setInterval(tick, POLL_MS);
     return () => clearInterval(id);
-  }, [owner, refresh, toast]);
+  }, [reader, refresh, toast]);
 
   const retry = useCallback(() => {
     setFailed(undefined);
-    refresh().catch(() => setFailed(owner));
-  }, [owner, refresh]);
+    refresh().catch(() => setFailed(reader));
+  }, [reader, refresh]);
 
   useEffect(() => {
     if (!owner) return;
@@ -257,7 +266,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   }, [owner]);
 
   const account = useMemo<Account>(() => {
-    if (!current || !wallet?.publicKey || !deployment) {
+    if (!current || !wallet || !deployment) {
       const months = MONTHS.map((m) => (m.inProgress ? { ...m, events: [...m.events, ...session] } : m));
       return {
         mode: "preview",
@@ -304,7 +313,12 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
 
     const { data, events, samples } = current;
     const d = deployment;
-    const me = wallet.publicKey;
+    // Signed out, the account read is the viewer's and nothing can be sent; every action asks for a wallet instead
+    const me = wallet.publicKey ?? new PublicKey(VIEWER);
+    const needWallet = () => {
+      toast({ title: "Connect a wallet first", detail: "Use the wallet button at the top right", tone: "info" });
+      return false;
+    };
     const program = getProgram(getConnection());
     const usdc = (amount: number) => BigInt(Math.round(amount * 1e6));
     const run = async (
@@ -314,6 +328,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       signers: Signer[] = [],
       fail: (e: unknown) => void = (e) => toast({ ...explain(e), tone: "error" }),
     ) => {
+      if (!owner) return needWallet();
       try {
         await sendInstructions(getConnection(), wallet, await build(), onStage, signers);
       } catch (e) {
@@ -331,7 +346,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     return {
       mode: "live",
       loading,
-      signedOut: false,
+      signedOut,
       error: null,
       retry,
       today: data.today,
@@ -374,6 +389,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         canFund,
         canHarvest,
         harvest: async () => {
+          if (!owner) return (needWallet(), null);
           const res = await fetch("/api/demo/harvest", { method: "POST", body: JSON.stringify({ address: owner }) });
           const body = await res.json().catch(() => ({}));
           if (!res.ok) {
@@ -384,6 +400,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
           return body as Harvest;
         },
         fund: async () => {
+          if (!owner) return needWallet();
           toast({ title: "Sending test tokens", detail: "This takes a few seconds", tone: "info" });
           const res = await fetch("/api/faucet", { method: "POST", body: JSON.stringify({ address: owner }) });
           const body = await res.json().catch(() => ({}));
@@ -496,41 +513,52 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   return <AccountCtx.Provider value={account}>{children}</AccountCtx.Provider>;
 }
 
-/** Asks for a wallet in place of a page, since every figure on it comes from the connected wallet's account */
-function ConnectWallet() {
+/** Asks for a wallet: the wallets this browser has, each a button that connects it */
+export function ConnectPanel({ detail, className = "" }: { detail: string; className?: string }) {
   const { wallets, select } = useWallet();
   const ready = wallets.filter((w) => w.readyState === WalletReadyState.Installed || w.readyState === WalletReadyState.Loadable);
   return (
-    <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
-      <div className="panel flex min-h-[320px] flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-        <span className="grid size-10 place-items-center rounded-[10px] bg-brand-dim text-brand">
-          <Wallet size={18} strokeWidth={2} />
-        </span>
-        <div className="mt-2 text-[15px] font-medium">Connect a wallet</div>
-        <div className="max-w-[360px] text-[13.5px] text-t2">Your collateral, credit line and lending positions are read from the chain once a wallet is connected.</div>
-        <div className="mt-3 flex flex-wrap justify-center gap-2">
-          {ready.map((w) => (
-            <button
-              key={w.adapter.name}
-              type="button"
-              onClick={() => select(w.adapter.name)}
-              className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium text-t1 transition-colors hover:bg-s3"
-            >
-              {w.adapter.name === DEMO_WALLET ? <span className="wallet-avatar size-5 rounded" /> : <Token src={w.adapter.icon} size={20} className="!rounded-md [&_img]:rounded-md" />}
-              {w.adapter.name}
-            </button>
-          ))}
-          {!ready.length && <div className="text-[13px] text-t3">No wallet found. Install Phantom or Solflare, then reload.</div>}
-        </div>
+    <div className={`panel flex flex-col items-center justify-center gap-2 px-6 py-10 text-center ${className}`}>
+      <span className="grid size-10 place-items-center rounded-[10px] bg-brand-dim text-brand">
+        <Wallet size={18} strokeWidth={2} />
+      </span>
+      <div className="mt-2 text-[15px] font-medium">Connect a wallet</div>
+      <div className="max-w-[360px] text-[13.5px] text-t2">{detail}</div>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        {ready.map((w) => (
+          <button
+            key={w.adapter.name}
+            type="button"
+            onClick={() => select(w.adapter.name)}
+            className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium text-t1 transition-colors hover:bg-s3"
+          >
+            {w.adapter.name === DEMO_WALLET ? <span className="wallet-avatar size-5 rounded" /> : <Token src={w.adapter.icon} size={20} className="!rounded-md [&_img]:rounded-md" />}
+            {w.adapter.name}
+          </button>
+        ))}
+        {!ready.length && <div className="text-[13px] text-t3">No wallet found. Install Phantom or Solflare, then reload.</div>}
       </div>
+    </div>
+  );
+}
+
+/** Asks for a wallet in place of a personal page, since every figure on it comes from the connected wallet's account */
+function ConnectWallet() {
+  return (
+    <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+      <ConnectPanel className="min-h-[320px]" detail="Your collateral, credit line and lending positions are read from the chain once a wallet is connected." />
     </main>
   );
 }
 
-/** Holds a page back while the wallet's account loads, so it mounts once with on-chain figures */
+// Pages made only of one wallet's own figures; the others show what the whole chain shows to anyone
+const PERSONAL = ["/borrow", "/statements"];
+
+/** Holds a page back while the account loads, so it mounts once with on-chain figures, and asks for a wallet on a personal page */
 export function LiveGate({ children }: { children: ReactNode }) {
   const { loading, signedOut, error, retry } = useAccount();
-  if (signedOut) return <ConnectWallet />;
+  const path = usePathname();
+  if (signedOut && PERSONAL.some((p) => path.startsWith(p))) return <ConnectWallet />;
   if (error) {
     return (
       <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
