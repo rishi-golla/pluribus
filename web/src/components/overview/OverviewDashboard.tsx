@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Chip, Label, Swatch, Tag, Token } from "@/components/ui";
+import { Chip, Label, Swatch, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel } from "@/components/charts/LineChart";
@@ -15,7 +15,7 @@ import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
 import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market, focusMarket, useFocusedMarket } from "@/lib/markets";
 import { DLMM_PROGRAM_ID, RAYDIUM_CLMM_PROGRAM_IDS } from "@/lib/pluribus/sdk";
-import { iconSrc, tokenIcon } from "@/lib/tokens";
+import { iconSrc } from "@/lib/tokens";
 
 const RANGES = ["7D", "30D", "90D"] as const;
 type Range = (typeof RANGES)[number];
@@ -342,14 +342,6 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "fees", label: "Fees, 30D" },
   { key: "volume", label: "Volume, 24H" },
 ];
-const FILTER_ICONS: Record<"All" | AssetClass, string[]> = {
-  All: [],
-  SOL: ["sol.webp"],
-  LSTs: ["jitosol.webp", "jupsol.webp", "msol.png"],
-  "LP positions": ["orca.png", "ray.webp", "met.webp"],
-  Stocks: ["nvdax.webp", tokenIcon("AAPLx")],
-  Memes: ["bonk.webp"],
-};
 
 /** Whether the deployment lists the market, whether or not the app reads its totals */
 function listed(m: Market) {
@@ -391,12 +383,19 @@ function MarketsTable({ markets }: { markets: Market[] }) {
   const { live } = useAccount();
   const [filter, setFilter] = useState<"All" | AssetClass>("All");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "collateral", dir: -1 });
+  // Only what the deployment lists: the markets with totals, then any listed one the app reads no totals for
+  const listedMarkets = useMemo(() => {
+    const unread = live ? MARKETS.filter((m) => !live.markets[m.id] && listed(m)) : [];
+    return [...(live || !deployment ? markets : markets.filter(listed)), ...unread];
+  }, [markets, live]);
+  const classes = CLASSES.filter((c) => listedMarkets.some((m) => m.cls === c));
+  const iconsOf = (f: "All" | AssetClass) => (f === "All" ? [] : [...new Set(listedMarkets.filter((m) => m.cls === f).map((m) => m.lpBadge ?? m.icon))]);
   const rows = useMemo(() => {
-    const shown = (list: Market[]) => list.filter((m) => filter === "All" || m.cls === filter);
+    const shown = listedMarkets.filter((m) => filter === "All" || m.cls === filter);
     // Markets the app has no totals for have no figures to sort by, so they follow the live ones
-    const planned = live ? MARKETS.filter((m) => !live.markets[m.id]) : [];
-    return [...shown(markets).sort((a, b) => (SORTERS[sort.key](a) - SORTERS[sort.key](b)) * sort.dir), ...shown(planned)];
-  }, [markets, live, filter, sort]);
+    const read = (m: Market) => !live || !!live.markets[m.id];
+    return [...shown.filter(read).sort((a, b) => (SORTERS[sort.key](a) - SORTERS[sort.key](b)) * sort.dir), ...shown.filter((m) => !read(m))];
+  }, [listedMarkets, live, filter, sort]);
   const focus = useFocusedMarket();
   useEffect(() => {
     if (!focus) return;
@@ -416,12 +415,12 @@ function MarketsTable({ markets }: { markets: Market[] }) {
     <section className="panel mt-4">
       <div className="flex items-center justify-between px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
-          Collateral markets <span className="font-normal text-t3">{rows.length} of {MARKETS.length}</span>
+          Collateral markets
         </h3>
         <span className="text-[12.5px] text-t3">Priced by {live && deployment?.demoMode ? "demo feed" : "Pyth"}</span>
       </div>
       <div className="flex gap-2 border-b border-line px-[22px] pb-3.5 pt-4">
-        {(["All", ...CLASSES] as const).map((f) => (
+        {(["All", ...classes] as const).map((f) => (
           <button
             key={f}
             type="button"
@@ -430,9 +429,9 @@ function MarketsTable({ markets }: { markets: Market[] }) {
               filter === f ? "bg-s3 text-t1" : "bg-white/[0.015] text-t2 hover:text-t1"
             }`}
           >
-            {!!FILTER_ICONS[f].length && (
+            {!!iconsOf(f).length && (
               <span className="flex">
-                {FILTER_ICONS[f].map((i, k) => (
+                {iconsOf(f).map((i, k) => (
                   <Token key={i} src={iconSrc(i)} size={16} className={`shadow-[0_0_0_2px_var(--color-s1)] ${k ? "-ml-1.5" : ""}`} />
                 ))}
               </span>
@@ -463,9 +462,8 @@ function MarketsTable({ markets }: { markets: Market[] }) {
         </thead>
         <tbody>
           {rows.map((m) => {
-            // Markets the app reads no totals for show dashes, and only the ones the deployment does not list are planned
-              const unread = !!live && !live.markets[m.id];
-              const planned = unread && !listed(m);
+            // A listed market the app reads no totals for shows dashes
+            const unread = !!live && !live.markets[m.id];
             const used = m.collateral > 0 ? powerUsed(m) : 0;
             return (
               <motion.tr
@@ -483,7 +481,6 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                     <div>
                       <div className="flex items-center gap-2 font-medium">
                         {m.name}
-                        {planned && <Tag>Planned</Tag>}
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-t3">
                         <Swatch color={CLASS_COLORS[m.cls]} />

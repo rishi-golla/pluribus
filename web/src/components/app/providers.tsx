@@ -90,9 +90,9 @@ export type Live = LiveData & {
    * USDC into it, in one transaction. "opened" means a position was opened with nothing to add, and it can be added to from
    * the collateral list
    */
-  openDlmm: (pair: string, lowerBin: number, width: number, base: number, usdc: number, onStage: OnStage) => Promise<"funded" | "opened" | "failed">;
-  /** Adds whole tokens to a Meteora position the account holds, spread over its range */
-  addDlmm: (position: string, base: number, usdc: number, onStage: OnStage) => Promise<boolean>;
+  openDlmm: (pair: string, lowerBin: number, width: number, base: number, usdc: number, onStage: OnStage, strategy?: number) => Promise<"funded" | "opened" | "failed">;
+  /** Adds whole tokens to a Meteora position the account holds, spread over its range in the shape of `strategy`, Spot by default */
+  addDlmm: (position: string, base: number, usdc: number, onStage: OnStage, strategy?: number) => Promise<boolean>;
   /** Takes `bps` of a Meteora position's liquidity back to the wallet, 10000 being all of it */
   removeDlmm: (position: string, bps: number, onStage: OnStage) => Promise<boolean>;
   /** Closes an emptied Meteora position, returning its fees and rent and freeing its slot */
@@ -413,7 +413,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
             );
             return [...(await open()), ...each.flat()];
           }, onStage),
-        openDlmm: async (pairKey, lowerBin, width, base, quote, onStage) => {
+        openDlmm: async (pairKey, lowerBin, width, base, quote, onStage, strategy) => {
           const pair = new PublicKey(pairKey);
           const market = data.dlmm.find((m) => m.pair === pairKey);
           if (!market) {
@@ -429,18 +429,18 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
           }
           const [x, y] = dlmmAmounts(market, base, quote);
           const funded = await run(
-            async () => [...(await open()), ...(await ix.dlmmOpenAndAdd(program, d, me, pair, position.publicKey, lowerBin, width, x, y))],
+            async () => [...(await open()), ...(await ix.dlmmOpenAndAdd(program, d, me, pair, position.publicKey, lowerBin, width, x, y, { strategy }))],
             onStage,
             [position],
           );
           return funded ? "funded" : "failed";
         },
-        addDlmm: (position, base, quote, onStage) =>
+        addDlmm: (position, base, quote, onStage, strategy) =>
           run(async () => {
             const market = data.dlmm.find((m) => m.pair === data.collateral.find((c) => c.mint === position)?.dlmm?.pair);
             if (!market) throw new Error("This position's pair is not listed");
             const [x, y] = dlmmAmounts(market, base, quote);
-            return ix.dlmmAdd(program, d, me, new PublicKey(position), x, y);
+            return ix.dlmmAdd(program, d, me, new PublicKey(position), x, y, { strategy });
           }, onStage),
         removeDlmm: (position, bps, onStage) => run(() => ix.dlmmRemove(program, d, me, new PublicKey(position), bps), onStage),
         closeDlmm: (position, onStage) => run(() => ix.dlmmClose(program, d, me, new PublicKey(position)), onStage),
