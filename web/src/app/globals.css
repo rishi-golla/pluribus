@@ -172,7 +172,7 @@
   .docs :is(h1, h2, h3, h4) {
     color: var(--color-t1);
     font-weight: 500;
-    scroll-margin-top: 24px;
+    scroll-margin-top: 88px;
   }
   .docs h1 {
     font-size: 40px;

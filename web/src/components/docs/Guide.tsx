@@ -10,7 +10,7 @@ export function Guide({ slug }: { slug: GuideSlug }) {
   const sections = guide.headings.filter((h) => h.depth === 2 || h.depth === 3);
   return (
     <div className="mx-auto grid max-w-[1180px] grid-cols-[220px_minmax(0,1fr)] gap-14 px-10 pb-32 pt-12">
-      <aside className="sticky top-8 max-h-[calc(100vh-4rem)] self-start overflow-y-auto pr-2 text-[13.5px]">
+      <aside className="sticky top-24 max-h-[calc(100vh-8rem)] self-start overflow-y-auto pr-2 text-[13.5px]">
         <nav aria-label="Guides" className="grid gap-0.5">
           {GUIDES.map((g) => (
             <Link

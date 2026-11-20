@@ -7,15 +7,9 @@ import { EarnUpTo, PoolStats } from "@/components/landing/PoolFacts";
 import { PortfolioGrid } from "@/components/landing/PortfolioGrid";
 import { ProductTour } from "@/components/landing/ProductTour";
 import { FadeUp } from "@/components/motion";
-import { Brandmark } from "@/components/ui";
+import { SiteNav } from "@/components/SiteNav";
+import { Button } from "@/components/ui";
 import { CLUSTER } from "@/lib/cluster";
-
-const nav = [
-  ["Borrow", "/borrow"],
-  ["Earn", "/earn"],
-  ["Risk", "/docs#credit-limit"],
-  ["Docs", "/docs"],
-];
 
 // what devnet takes today, by kind, with the marks of the assets in it; LP venues are named, since the venue is what a holder looks for
 const collateral: [MarkName[], string][] = [
@@ -28,11 +22,11 @@ const collateral: [MarkName[], string][] = [
   [["bonk"], "Memecoins"],
 ];
 
-function Cta({ href, primary, size = "lg", children }: { href: string; primary?: boolean; size?: "md" | "lg"; children: ReactNode }) {
+function Cta({ href, primary, children }: { href: string; primary?: boolean; children: ReactNode }) {
   return (
     <Link
       href={href}
-      className={`inline-flex items-center justify-center whitespace-nowrap rounded-lg border font-medium transition-colors ${size === "lg" ? "h-12 px-6 text-[15px]" : "h-10 px-4 text-[14px]"} ${
+      className={`inline-flex h-12 items-center justify-center whitespace-nowrap rounded-lg border px-6 text-[15px] font-medium transition-colors ${
         primary ? "border-brand bg-brand text-[#0c0c0c] hover:bg-[#d4ff5e]" : "border-line-2 bg-white/[0.03] text-t1 hover:bg-white/[0.07]"
       }`}
     >
@@ -44,28 +38,12 @@ function Cta({ href, primary, size = "lg", children }: { href: string; primary?:
 export default function Home() {
   return (
     <div className="min-h-screen">
+      <SiteNav>
+        <Button variant="white" href="/overview">
+          Launch app
+        </Button>
+      </SiteNav>
       <div className="mx-auto max-w-[1280px] px-4 sm:px-10">
-        <FadeUp onMount y={-8} duration={0.6}>
-          <header className="flex h-[72px] items-center gap-10 border-b border-line">
-            <Brandmark className="text-[22px]" />
-            <nav className="hidden gap-1 md:flex">
-              {nav.map(([label, href]) => (
-                <Link key={label} href={href} className="px-3 py-2 text-[14px] text-t2 transition-colors hover:text-t1">
-                  {label}
-                </Link>
-              ))}
-            </nav>
-            <div className="ml-auto flex items-center gap-5">
-              <Link href="/docs/liquidators" className="hidden text-[14px] text-t3 transition-colors hover:text-t1 sm:block">
-                Liquidators
-              </Link>
-              <Cta href="/overview" primary size="md">
-                Launch app
-              </Cta>
-            </div>
-          </header>
-        </FadeUp>
-
         <section className="grid gap-14 pt-12 sm:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)]">
           <div className="flex flex-col">
             {/* equal space above and below keeps the text centred on the board, whatever sits under it */}
