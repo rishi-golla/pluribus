@@ -9,12 +9,11 @@ import { CELLS, SIDE, balance, layout, type Site } from "./grid";
 // `band` is how far its gray edge reaches in from a border, in cells: riskier holdings keep less of their green.
 // The bands are illustrative, not read from the pool: the board is a picture, the numbers live in the table below it.
 const PARTS: { key: ExampleKey; name: string; seed: readonly [number, number]; band: number }[] = [
-  { key: "sol", name: "SOL", seed: [7, 7], band: 1.2 },
-  { key: "lst", name: "JitoSOL", seed: [24, 6], band: 1.3 },
-  { key: "lp", name: "SOL-USDC LP", seed: [15, 16], band: 1.1 },
-  { key: "stock", name: "NVDAx", seed: [26, 18], band: 1.5 },
-  { key: "meme", name: "BONK", seed: [6, 26], band: 1.9 },
-  { key: "usdc", name: "USDC", seed: [23, 27], band: 1.0 },
+  { key: "sol", name: "SOL", seed: [6, 8], band: 1.2 },
+  { key: "nvdax", name: "NVDAx", seed: [21, 6], band: 1.5 },
+  { key: "aaplx", name: "AAPLx", seed: [26, 22], band: 1.5 },
+  { key: "lp", name: "SOL-USDC LP", seed: [14, 19], band: 1.1 },
+  { key: "usdc", name: "USDC", seed: [8, 28], band: 1.0 },
 ];
 const TOTAL = PARTS.reduce((sum, p) => sum + EXAMPLE_USD[p.key], 0);
 // each holding at rest, owning its share of the portfolio
@@ -28,10 +27,9 @@ const HOME: Site[] = balance(
 // `push` is how far the weight swings, `period` the long wave in seconds, `roam` the drift in cells, `orbit` its length in seconds.
 const WAVES = [
   { push: 15, period: 46, roam: 1.0, orbit: 71, phase: 0.0 },
+  { push: 16, period: 40, roam: 1.0, orbit: 61, phase: 1.2 },
   { push: 17, period: 34, roam: 1.1, orbit: 53, phase: 2.1 },
   { push: 13, period: 55, roam: 0.9, orbit: 83, phase: 4.0 },
-  { push: 16, period: 40, roam: 1.0, orbit: 61, phase: 1.2 },
-  { push: 16, period: 28, roam: 0.9, orbit: 47, phase: 5.1 },
   { push: 10, period: 61, roam: 0.8, orbit: 97, phase: 3.3 },
 ];
 const TURN = 2 * Math.PI;

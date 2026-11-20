@@ -50,8 +50,6 @@ const ev = (date: string, kind: EventKind, amount: number, detail: string, tx: s
 });
 
 const WALLET = "7xKX...q9Fh";
-const ORCA = "Orca SOL-USDC #8812";
-const RAY = "Raydium SOL-USDC #2207";
 
 export type Month = { key: string; label: string; short: string; avgApr: number; tier: string; inProgress?: boolean; events: AccountEvent[] };
 
@@ -65,9 +63,9 @@ export const MONTHS: Month[] = [
     tier: "Tier 2",
     events: [
       ev("2026-08-06", "draw", 2000, `To ${WALLET}`, "7Qe1...Bn4d"),
-      ev("2026-08-12", "autopay", 96.1, ORCA, "2Vy8...Lp0s", "orca"),
+      ev("2026-08-12", "repay", 96.1, `From ${WALLET}`, "2Vy8...Lp0s"),
       ev("2026-08-15", "interest", 34.9, "Borrow index update", "9Ka3...Uw7e"),
-      ev("2026-08-22", "autopay", 104.6, RAY, "4Rt6...Hm2x", "raydium"),
+      ev("2026-08-22", "repay", 104.6, `From ${WALLET}`, "4Rt6...Hm2x"),
       ev("2026-08-31", "interest", 35.3, "Borrow index update", "6Pz0...Cc5r"),
     ],
   },
@@ -79,12 +77,12 @@ export const MONTHS: Month[] = [
     tier: "Tier 2",
     events: [
       ev("2026-09-05", "draw", 1500, `To ${WALLET}`, "3Hd9...Ya1k"),
-      ev("2026-09-09", "autopay", 132.4, ORCA, "8Lm2...Qe6t", "orca"),
+      ev("2026-09-09", "repay", 132.4, `From ${WALLET}`, "8Lm2...Qe6t"),
       ev("2026-09-10", "interest", 38.2, "Borrow index update", "1Wc7...Rn3p"),
       ev("2026-09-18", "repay", 600, `From ${WALLET}`, "5Gx4...Td8v"),
-      ev("2026-09-21", "autopay", 118.9, RAY, "0Bs5...Kf2m", "raydium"),
+      ev("2026-09-21", "repay", 118.9, `From ${WALLET}`, "0Bs5...Kf2m"),
       ev("2026-09-24", "interest", 38.6, "Borrow index update", "7Nj1...Zp9a"),
-      ev("2026-09-28", "autopay", 125.3, ORCA, "2Ur8...Mx4c", "orca"),
+      ev("2026-09-28", "repay", 125.3, `From ${WALLET}`, "2Ur8...Mx4c"),
       ev("2026-09-30", "interest", 38.8, "Borrow index update", "9Dk6...Ve0b"),
     ],
   },
@@ -96,17 +94,17 @@ export const MONTHS: Month[] = [
     tier: "Tier 3",
     events: [
       ev("2026-10-03", "draw", 1500, `To ${WALLET}`, "1fGh...Jd5K"),
-      ev("2026-10-07", "autopay", 166.5, ORCA, "4cBu...Rw9Z", "orca"),
+      ev("2026-10-07", "repay", 166.5, `From ${WALLET}`, "4cBu...Rw9Z"),
       ev("2026-10-08", "interest", 40.4, "Borrow index update", "3Tq9...Wb6n"),
       ev("2026-10-11", "tier", 0, "Tier 2 to Tier 3, -0.40% APR", "6pYe...Hn3S"),
-      ev("2026-10-12", "autopay", 200, RAY, "5Mv1...Yc8q", "raydium"),
+      ev("2026-10-12", "repay", 200, `From ${WALLET}`, "5Mv1...Yc8q"),
       ev("2026-10-15", "repay", 1000, `From ${WALLET}`, "8vNa...Lx4D"),
       ev("2026-10-16", "interest", 40.4, "Borrow index update", "0Xe4...Gs2h"),
-      ev("2026-10-19", "autopay", 97.3, RAY, "2qRs...Tm8c", "raydium"),
+      ev("2026-10-19", "repay", 97.3, `From ${WALLET}`, "2qRs...Tm8c"),
       ev("2026-10-22", "draw", 2500, `To ${WALLET}`, "9mWd...Ke2P"),
       ev("2026-10-24", "interest", 40.4, "Borrow index update", "7Rb2...Np5u"),
       ev("2026-10-26", "repay", 850, `From ${WALLET}`, "1Kc8...Fq3j"),
-      ev("2026-10-28", "autopay", 148.6, ORCA, "3kLp...Vb71", "orca"),
+      ev("2026-10-28", "repay", 148.6, `From ${WALLET}`, "3kLp...Vb71"),
       ev("2026-10-31", "interest", 41.2, "Borrow index update", "5Ht2...9aQe"),
     ],
   },
@@ -119,10 +117,10 @@ export const MONTHS: Month[] = [
     inProgress: true,
     events: [
       ev("2026-11-02", "draw", 172, `To ${WALLET}`, "6Fa3...Pe1w"),
-      ev("2026-11-04", "autopay", 71.2, ORCA, "8Jw7...Ld4s", "orca"),
+      ev("2026-11-04", "repay", 71.2, `From ${WALLET}`, "8Jw7...Ld4s"),
       ev("2026-11-08", "interest", 40.4, "Borrow index update", "2Ym5...Cx8r"),
-      ev("2026-11-09", "autopay", 88, RAY, "4Qn0...Hb6t", "raydium"),
-      ev("2026-11-13", "autopay", 53.2, ORCA, "0Vs9...Ke3m", "orca"),
+      ev("2026-11-09", "repay", 88, `From ${WALLET}`, "4Qn0...Hb6t"),
+      ev("2026-11-13", "repay", 53.2, `From ${WALLET}`, "0Vs9...Ke3m"),
     ],
   },
 ];

@@ -11,15 +11,11 @@ import { SiteNav } from "@/components/SiteNav";
 import { Button } from "@/components/ui";
 import { CLUSTER } from "@/lib/cluster";
 
-// what devnet takes today, by kind, with the marks of the assets in it; LP venues are named, since the venue is what a holder looks for
+// what the app takes, by kind, with the marks of the assets in it; the LP venue is named, since the venue is what a holder looks for
 const collateral: [MarkName[], string][] = [
   [["sol"], "SOL"],
-  [["jitosol", "jupsol"], "Staked SOL"],
-  [["orca"], "Orca LPs"],
-  [["ray"], "Raydium LPs"],
-  [["met"], "Meteora LPs"],
   [["nvdax", "aaplx"], "Tokenized stocks"],
-  [["bonk"], "Memecoins"],
+  [["orca"], "Orca LPs"],
 ];
 
 function Cta({ href, primary, children }: { href: string; primary?: boolean; children: ReactNode }) {
@@ -60,7 +56,7 @@ export default function Home() {
                 you hold.
               </h1>
               <p className="mt-6 max-w-[520px] text-[16px] leading-[1.55] text-t2 sm:text-[18px] md:text-[16px] lg:text-[18px]">
-                Basket your SOL, LSTs, LPs, stocks and memecoins into one USDC loan. No maturity, and your LP fees pay it down.
+                Basket your SOL, tokenized stocks and Orca LP positions into one USDC loan. No maturity.
               </p>
             </FadeUp>
             <FadeUp onMount delay={0.18} className="mt-10 flex flex-wrap gap-3 md:mt-[var(--hero-gap)]">
@@ -85,8 +81,8 @@ export default function Home() {
 
         <FadeUp onMount delay={0.34} className="mt-16 border-y border-line py-6 sm:mt-20 md:mb-[var(--hero-end)] md:mt-[var(--strip-gap)] md:shrink-0 md:py-[var(--strip-pad)]">
           <div className="text-[12px] uppercase tracking-[0.06em] text-t3">Collateral on Solana</div>
-          {/* one row on desktop and two under it, so the strip's height is known to the first screen's sums */}
-          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4 lg:flex-nowrap lg:justify-between lg:gap-x-4">
+          {/* one row from tablet width up, so the strip's height is known to the first screen's sums */}
+          <div className="mt-5 flex flex-wrap items-center gap-x-12 gap-y-4">
             {collateral.map(([marks, name]) => (
               <span key={name} className="flex items-center gap-2.5 whitespace-nowrap text-[14px] font-medium text-t1">
                 <span className="flex items-center gap-1.5">
