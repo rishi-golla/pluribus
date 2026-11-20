@@ -98,33 +98,52 @@
     gap: var(--gap);
   }
 
-  /* Its cells: lit or dimmed. They scale in on load and fade when another holding is hovered */
+  /* Its cells: a dark box, with the holding's lime over it where the cell is lit. On load each holding spreads out from
+     its middle, a cell popping in at --on; after that a cell pops as soon as it turns. Cells fade when another holding is hovered */
   .grid-cell {
-    transition:
-      opacity 0.25s,
-      background-color 0.6s;
+    position: relative;
+    background-color: var(--color-s3);
+    transition: opacity 0.25s;
   }
-  .grid-cell[data-state="0"] {
+  .grid-cell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
     background-color: var(--color-brand);
+    opacity: 0;
+    transition: opacity 0.6s;
   }
-  .grid-cell[data-state="1"] {
-    background-color: rgb(255 255 255 / 0.3);
+  .grid-cell[data-state="0"]::after {
+    opacity: 1;
+    transition-duration: 0.15s;
+    animation: grid-cell-pop 0.45s backwards;
   }
-  .grid-cell-in {
-    animation: grid-cell-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  .grid-board[data-intro] .grid-cell::after {
+    animation-delay: var(--on);
   }
-  @keyframes grid-cell-in {
-    from {
-      opacity: 0;
-      transform: scale(0.4);
+  @keyframes grid-cell-pop {
+    0% {
+      transform: scale(0);
+      background-color: #f0ffbe;
+    }
+    1% {
+      transform: scale(0.3);
+      animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    70% {
+      background-color: var(--color-brand);
+    }
+    100% {
+      transform: scale(1);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .grid-cell-in {
-      animation: none;
-    }
-    .grid-cell {
+    .grid-cell,
+    .grid-cell::after {
       transition: none;
+    }
+    .grid-cell[data-state="0"]::after {
+      animation: none;
     }
   }
 

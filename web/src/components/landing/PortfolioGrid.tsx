@@ -1,12 +1,13 @@
 "use client";
 
 import { useInView, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { EXAMPLE_USD, type ExampleKey } from "./PoolFacts";
-import { CELLS, SIDE, balance, layout, type Site } from "./grid";
+import { seeded } from "./assets";
+import { CELLS, LIME, SIDE, balance, layout, type Site } from "./grid";
 
 // `seed` is the [column, row] a holding sits around, laid out so the board reads corner to corner.
-// `band` is how far its gray edge reaches in from a border, in cells: riskier holdings keep less of their green.
+// `band` is how far its dark edge reaches in from a border, in cells: riskier holdings keep less of their green.
 // The bands are illustrative, not read from the pool: the board is a picture, the numbers live in the table below it.
 const PARTS: { key: ExampleKey; name: string; seed: readonly [number, number]; band: number }[] = [
   { key: "sol", name: "SOL", seed: [6, 8], band: 1.2 },
@@ -56,6 +57,22 @@ const START = layout(sitesAt(0));
 const START_BOARD = { owner: START.owner, states: START.states, counts: START.counts, labels: START.centers.map(cellAt) };
 type Board = typeof START_BOARD;
 
+// The takeover on load: the board starts dark and each holding spreads out from its middle, one a little after another.
+// `ON` is when a cell lights, in seconds; the noise roughens the front so it does not read as a clean circle.
+const POP = 0.45;
+const ON: number[] = (() => {
+  const rand = seeded(7);
+  return START.owner.map((o, c) => {
+    const [x, y] = START.centers[o];
+    return 0.5 + o * 0.25 + Math.hypot((c % SIDE) + 0.5 - x, Math.floor(c / SIDE) + 0.5 - y) * 0.24 + rand() * 0.7;
+  });
+})();
+// when each of a holding's green cells lights, earliest first
+const LIT: number[][] = PARTS.map((_, i) => ON.filter((_, c) => START.owner[c] === i && START.states[c] === LIME).sort((a, b) => a - b));
+const INTRO = Math.max(...LIT.flat()) + POP;
+// how much of a holding has lit, 0 to 1
+const filled = (i: number, seconds: number) => LIT[i].filter((on) => on <= seconds).length / LIT[i].length;
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** The hero's picture: the example portfolio as one board of cells, each holding pushing at its neighbours for room */
@@ -71,7 +88,23 @@ export function PortfolioGrid() {
   const [board, setBoard] = useState<Board>(START_BOARD);
   // seconds of motion so far; it only runs while the board is live, so the waves pick up where they stopped
   const clock = useRef(0);
-  const live = !reduce && inView && shown && hover === null;
+  // seconds into the takeover, which runs once; the holdings only start pushing when it is over
+  const [intro, setIntro] = useState(0);
+  const introDone = intro >= INTRO;
+  const live = !reduce && introDone && inView && shown && hover === null;
+
+  // The cells light on css delays that start with the first paint, before this runs. The labels follow the same clock,
+  // read off one of the cells' animations.
+  useEffect(() => {
+    const running = boardRef.current?.getAnimations?.({ subtree: true })[0];
+    const began = performance.now() - Number(running?.currentTime ?? 0);
+    const id = setInterval(() => {
+      const seconds = reduce ? INTRO : Math.min(INTRO, (performance.now() - began) / 1000);
+      setIntro(seconds);
+      if (seconds >= INTRO) clearInterval(id);
+    }, TICK_MS);
+    return () => clearInterval(id);
+  }, [reduce]);
 
   // Cells sized as a fraction of the width land between pixels, and the browser then draws some a pixel wider than others.
   // So the cell and the gap are each a whole number of pixels, and the board is as wide as those add up to.
@@ -141,6 +174,7 @@ export function PortfolioGrid() {
       <div
         ref={boardRef}
         className="grid-board relative touch-none md:ml-auto"
+        data-intro={introDone ? undefined : ""}
         role="img"
         aria-label={`An example portfolio as one board, split into ${PARTS.map((p) => p.name).join(", ")}.`}
         onPointerMove={pick}
@@ -150,9 +184,9 @@ export function PortfolioGrid() {
           {board.owner.map((o, c) => (
             <span
               key={c}
-              className="grid-cell grid-cell-in"
+              className="grid-cell"
               data-state={board.states[c]}
-              style={{ animationDelay: `${(Math.floor(c / SIDE) + (c % SIDE)) * 9}ms`, opacity: hover !== null && o !== hover ? 0.25 : 1 }}
+              style={{ "--on": `${ON[c].toFixed(2)}s`, opacity: hover !== null && o !== hover ? 0.25 : 1 } as CSSProperties}
             />
           ))}
         </div>
@@ -162,24 +196,27 @@ export function PortfolioGrid() {
           const tall = pitch >= 15 ? 2 : 3;
           const col = clamp((c % SIDE) - Math.floor(wide / 2), 0, SIDE - wide);
           const row = clamp(Math.floor(c / SIDE) - Math.floor(tall / 2), 0, SIDE - tall);
+          // a label appears once a fifth of its holding is lit, and its share counts up as the rest fills
+          const lit = introDone ? 1 : filled(i, intro);
+          const seen = clamp((lit - 0.2) / 0.15, 0, 1);
           return (
             <div
               key={PARTS[i].key}
-              className="pointer-events-none absolute flex flex-col justify-center bg-bg leading-[1.15] transition-[left,top,opacity] duration-1000 ease-in-out"
+              className={`pointer-events-none absolute flex flex-col justify-center bg-bg leading-[1.15] ease-in-out ${introDone ? "transition-[left,top,opacity] duration-1000" : "transition-opacity duration-200"}`}
               style={{
                 left: `calc(var(--pitch) * ${col})`,
                 top: `calc(var(--pitch) * ${row})`,
                 width: `calc(var(--pitch) * ${wide} - var(--gap))`,
                 height: `calc(var(--pitch) * ${tall} - var(--gap))`,
                 paddingInline: "calc(8px * var(--scale, 1))",
-                opacity: hover !== null && hover !== i ? 0.3 : 1,
+                opacity: seen * (hover !== null && hover !== i ? 0.3 : 1),
               }}
             >
               <div className="whitespace-nowrap font-semibold text-t1" style={{ fontSize: "calc(12px * var(--scale, 1))" }}>
                 {PARTS[i].name}
               </div>
               <div className="tabular-nums text-t2" style={{ fontSize: "calc(11px * var(--scale, 1))" }}>
-                {((board.counts[i] / CELLS) * 100).toFixed(1)}%
+                {((board.counts[i] / CELLS) * 100 * lit).toFixed(1)}%
               </div>
             </div>
           );
