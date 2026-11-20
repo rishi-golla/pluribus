@@ -95,10 +95,7 @@ Instead of repaying debt, a position's fees can go back into the position. You c
 - **Bounty.** The share of the fees paid to whoever compounds is set by the pool's admin, 5% at most. It is shown next to the setting.
 - **Every dex.** Orca positions in the main pool, Raydium positions and Meteora positions all compound. A Meteora position compounds against its pair's active bin, whose price moves in bin-step steps, so a tolerance tighter than the bin step can leave it waiting even when the pair sits at the market.
 
-**Compound for everyone.** The Overview page, and a line on the Borrow page, list the positions that can be compounded now and the bounty they would pay. You do not need a position of your own, only a wallet. The first time, **Create accounts** makes the token accounts the bounty is paid into. Then there are two ways to run it:
-
-- **Compound all** signs every batch in one wallet prompt, and the bounty goes to your wallet. A batch that fails does not stop the others.
-- **Auto-compound** keeps a throwaway key in your browser. One wallet prompt sends it 0.01 SOL for fees. While the tab is open, every few minutes the key looks for positions, compounds them and sends the bounty to your wallet, with a log and running totals. **Stop** ends it, and **Return SOL** sends the key's remaining SOL back. The key only pays fees and compounds, and it never holds your funds.
+**Compound for everyone.** The **Compound** button on the Overview page shows the positions that can be compounded now and the bounty they would pay. You do not need a position of your own, only a wallet. The first time, **Create accounts** makes the token accounts the bounty is paid into. **Compound all** then signs every batch in one wallet prompt, and the bounty goes to your wallet. A batch that fails does not stop the others.
 
 ### Repaying and withdrawing
 

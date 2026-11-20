@@ -9,6 +9,7 @@ import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel } from "@/components/charts/LineChart";
 import { useAccount, type Live } from "@/components/app/providers";
+import { CompoundButton } from "@/components/compound/CompoundButton";
 import { niceMax } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
@@ -546,6 +547,7 @@ export function OverviewDashboard() {
           <Chip>
             Utilization <b>{pct(live ? live.pool.utilization : TOTALS.borrowed / POOL.supplied)}</b>
           </Chip>
+          <CompoundButton />
         </div>
       </div>
       <KpiStrip markets={markets} stats={stats} />

@@ -14,7 +14,6 @@ import { series } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { healthAfterDrop, type Collateral } from "@/lib/live";
 import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
-import { CompoundStrip } from "@/components/compound/CompoundPanel";
 import { CollateralDialog } from "./CollateralDialog";
 import { CompoundDialog, CompoundPill, type CompoundTarget } from "./CompoundSetting";
 import { PortfolioChart, RANGES, SERIES, type Range, type SeriesKey } from "./PortfolioChart";
@@ -998,7 +997,6 @@ function AutopayPanel() {
             </div>
           ))}
         </div>
-        <CompoundStrip />
       </div>
     </div>
   );
