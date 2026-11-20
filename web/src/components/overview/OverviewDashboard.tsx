@@ -13,7 +13,7 @@ import { CompoundButton } from "@/components/compound/CompoundButton";
 import { niceMax } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
-import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market } from "@/lib/markets";
+import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market, focusMarket, useFocusedMarket } from "@/lib/markets";
 import { DLMM_PROGRAM_ID, RAYDIUM_CLMM_PROGRAM_IDS } from "@/lib/pluribus/sdk";
 import { iconSrc, tokenIcon } from "@/lib/tokens";
 
@@ -397,6 +397,18 @@ function MarketsTable({ markets }: { markets: Market[] }) {
     const planned = live ? MARKETS.filter((m) => !live.markets[m.id]) : [];
     return [...shown(markets).sort((a, b) => (SORTERS[sort.key](a) - SORTERS[sort.key](b)) * sort.dir), ...shown(planned)];
   }, [markets, live, filter, sort]);
+  const focus = useFocusedMarket();
+  useEffect(() => {
+    if (!focus) return;
+    const timers = [
+      // a class filter left on would hide the row
+      setTimeout(() => setFilter("All")),
+      setTimeout(() => document.getElementById(`market-${focus}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 80),
+      // cleared so that picking the same market again scrolls again
+      setTimeout(() => focusMarket(null), 2600),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [focus]);
   const dash = <span className="text-t3">-</span>;
   const toggleSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: -1 }));
 
@@ -458,11 +470,12 @@ function MarketsTable({ markets }: { markets: Market[] }) {
             return (
               <motion.tr
                 key={m.id}
+                id={`market-${m.id}`}
                 layout="position"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.25 }}
-                className="group border-t border-line transition-colors hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5"
+                className={`group border-t border-line transition-colors duration-500 hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5 ${focus === m.id ? "bg-brand/10" : ""}`}
               >
                 <td className="pl-[22px]">
                   <div className="flex items-center gap-3">

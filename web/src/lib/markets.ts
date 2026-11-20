@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { series } from "./chart";
 import { tokenIcon } from "./tokens";
 
@@ -36,6 +37,20 @@ export const MARKETS: Market[] = [
   { id: "aaplx", name: "AAPLx", sub: "Apple xStock, Token-2022", cls: "Stocks", icon: tokenIcon("AAPLx"), collateral: 410_000, borrowed: 150_000, crashLtv: 0.585, borrowApr: 0.134, volume24h: 21_000, change24h: 0.004, liquidity: 3 },
   { id: "bonk", name: "BONK", sub: "Bonk memecoin", cls: "Memes", icon: "bonk.webp", collateral: 630_000, borrowed: 150_000, crashLtv: 0.35, borrowApr: 0.178, volume24h: 38_000, change24h: -0.041, liquidity: 2 },
 ];
+
+// the market a search result points at. a module store, since the nav and the overview table share no provider
+let focused: string | null = null;
+const watchers = new Set<() => void>();
+export function focusMarket(id: string | null) {
+  focused = id;
+  watchers.forEach((w) => w());
+}
+export const useFocusedMarket = () =>
+  useSyncExternalStore(
+    (w) => (watchers.add(w), () => void watchers.delete(w)),
+    () => focused,
+    () => null,
+  );
 
 /** Interest paid by borrowers against each market over 30 days. */
 export const fees30d = (m: Market) => (m.borrowed * m.borrowApr) / 12;
