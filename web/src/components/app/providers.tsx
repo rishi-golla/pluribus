@@ -1,13 +1,15 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Info, TriangleAlert } from "lucide-react";
+import { Check, Info, TriangleAlert, Wallet } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { WalletProvider, useWallet, type WalletContextState } from "@solana/wallet-adapter-react";
 import { Keypair, PublicKey, type Signer, type TransactionInstruction, type VersionedTransaction } from "@solana/web3.js";
 import { AUTOPAY_PER_MONTH, BORROW_APR, COLLATERAL_VALUE, CREDIT_LIMIT, CURRENT_DEBT, MONTHS, debtDelta, sleep, type AccountEvent, type Month } from "@/lib/account";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
-import { DemoWalletAdapter } from "@/lib/demo-wallet";
+import { DEMO_WALLET, DemoWalletAdapter } from "@/lib/demo-wallet";
+import { Token } from "@/components/ui";
 import { fetchEvents, loadLive, monthsOf, type LiveData, type DlmmMarket } from "@/lib/live";
 import { MAX_U64, compound, getProgram, ix } from "@/lib/pluribus/sdk";
 import { explain, sendInstructions, type Stage } from "@/lib/tx";
@@ -129,6 +131,8 @@ type Account = {
   mode: "preview" | "live";
   /** A wallet is connecting or its account is being read for the first time */
   loading: boolean;
+  /** No wallet is connected or on its way, so the app has nothing real to show */
+  signedOut: boolean;
   /** set when a connected wallet's account could not be read, so no page shows the demo figures in its place */
   error: { title: string; detail: string; retry: boolean } | null;
   retry: () => void;
@@ -189,7 +193,11 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
   const [failed, setFailed] = useState<string>();
   const owner = wallet?.publicKey?.toBase58();
   const current = loaded?.owner === owner ? loaded : null;
-  const loading = !!wallet?.connecting || (!!owner && !!deployment && !current && failed !== owner);
+  // A wallet remembered from the last visit is selected before it reconnects, and a failed connect clears it again
+  const reconnecting = !!wallet?.wallet && !owner && [WalletReadyState.Installed, WalletReadyState.Loadable].includes(wallet.wallet.readyState);
+  const loading = !!wallet?.connecting || reconnecting || (!!owner && !!deployment && !current && failed !== owner);
+  // The landing page's frame has no wallet at all and keeps its demo figures
+  const signedOut = !!wallet && !owner && !loading;
   // a connected wallet that could not be read used to fall through to the demo figures, whose buttons report success
   const error = useMemo(() => {
     if (!owner || current) return null;
@@ -254,6 +262,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       return {
         mode: "preview",
         loading,
+        signedOut,
         error,
         retry,
         today: TODAY,
@@ -322,6 +331,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     return {
       mode: "live",
       loading,
+      signedOut: false,
       error: null,
       retry,
       today: data.today,
@@ -481,14 +491,46 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         reload: refresh,
       },
     };
-  }, [current, wallet, loading, error, retry, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);
+  }, [current, wallet, loading, signedOut, error, retry, session, positions, canSetPrice, canFund, canHarvest, owner, refresh, toast]);
 
   return <AccountCtx.Provider value={account}>{children}</AccountCtx.Provider>;
 }
 
+/** Asks for a wallet in place of a page, since every figure on it comes from the connected wallet's account */
+function ConnectWallet() {
+  const { wallets, select } = useWallet();
+  const ready = wallets.filter((w) => w.readyState === WalletReadyState.Installed || w.readyState === WalletReadyState.Loadable);
+  return (
+    <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+      <div className="panel flex min-h-[320px] flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+        <span className="grid size-10 place-items-center rounded-[10px] bg-brand-dim text-brand">
+          <Wallet size={18} strokeWidth={2} />
+        </span>
+        <div className="mt-2 text-[15px] font-medium">Connect a wallet</div>
+        <div className="max-w-[360px] text-[13.5px] text-t2">Your collateral, credit line and lending positions are read from the chain once a wallet is connected.</div>
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {ready.map((w) => (
+            <button
+              key={w.adapter.name}
+              type="button"
+              onClick={() => select(w.adapter.name)}
+              className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium text-t1 transition-colors hover:bg-s3"
+            >
+              {w.adapter.name === DEMO_WALLET ? <span className="wallet-avatar size-5 rounded" /> : <Token src={w.adapter.icon} size={20} className="!rounded-md [&_img]:rounded-md" />}
+              {w.adapter.name}
+            </button>
+          ))}
+          {!ready.length && <div className="text-[13px] text-t3">No wallet found. Install Phantom or Solflare, then reload.</div>}
+        </div>
+      </div>
+    </main>
+  );
+}
+
 /** Holds a page back while the wallet's account loads, so it mounts once with on-chain figures */
 export function LiveGate({ children }: { children: ReactNode }) {
-  const { loading, error, retry } = useAccount();
+  const { loading, signedOut, error, retry } = useAccount();
+  if (signedOut) return <ConnectWallet />;
   if (error) {
     return (
       <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">

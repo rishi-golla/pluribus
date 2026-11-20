@@ -4,7 +4,7 @@ import { Bell, ChevronDown, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { SiteNav } from "@/components/SiteNav";
-import { Tag, Token } from "@/components/ui";
+import { Token } from "@/components/ui";
 import { useAccount } from "@/components/app/providers";
 import { WalletButton } from "@/components/app/WalletButton";
 import { usd } from "@/lib/account";
@@ -99,7 +99,7 @@ function MarketSearch() {
 
 /** App header. Pass `active` to pin a tab (landing preview); otherwise it follows the current route. */
 export function AppNav({ active }: { active?: string }) {
-  const { mode, loading, live, error } = useAccount();
+  const { live } = useAccount();
   return (
     <SiteNav
       active={active}
@@ -114,11 +114,13 @@ export function AppNav({ active }: { active?: string }) {
         )
       }
     >
-      {!active && mode === "preview" && !loading && !error && <Tag>Preview data</Tag>}
-      <div className="flex items-center gap-1.5 px-2 text-[13px] text-t2">
-        <Token src="/tokens/sol.webp" size={16} />
-        {live && deployment ? usd(live.prices[deployment.solMint]) : "$150.12"}
-      </div>
+      {/* The landing frame shows its demo price, and the app shows the chain's once a wallet's account is read */}
+      {(active || (live && deployment)) && (
+        <div className="flex items-center gap-1.5 px-2 text-[13px] text-t2">
+          <Token src="/tokens/sol.webp" size={16} />
+          {live && deployment ? usd(live.prices[deployment.solMint]) : "$150.12"}
+        </div>
+      )}
       {active ? (
         <div className={bar}>
           <Search {...ic} />
