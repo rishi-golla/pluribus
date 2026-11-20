@@ -632,12 +632,9 @@ export function ProductTour() {
   return (
     <section aria-labelledby="product-tour">
       <FadeUp className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between sm:gap-8" y={20}>
-        <div>
-          <div className="text-[12px] uppercase tracking-[0.06em] text-brand">Demo</div>
-          <h2 id="product-tour" className="mt-4 text-[32px] sm:text-[40px] font-semibold leading-[1.08] tracking-[-0.025em]">
-            Try it without a wallet
-          </h2>
-        </div>
+        <h2 id="product-tour" className="text-[32px] sm:text-[40px] font-semibold leading-[1.08] tracking-[-0.025em]">
+          Try it without a wallet
+        </h2>
         <Pills id="tour-tab" items={TABS} value={tab} onChange={go} />
       </FadeUp>
 

@@ -121,16 +121,15 @@ export default function Home() {
             <ProductTour />
           </div>
 
-          <FadeUp className="mt-24 sm:mt-[144px]" y={20}>
-            <div className="text-[12px] uppercase tracking-[0.06em] text-brand">How it works</div>
-            <h2 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[40px]">
+          <FadeUp className="mt-24 sm:mt-[160px]" y={20}>
+            <h2 className="text-[32px] font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[40px]">
               What Pluribus does differently
             </h2>
           </FadeUp>
           <Features />
 
-          <FadeUp className="mt-20 sm:mt-[96px]">
-            <div className="mb-5 text-[12px] uppercase tracking-[0.06em] text-brand">On {CLUSTER} now</div>
+          <FadeUp className="mt-20 sm:mt-[112px]">
+            <div className="mb-5 text-[13px] text-t3">On {CLUSTER} now</div>
             <div className="grid grid-cols-2 border-y border-line md:grid-cols-4 [&>*:nth-child(3)]:border-l-0 [&>*:nth-child(3)]:pl-0 md:[&>*:nth-child(3)]:border-l md:[&>*:nth-child(3)]:pl-7">
               <PoolStats />
             </div>
