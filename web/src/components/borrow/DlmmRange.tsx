@@ -14,8 +14,24 @@ export const BASE_COLOR = "var(--color-brand)";
 export const USDC_COLOR = "var(--color-t2)";
 /** Positions either side of the active bin the slider reaches, so a range can sit wholly on one side of the price */
 export const REACH = MAX_BINS - 1;
-/** Meteora's default range: 69 bins centred on the active one */
+/** Meteora's default range: 69 bins centred on the active one, used until the pair is known */
 export const DEFAULT_RANGE = { lo: -34, hi: 34 };
+/** How far a new range reaches either side of the price, the same as the faucet's Orca positions */
+export const LP_SPREAD = 0.3;
+/**
+ * The pair's price less and plus `LP_SPREAD`, in bins of the pair's own step: with 1% bins that is 63 bins.
+ * A position holds at most `MAX_BINS`, so a pair with finer bins gets the widest range centred on the price instead
+ */
+export function defaultRange(market: DlmmMarket): Range {
+  const step = Math.log(1 + market.binStep / 10_000);
+  let lo = Math.round(Math.log(1 - LP_SPREAD) / step);
+  let hi = Math.round(Math.log(1 + LP_SPREAD) / step);
+  if (hi - lo + 1 > MAX_BINS) {
+    const half = Math.floor((MAX_BINS - 1) / 2);
+    [lo, hi] = [Math.max(lo, -half), Math.min(hi, half)];
+  }
+  return { lo, hi };
+}
 
 export const STRATEGIES = [
   { name: "Spot", value: SPOT, hint: "Even across the range, for any market" },
