@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { FadeUp } from "@/components/motion";
-import { ExampleApy, ExampleNote } from "./PoolFacts";
+import { AutopayRepaid, ExampleApy, ExampleNote } from "./PoolFacts";
 
 /**
  * One column of the section: no card and no icon, just a number, a rule and the content,
@@ -27,7 +27,7 @@ const ltvRows = [
 
 export function Features() {
   return (
-    <div className="mt-14 grid border-y border-line md:grid-cols-2">
+    <div className="mt-14 grid border-y border-line md:grid-cols-3">
       <Column
         index={1}
         delay={0}
@@ -53,6 +53,15 @@ export function Features() {
       <Column
         index={2}
         delay={0.08}
+        title="Your LP fees pay down the loan"
+        body="Liquidity positions earn trading fees. Anyone can collect them for a small share, and the rest repays your debt or goes back into the position if you prefer. Keep the loan in good standing and your interest rate falls over time."
+      >
+        <AutopayRepaid />
+      </Column>
+
+      <Column
+        index={3}
+        delay={0.16}
         title="Lenders choose their risk"
         body="Senior lenders are paid first and lose money last. Junior lenders take losses first and earn a higher rate for it."
       >

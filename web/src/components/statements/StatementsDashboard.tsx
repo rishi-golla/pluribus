@@ -21,11 +21,10 @@ const KIND: Record<EventKind, { label: string; icon: LucideIcon; color: string }
   tier: { label: "Tier upgrade", icon: Award, color: "var(--color-brand)" },
   closed: { label: "Account closed", icon: Lock, color: "var(--color-brand)" },
 };
-const FILTERS = ["All", "Draws", "Repayments", "Interest"] as const;
+const FILTERS = ["All", "Draws", "Repayments", "Autopay", "Interest"] as const;
 type Filter = (typeof FILTERS)[number];
 // The risk premium is booked as debt like interest, and the month's interest total counts it
-// autopay repays debt from lp fees, so it is listed and totalled with the repayments
-const FILTER_KIND: Record<Exclude<Filter, "All">, EventKind[]> = { Draws: ["draw"], Repayments: ["repay", "autopay"], Interest: ["interest", "premium"] };
+const FILTER_KIND: Record<Exclude<Filter, "All">, EventKind[]> = { Draws: ["draw"], Repayments: ["repay"], Autopay: ["autopay"], Interest: ["interest", "premium"] };
 const SOURCE_ICON = { orca: "orca.png", raydium: "ray.webp" } as const;
 
 const shortDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
@@ -40,7 +39,8 @@ function Waterfall({ s, step = 6000 }: { s: MonthSummary; step?: number }) {
     ["Opening", s.opening, "total", "#2e2e2e"],
     ["Draws", s.draws, "up", "#a98bff"],
     ["Interest", s.interest, "up", "#f59a3d"],
-    ["Repayments", -(s.repayments + s.autopay), "down", "#c6f432"],
+    ["Repayments", -s.repayments, "down", "#c6f432"],
+    ["Autopay", -s.autopay, "down", "#c6f432"],
     ["Closing", s.closing, "total", "#f0f0f0"],
   ];
   const yMax = Math.max(step, Math.ceil(peakOf(s) / step) * step);
@@ -48,7 +48,7 @@ function Waterfall({ s, step = 6000 }: { s: MonthSummary; step?: number }) {
   const ih = H - pt - 40;
   const Y = (v: number) => pt + ih - (v / yMax) * ih;
   const gap = 28;
-  const bw = (W - 52 - gap * 4) / 5;
+  const bw = (W - 52 - gap * 5) / 6;
   const ticks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step);
   let run = 0;
   const bars = steps.map(([label, v, kind, color]) => {
@@ -201,6 +201,8 @@ export function StatementsDashboard() {
   const [y, mo] = monthKey.split("-").map(Number);
   const lastDay = month.inProgress ? Number(today.slice(8)) : new Date(Date.UTC(y, mo, 0)).getUTCDate();
   const short = month.short;
+  const covered = s.interest > 0 ? s.autopay / s.interest : 0;
+  const widest = Math.max(s.autopay, s.interest) || 1;
 
   const tiers = live
     ? live.tiers.map((t, i) => ({ name: `Tier ${i + 1}`, rate: t.discount ? `-${(t.discount * 100).toFixed(2)}%` : "0%", minDays: t.minDays }))
@@ -395,6 +397,38 @@ export function StatementsDashboard() {
               </div>
               <div className="mt-4 text-[13px] text-t2">
                 {next ? `${Math.max(0, Math.ceil(next.minDays - healthyDays))} days to ${next.name}` : "Top tier"}, resets on liquidation
+              </div>
+            </div>
+          </div>
+          <div className="panel">
+            <div className="px-[22px] pt-[18px]">
+              <h3 className="text-[15px] font-medium tracking-[-0.01em]">Autopay vs interest</h3>
+            </div>
+            <div className="px-[22px] pb-[22px] pt-[18px]">
+              <Label className="mb-1.5">LP fees applied to debt</Label>
+              <motion.div
+                key={`a-${monthKey}`}
+                className="flex h-7 items-center rounded-md bg-green-dim px-2.5 text-[12.5px] font-medium text-green"
+                initial={{ width: "20%" }}
+                animate={{ width: `${Math.max(20, Math.min(100, (s.autopay / widest) * 100))}%` }}
+                transition={{ duration: 0.7, ease: EASE }}
+              >
+                {usd(s.autopay)}
+              </motion.div>
+              <Label className="mb-1.5 mt-3">Interest accrued</Label>
+              <motion.div
+                key={`i-${monthKey}`}
+                className="flex h-7 items-center whitespace-nowrap rounded-md bg-orange-dim px-2.5 text-[12.5px] font-medium text-orange"
+                initial={{ width: "20%" }}
+                animate={{ width: `${Math.max(20, Math.min(100, (s.interest / widest) * 100))}%` }}
+                transition={{ duration: 0.7, ease: EASE, delay: 0.1 }}
+              >
+                {usd(s.interest)}
+              </motion.div>
+              <div className="mb-3 mt-[18px] h-px bg-line" />
+              <div className="flex items-center justify-between">
+                <span className="text-t2">Interest covered</span>
+                <span className="text-xl font-medium tracking-[-0.03em] text-green">{covered.toFixed(1)}x</span>
               </div>
             </div>
           </div>

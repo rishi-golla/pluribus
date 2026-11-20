@@ -10,8 +10,8 @@ import { displayAmount, healthOf, healthTone, money, usd } from "@/lib/account";
 import { deployment } from "@/lib/cluster";
 import type { Collateral, DlmmMarket } from "@/lib/live";
 import { math } from "@/lib/pluribus/sdk";
-import { OFFERED, iconSrc, tokenIcon } from "@/lib/tokens";
-import { DLMM_ICON, DlmmExitForm, MAX_POSITIONS, health, rangePrice } from "./DlmmForms";
+import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
+import { DLMM_ICON, DlmmDepositForm, DlmmExitForm, MAX_POSITIONS, health, rangePrice } from "./DlmmForms";
 
 const QUICK = [
   { label: "25%", pct: 0.25 },
@@ -20,6 +20,9 @@ const QUICK = [
 ] as const;
 // Left in the wallet for fees and the credit account's rent
 const SOL_BUFFER = 0.02;
+// SOL first, then staked SOL, stocks and USDC, with anything not in TOKEN_INFO after them
+const ORDER = Object.keys(TOKEN_INFO);
+const rank = (symbol: string) => (ORDER.includes(symbol) ? ORDER.indexOf(symbol) : ORDER.length);
 
 type Mode = "Deposit" | "Withdraw";
 type Option = {
@@ -30,17 +33,17 @@ type Option = {
   right: string;
   symbol: string;
   max?: number;
-  /** A Meteora position the account holds, with its pair when that is still listed */
+  /** A Meteora option: the pair to open a position in, or the position the account holds */
   dlmm?: { market?: DlmmMarket; row?: Collateral };
   /** Why it cannot be picked right now */
   off?: boolean;
 };
 
-function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onClose: () => void }) {
+function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string; add?: string; onClose: () => void }) {
   const toast = useToast();
   const d = deployment!;
   const [mode, setMode] = useState<Mode>(withdraw ? "Withdraw" : "Deposit");
-  const [picked, setPicked] = useState(withdraw);
+  const [picked, setPicked] = useState(withdraw ?? add);
   const [raw, setRaw] = useState("");
   const [status, setStatus] = useState<"idle" | "signing" | "confirming">("idle");
   const deposit = mode === "Deposit";
@@ -53,7 +56,7 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
     right: usd(value),
     symbol: "LP position",
   });
-  // A Meteora position the account already holds, withdrawn from and closed on the Withdraw tab
+  // A Meteora position the account holds: added to from the Deposit tab, withdrawn from and closed on the Withdraw tab
   const dlmmOption = (c: Collateral, market: DlmmMarket | undefined, sub: string): Option => {
     const off = deposit && (!market || !!market.closed);
     return {
@@ -72,10 +75,22 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
         { id: d.solMint, icon: "sol.webp", name: "SOL", sub: `${money(live.wallet.sol, 4)} in wallet`, right: usd(live.wallet.sol * live.prices[d.solMint]), symbol: "SOL", max: Math.max(0, live.wallet.sol - SOL_BUFFER) },
         ...live.tokenMints
           .map((mint) => ({ mint, symbol: d.assets[mint].symbol, held: live.wallet.tokens[mint] ?? 0 }))
-          .filter((t) => OFFERED.includes(t.symbol))
-          .sort((a, b) => OFFERED.indexOf(a.symbol) - OFFERED.indexOf(b.symbol))
+          .sort((a, b) => rank(a.symbol) - rank(b.symbol))
           .map(({ mint, symbol, held }) => ({ id: mint, icon: tokenIcon(symbol), name: symbol, sub: `${money(held, 4)} in wallet`, right: usd(held * (live.prices[mint] ?? 0)), symbol, max: held })),
         ...live.wallet.lps.map((lp) => lpOption(lp.positionMint.toBase58(), lp.priceLower, lp.priceUpper, math.lpValue(lp.liquidity, lp.tickLower, lp.tickUpper, live.prices[d.solMint]))),
+        // A new Meteora position, one option per listed pair, greyed out while the pair takes nothing new
+        ...live.dlmm.map((market) => ({
+          id: `new:${market.pair}`,
+          icon: DLMM_ICON,
+          name: `${market.symbol}-USDC`,
+          sub: `Meteora DLMM, new position at ${usd(market.price)}`,
+          right: market.closed ?? "New position",
+          symbol: "Meteora position",
+          dlmm: { market },
+          off: !!market.closed,
+        })),
+        // Liquidity added to a position already held
+        ...live.collateral.flatMap((c) => (c.dlmm ? [dlmmOption(c, live.dlmm.find((m) => m.pair === c.dlmm!.pair), ", add liquidity")] : [])),
       ]
     : live.collateral.map((c) =>
         c.dlmm
@@ -219,7 +234,12 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
           </div>
         </>
       )}
-      {option?.dlmm?.row && <DlmmExitForm key={option.id} live={live} row={option.dlmm.row} onClose={onClose} />}
+      {option?.dlmm &&
+        (!deposit && option.dlmm.row ? (
+          <DlmmExitForm key={option.id} live={live} row={option.dlmm.row} onClose={onClose} />
+        ) : (
+          <DlmmDepositForm key={option.id} live={live} market={option.dlmm.market} row={option.dlmm.row} onClose={onClose} />
+        ))}
       {!option?.dlmm && (
         <>
           <div className="mt-[18px]">
@@ -252,8 +272,8 @@ function Form({ live, withdraw, onClose }: { live: Live; withdraw?: string; onCl
   );
 }
 
-/** Deposit and withdraw collateral, starting on a deposited position when one is passed in to withdraw */
-export function CollateralDialog({ live, open, onClose }: { live: Live; open: { withdraw?: string } | null; onClose: () => void }) {
+/** Deposit and withdraw collateral, starting on a deposited position when one is passed in to withdraw, or a Meteora position to add to */
+export function CollateralDialog({ live, open, onClose }: { live: Live; open: { withdraw?: string; add?: string } | null; onClose: () => void }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -283,7 +303,7 @@ export function CollateralDialog({ live, open, onClose }: { live: Live; open: { 
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <Form live={live} withdraw={open.withdraw} onClose={onClose} />
+            <Form live={live} withdraw={open.withdraw} add={open.add} onClose={onClose} />
           </motion.div>
         </motion.div>
       )}

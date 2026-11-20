@@ -15,7 +15,9 @@ import { deployment } from "@/lib/cluster";
 import { healthAfterDrop, type Collateral } from "@/lib/live";
 import { TOKEN_INFO, iconSrc, tokenIcon } from "@/lib/tokens";
 import { CollateralDialog } from "./CollateralDialog";
+import { CompoundDialog, CompoundPill, type CompoundTarget } from "./CompoundSetting";
 import { PortfolioChart, RANGES, SERIES, type Range, type SeriesKey } from "./PortfolioChart";
+import { percent } from "@/lib/compound";
 
 const ic = { size: 16, strokeWidth: 1.75 };
 const QUICK = [
@@ -300,11 +302,12 @@ function useDrawForm() {
 type DrawForm = ReturnType<typeof useDrawForm>;
 
 function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, amount: number) => void }) {
-  const { debt, creditLimit, liquidationLimit, borrowApr } = useAccount();
+  const { debt, creditLimit, liquidationLimit, borrowApr, autopayPerMonth } = useAccount();
   const { mode, raw, chip, status, amount, max, newDebt, nextHealth, error } = form;
   const health = healthOf(debt, liquidationLimit);
   const used = (v: number) => (creditLimit > 0 ? (v / creditLimit) * 100 : 0);
   const interest = (newDebt * borrowApr) / 12;
+  const coverage = interest > 0 ? Math.min(100, (autopayPerMonth / interest) * 100) : 100;
   const arrow = <ArrowRight size={13} strokeWidth={1.75} className="text-t3" />;
   const label =
     status === "signing" ? "Confirm in wallet..." : status === "confirming" ? "Confirming on Solana..." : (error ?? `${mode} ${money(amount).replace(/\.00$/, "")} USDC`);
@@ -369,6 +372,11 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
           <KV k="Est. monthly interest">
             <Num value={interest} decimals={2} prefix="$" />
           </KV>
+          <KV k="Covered by autopay">
+            <span className={coverage >= 100 ? "text-green" : "text-orange"}>
+              ~<Num value={coverage} suffix="%" />
+            </span>
+          </KV>
         </div>
         <motion.button
           type="button"
@@ -393,12 +401,14 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
 
 /* ---------- Collateral ---------- */
 
-type Kind = "SOL" | "LP positions" | "Tokenized stocks";
+type Kind = "SOL" | "LSTs" | "LP positions" | "Tokenized stocks" | "Memes";
 const FILTERS: { label: "All" | Kind; icons: string[] }[] = [
   { label: "All", icons: [] },
   { label: "SOL", icons: ["sol.webp"] },
-  { label: "LP positions", icons: ["orca.png"] },
+  { label: "LSTs", icons: ["jitosol.webp", "jupsol.webp", "msol.png"] },
+  { label: "LP positions", icons: ["orca.png", "ray.webp", "met.webp"] },
   { label: "Tokenized stocks", icons: ["nvdax.webp", tokenIcon("AAPLx")] },
+  { label: "Memes", icons: ["bonk.webp"] },
 ];
 
 function Meter({ n, label }: { n: number; label: ReactNode }) {
@@ -448,8 +458,7 @@ type Position = {
   /** An LP or Meteora position's fee setting: how far the pool's price may sit from the oracle's, in bps, for it to compound, or 0 */
   compound?: { bps: number };
 };
-// a token with no kind here, such as one the app no longer offers, shows under All only
-const KINDS: Record<string, Kind | null> = { SOL: "SOL", NVDAx: "Tokenized stocks", AAPLx: "Tokenized stocks", USDC: null };
+const KINDS: Record<string, Kind | null> = { SOL: "SOL", JitoSOL: "LSTs", JupSOL: "LSTs", NVDAx: "Tokenized stocks", AAPLx: "Tokenized stocks", USDC: null };
 const TOKENS: Record<string, { kind: Kind | null; icon: string; sub: string }> = Object.fromEntries(
   Object.entries(TOKEN_INFO).map(([symbol, info]) => [symbol, { ...info, kind: KINDS[symbol] ?? null }]),
 );
@@ -519,22 +528,28 @@ function toRow(c: Collateral): Position {
 
 const POSITIONS: Position[] = [
   { kind: "SOL", icon: <TokenIcon src="sol.webp" />, name: "SOL", sub: "Solana", bal: "120.50 SOL", val: "$18,075.00", vsub: "$150.00", ltv: 66.5, power: "$12,020.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
-  { kind: "LP positions", icon: <Pair badge="orca.png" />, name: "SOL-USDC", sub: "Orca Whirlpool, 120 to 180", bal: "Position #8812", val: "$10,000.00", vsub: "30.14 SOL + 5,479.00 USDC", ltv: 70.8, naive: "82.1%", power: "$7,080.00", compound: { bps: 100 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
-  { kind: "Tokenized stocks", icon: <TokenIcon src="nvdax.webp" />, name: "NVDAx", sub: "NVIDIA xStock", bal: "65.00 NVDAx", val: "$11,735.00", vsub: "Market closed", ltv: 58, power: "$6,806.30", liq: <Meter n={3} label={<span className="text-[12.5px] text-t2">Moderate</span>} /> },
-  { kind: "Tokenized stocks", icon: <TokenIcon src={tokenIcon("AAPLx")} />, name: "AAPLx", sub: "Apple xStock, Token-2022", bal: "31.00 AAPLx", val: "$7,220.00", vsub: "Market closed", ltv: 58.5, power: "$4,223.70", liq: <Meter n={3} label={<span className="text-[12.5px] text-t2">Moderate</span>} /> },
-  { kind: null, icon: <TokenIcon src="usdc.webp" />, name: "USDC", sub: "USD Coin", bal: "1,200.00 USDC", val: "$1,200.00", vsub: "$1.00", ltv: 97, power: "$1,164.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
+  { kind: "LSTs", icon: <TokenIcon src="jitosol.webp" />, name: "JitoSOL", sub: "Liquid staking", bal: "41.44 JitoSOL", val: "$6,950.00", vsub: "1 JitoSOL = 1.118 SOL", ltv: 65, power: "$4,518.00", liq: <Meter n={5} label={<span className="text-[12.5px] text-t2">Deep</span>} /> },
+  { kind: "LP positions", icon: <Pair badge="orca.png" />, name: "SOL-USDC", sub: "Orca Whirlpool, 120 to 180", bal: "Position #8812", val: "$10,000.00", vsub: "$38.20 fees unclaimed", ltv: 70.8, naive: "82.1%", power: "$7,080.00", compound: { bps: 100 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
+  { kind: "LP positions", icon: <Pair badge="ray.webp" />, name: "SOL-USDC", sub: "Raydium CLMM, full range", bal: "Position #2207", val: "$5,200.00", vsub: "$11.70 fees unclaimed", ltv: 79.4, naive: "80.7%", power: "$4,129.00", compound: { bps: 0 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={0} to={100} at={50} /><Tag tone="green">In range</Tag></div> },
+  { kind: "LP positions", icon: <Pair badge="met.webp" />, name: "SOL-USDC", sub: "Meteora DLMM, 130 to 170", bal: "Position 9Wq4...hT2e", val: "$8,400.00", vsub: "28.00 SOL + 4,200.00 USDC", ltv: 68.9, naive: "79.6%", power: "$5,788.00", dlmm: { empty: false }, compound: { bps: 0 }, liq: <div className="flex items-center gap-2.5"><RangeBar from={25} to={75} at={50} /><Tag tone="green">In range</Tag></div> },
+  { kind: "Tokenized stocks", icon: <TokenIcon src="nvdax.webp" />, name: "NVDAx", sub: "NVIDIA xStock", bal: "18.00 NVDAx", val: "$3,240.00", vsub: "Market closed", ltv: 58, power: "$1,879.00", liq: <Meter n={3} label={<span className="text-[12.5px] text-t2">Moderate</span>} /> },
+  { kind: "Memes", icon: <TokenIcon src="bonk.webp" />, name: "BONK", sub: "Bonk", bal: "212.4M BONK", val: "$4,765.00", vsub: "$0.00002243", ltv: 35, power: "$1,668.00", liq: <Meter n={2} label={<Tag tone="orange">Risky</Tag>} /> },
 ];
 
 function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
   const [filter, setFilter] = useState<"All" | Kind>("All");
-  const [dialog, setDialog] = useState<{ withdraw?: string } | null>(null);
+  const [dialog, setDialog] = useState<{ withdraw?: string; add?: string } | null>(null);
+  const [fees, setFees] = useState<CompoundTarget | null>(null);
   const toast = useToast();
   const { live } = useAccount();
   const all = live ? live.collateral.map(toRow) : POSITIONS;
   const rows = all.filter((p) => filter === "All" || p.kind === filter);
+  // The setting follows the position as it is on-chain, so the dialog does not keep showing what it was opened with
+  const feesNow = fees && { ...fees, bps: all.find((p) => (p.mint ?? p.name + p.sub) === fees.id)?.compound?.bps ?? fees.bps };
   return (
     <section className="panel mt-4">
       {live && <CollateralDialog live={live} open={dialog} onClose={() => setDialog(null)} />}
+      <CompoundDialog live={live} target={feesNow} onClose={() => setFees(null)} />
       <div className="flex items-center justify-between px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Collateral <span className="font-normal text-t3">{all.length === 1 ? "1 position" : `${all.length} positions`}</span>
@@ -546,7 +561,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
           </button>
           <button
             type="button"
-            onClick={() => (live ? setDialog({}) : toast({ title: "Connect a wallet to deposit", detail: "SOL, tokenized stocks, Orca LP positions", tone: "info" }))}
+            onClick={() => (live ? setDialog({}) : toast({ title: "Connect a wallet to deposit", detail: "SOL, LSTs, LP positions, xStocks", tone: "info" }))}
             className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-brand px-3.5 text-[13.5px] font-medium text-[#09090b] transition-colors hover:bg-white"
           >
             <Plus {...ic} />
@@ -625,21 +640,34 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
                   {r.naive && <div className="mt-0.5 text-[12.5px] text-t3">Naive {r.naive}</div>}
                 </td>
                 <td className="text-right font-medium">{r.power}</td>
-                <td>{r.liq}</td>
+                <td>
+                  {r.liq}
+                  {r.compound && (
+                    <CompoundPill bps={r.compound.bps} onOpen={() => setFees({ id: r.mint ?? r.name + r.sub, name: r.name, sub: r.sub, bps: r.compound!.bps, dlmm: !!r.dlmm })} />
+                  )}
+                </td>
                 <td className="pr-[22px] text-right">
                   <div className="flex items-center justify-end gap-2">
-                    {/* A Meteora position already held is trimmed or closed in place, the same dialog the row opens */}
+                    {/* A Meteora position is topped up, trimmed or closed in place, the same dialog the row opens */}
                     {r.dlmm && r.mint && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDialog({ withdraw: r.mint });
-                        }}
-                        className="h-7 cursor-pointer rounded-md border border-line-2 bg-s2 px-2.5 text-[12.5px] font-medium transition-colors hover:bg-s3"
-                      >
-                        {r.dlmm.empty ? "Close" : "Withdraw"}
-                      </button>
+                      <>
+                        {[
+                          ...(r.dlmm.empty ? [] : [{ label: "Add", open: { add: r.mint } }]),
+                          { label: r.dlmm.empty ? "Close" : "Withdraw", open: { withdraw: r.mint } },
+                        ].map((a) => (
+                          <button
+                            key={a.label}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDialog(a.open);
+                            }}
+                            className="h-7 cursor-pointer rounded-md border border-line-2 bg-s2 px-2.5 text-[12.5px] font-medium transition-colors hover:bg-s3"
+                          >
+                            {a.label}
+                          </button>
+                        ))}
+                      </>
                     )}
                     <ChevronRight {...ic} className="inline text-t3 transition-transform group-hover:translate-x-0.5 group-hover:text-t1" />
                   </div>
@@ -790,7 +818,7 @@ function StressPanel({ highlight }: { highlight: boolean }) {
         
         <div className="mt-4">
           <LineChart
-            width={1154}
+            width={634}
             height={254}
             pad={{ top: 10, right: 40, bottom: 44, left: 8 }}
             xTitle={xTitle}
@@ -826,9 +854,11 @@ function StressPanel({ highlight }: { highlight: boolean }) {
 }
 
 const FEES = series(30, 6, 8, 5, 3).map((v) => Math.max(2.2, v));
+/** The bounty the sample figures use when no wallet is connected */
+const SAMPLE_BOUNTY_BPS = 200;
 const DAY_MS = 86_400_000;
 
-/** Test control: trades the pool and harvests once a second instead of waiting hours for real fees and the keeper */
+/** Test control: trades the pool and harvests once a second instead of waiting hours for real fees and a bounty hunter */
 function useFastHarvest(live: Live | null) {
   const [running, setRunning] = useState(false);
   const [total, setTotal] = useState({ usd: 0, runs: 0 });
@@ -856,8 +886,7 @@ function useFastHarvest(live: Live | null) {
   return { running, total, toggle: () => setRunning((r) => !r) };
 }
 
-// not rendered while autopay is hidden, and exported so it is not flagged as unused
-export function AutopayPanel() {
+function AutopayPanel() {
   const { live, months, today, autopayPerMonth } = useAccount();
   const fast = useFastHarvest(live);
   const [enabled, setOn] = useState(true);
@@ -870,7 +899,7 @@ export function AutopayPanel() {
   const bw = (AW - 29 * 4) / 30;
   const toggle = () => {
     setOn(!on);
-    toast(on ? { title: "Autopay paused", detail: "LP fees stay in positions", tone: "info" } : { title: "Autopay resumed", detail: "Next harvest in 7m" });
+    toast(on ? { title: "Autopay paused", detail: "LP fees stay in positions", tone: "info" } : { title: "Autopay resumed", detail: "LP fees repay debt again" });
   };
   const paid = months.flatMap((m) => m.events).filter((e) => e.kind === "autopay");
   const dayOf = (iso: string) => Math.round(Date.parse(iso) / DAY_MS);
@@ -913,7 +942,7 @@ export function AutopayPanel() {
         <div className="text-[13px] text-t2">
           {fast.running || fast.total.runs > 0
             ? `Test harvest: ${fast.total.runs} runs, ${usd(fast.total.usd)} collected`
-            : "The keeper harvests LP fees and repays debt every 10 minutes by default"}
+            : `Anyone can collect your LP fees for ${percent(live ? live.pool.compoundBountyBps : SAMPLE_BOUNTY_BPS)} of them, and the rest repays debt`}
         </div>
         <div className="mt-[18px] flex items-center justify-between">
           <Label>Daily fees repaid, 30D</Label>
@@ -963,7 +992,7 @@ export function AutopayPanel() {
           {[
             ["This month", <Num key="m" value={autopayPerMonth} decimals={2} prefix="$" countUp className="text-green" />],
             ["Lifetime", <Num key="l" value={live ? paid.reduce((s, e) => s + e.amount, 0) : 1847.2} decimals={2} prefix="$" countUp />],
-            ["Next harvest", fast.running ? "Every 1s" : live ? (on ? "By keeper" : "-") : on ? "7m" : "Paused"],
+            ["Collected by", fast.running ? "Test, every 1s" : on ? "Anyone" : live ? "-" : "Paused"],
           ].map(([k, v]) => (
             <div key={k as string} className="bg-s1 px-3.5 py-3">
               <Label>{k}</Label>
@@ -978,7 +1007,7 @@ export function AutopayPanel() {
 
 /** The Borrow page. `full={false}` renders just the top half for the landing page preview. */
 export function BorrowDashboard({ full = true }: { full?: boolean }) {
-  const { debt, liquidationLimit, poolCash, live } = useAccount();
+  const { debt, liquidationLimit, poolCash, live, autopayPerMonth } = useAccount();
   const toast = useToast();
   const form = useDrawForm();
   const stressRef = useRef<HTMLDivElement>(null);
@@ -1027,11 +1056,23 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
       {full && (
         <>
           <CollateralPanel onStressTest={runStressTest} />
-          <div ref={stressRef} className="mt-4">
-            <Fold title="Stress test" summary="How far prices can fall before liquidation" open={stressOpen} onToggle={() => setStressOpen(!stressOpen)}>
-              <StressPanel highlight={highlightStress} />
+          <section className="mt-4 grid grid-cols-[1.35fr_1fr] items-start gap-4">
+            <div ref={stressRef}>
+              <Fold title="Stress test" summary="How far prices can fall before liquidation" open={stressOpen} onToggle={() => setStressOpen(!stressOpen)}>
+                <StressPanel highlight={highlightStress} />
+              </Fold>
+            </div>
+            <Fold
+              title="Autopay"
+              summary={
+                <>
+                  Repaid this month <b className="font-medium text-t1">{usd(autopayPerMonth)}</b>
+                </>
+              }
+            >
+              <AutopayPanel />
             </Fold>
-          </div>
+          </section>
         </>
       )}
     </main>

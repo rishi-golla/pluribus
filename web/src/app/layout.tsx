@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   title: "Pluribus | Borrow against everything you hold",
   icons: { icon: ICON },
   description:
-    "Borrow USDC against your SOL, tokenized stocks and Orca LP positions in one loan. No end date.",
+    "Borrow USDC against your SOL, staked SOL, liquidity positions, tokenized stocks and memecoins in one loan. No end date, and your LP fees pay it down.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

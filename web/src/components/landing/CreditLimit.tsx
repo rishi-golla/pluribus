@@ -8,9 +8,10 @@ import { EXAMPLE_USD, usePoolFacts, type ExampleKey } from "./PoolFacts";
 
 const ROWS: { key: ExampleKey; name: string; sub?: string }[] = [
   { key: "sol", name: "SOL" },
-  { key: "nvdax", name: "NVDAx", sub: "xStock" },
-  { key: "aaplx", name: "AAPLx", sub: "xStock" },
+  { key: "lst", name: "JitoSOL", sub: "staked SOL" },
   { key: "lp", name: "SOL-USDC LP", sub: "Orca" },
+  { key: "stock", name: "NVDAx", sub: "xStock" },
+  { key: "meme", name: "BONK", sub: "memecoin" },
   { key: "usdc", name: "USDC" },
 ];
 const TOTAL = Object.values(EXAMPLE_USD).reduce((a, b) => a + b, 0);

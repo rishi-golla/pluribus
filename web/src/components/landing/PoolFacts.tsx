@@ -7,10 +7,9 @@ import { FeeBars } from "./FeeBars";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
 import { SCENARIO_NAMES, fetchStats } from "@/lib/live";
 import { type Asset, type Pool, type PluribusProgram, fetchAsset, fetchLpMarket, fetchPool, fetchPrices, getProgram, math } from "@/lib/pluribus/sdk";
-import { OFFERED } from "@/lib/tokens";
 
 /** The example portfolio the hero draws and the product tour borrows against, in dollars */
-export const EXAMPLE_USD = { sol: 3_000, nvdax: 2_800, aaplx: 2_000, lp: 3_000, usdc: 1_200 } as const;
+export const EXAMPLE_USD = { sol: 3_000, lst: 2_000, lp: 3_000, stock: 1_800, meme: 1_000, usdc: 1_200 } as const;
 export type ExampleKey = keyof typeof EXAMPLE_USD;
 
 /** The example portfolio valued with the pool's own crash tables, liquidation costs and prices */
@@ -46,12 +45,13 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
     if (!mint) throw new Error(`${symbol} is not in the ${CLUSTER} deployment`);
     return mint;
   };
-  const aaplxMint = mintOf("AAPLx");
-  const [prices, sol, nvdax, aaplx, usdc, market] = await Promise.all([
+  const [lstMint, memeMint] = [mintOf("JitoSOL"), mintOf("BONK")];
+  const [prices, sol, lst, stock, meme, usdc, market] = await Promise.all([
     fetchPrices(program, d),
     fetchAsset(program, key(d.solMint)),
+    fetchAsset(program, key(lstMint)),
     fetchAsset(program, key(d.stockMint)),
-    fetchAsset(program, key(aaplxMint)),
+    fetchAsset(program, key(memeMint)),
     fetchAsset(program, key(d.usdcMint)),
     fetchLpMarket(program, key(d.whirlpool)),
   ]);
@@ -70,8 +70,7 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
   const [lower, upper] = [tick(solPrice * 0.8), tick(solPrice * 1.2)];
   const parts: Record<ExampleKey, math.RiskPosition> = {
     sol: token(d.solMint, sol, EXAMPLE_USD.sol),
-    nvdax: token(d.stockMint, nvdax, EXAMPLE_USD.nvdax),
-    aaplx: token(aaplxMint, aaplx, EXAMPLE_USD.aaplx),
+    lst: token(lstMint, lst, EXAMPLE_USD.lst),
     lp: {
       mint: d.solMint,
       group: sol.params.group,
@@ -83,6 +82,8 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
       tickUpper: upper,
       usdcGroup: pool.usdcGroup,
     },
+    stock: token(d.stockMint, stock, EXAMPLE_USD.stock),
+    meme: token(memeMint, meme, EXAMPLE_USD.meme),
     usdc: token(d.usdcMint, usdc, EXAMPLE_USD.usdc),
   };
   const all = Object.values(parts);
@@ -94,7 +95,7 @@ async function valueExample(program: PluribusProgram, pool: Pool): Promise<Examp
   const each = (f: (k: ExampleKey, r: math.RiskPosition) => number) =>
     Object.fromEntries(Object.entries(parts).map(([k, r]) => [k, f(k as ExampleKey, r)])) as Record<ExampleKey, number>;
   // the LP falls with SOL, its base token
-  const assets: Record<ExampleKey, Asset> = { sol, nvdax, aaplx, lp: sol, usdc };
+  const assets: Record<ExampleKey, Asset> = { sol, lst, lp: sol, stock, meme, usdc };
   return {
     credit: each((_, r) => math.limits([r], worst, prices).creditLimit),
     creditLimit: total.creditLimit,
@@ -243,9 +244,9 @@ const compact = (v: number) =>
 /** The stats strip, read from the pool this build points at */
 export function PoolStats() {
   const facts = usePoolFacts();
-  // the tokens the app offers that the deployment lists, and its Orca pool
-  const collateralTypes = deployment ? Object.values(deployment.assets).filter((a) => OFFERED.includes(a.symbol)).length + 1 : undefined;
-    const cells: { label: string; usd?: number; count?: number }[] = [
+  // every token the deployment lists, its Orca pool and each other LP market, such as the Raydium and Meteora pairs
+  const collateralTypes = deployment ? Object.keys(deployment.assets).length + 1 + (deployment.lpMarkets?.length ?? 0) : undefined;
+  const cells: { label: string; usd?: number; count?: number }[] = [
     { label: "Supplied by lenders", usd: facts?.supplied },
     { label: "Currently borrowed", usd: facts?.drawn },
     { label: "Assets accepted", count: collateralTypes },

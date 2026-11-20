@@ -15,9 +15,6 @@ export const TOKEN_INFO: Record<string, { icon: string; sub: string }> = {
   USDC: { icon: "usdc.webp", sub: "USD Coin" },
 };
 
-// the tokens the app offers, in the order it lists them. the rest stay listed on-chain, and an account that already holds one still sees it
-export const OFFERED = ["SOL", "NVDAx", "AAPLx", "USDC"];
-
 export const tokenIcon = (symbol: string) => TOKEN_INFO[symbol]?.icon ?? "usdc.webp";
 /** The src for an icon from TOKEN_INFO or a file name in public/tokens */
 export const iconSrc = (icon: string) => (icon.startsWith("data:") ? icon : `/tokens/${icon}`);

@@ -9,6 +9,7 @@ import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel } from "@/components/charts/LineChart";
 import { useAccount, type Live } from "@/components/app/providers";
+import { CompoundButton } from "@/components/compound/CompoundButton";
 import { niceMax } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
@@ -19,7 +20,7 @@ import { iconSrc, tokenIcon } from "@/lib/tokens";
 const RANGES = ["7D", "30D", "90D"] as const;
 type Range = (typeof RANGES)[number];
 const DAYS: Record<Range, number> = { "7D": 7, "30D": 30, "90D": 90 };
-const CLASSES: AssetClass[] = ["SOL", "LP positions", "Stocks"];
+const CLASSES: AssetClass[] = ["SOL", "LSTs", "LP positions", "Stocks", "Memes"];
 const pct = (v: number, d = 1) => `${(v * 100).toFixed(d)}%`;
 const sum = (markets: Market[], field: "collateral" | "borrowed") => markets.reduce((s, m) => s + m[field], 0);
 
@@ -40,7 +41,7 @@ function liveMarkets(live: Live): Market[] {
   });
 }
 
-const dayTotal = (d: { draws: number; repays: number }) => d.draws + d.repays;
+const dayTotal = (d: { draws: number; repays: number; autopay: number }) => d.draws + d.repays + d.autopay;
 // Short enough for two of them to share one caption line
 const brief = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`);
 
@@ -57,15 +58,15 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
         { label: "Total borrowed", value: live.pool.debt, sub: `${pct(live.pool.utilization)} utilization` },
         { label: "Collateral locked", value: sum(markets, "collateral"), sub: `${markets.length} markets, ${new Set(markets.map((m) => m.cls)).size} asset classes` },
         { label: "Interest, all time", value: live.pool.interest, sub: `${pct(live.pool.avgApr)} avg borrow APR` },
-        { label: "Volume, 24H", value: latest ? dayTotal(latest) : 0, sub: "Draws and repays" },
+        { label: "Volume, 24H", value: latest ? dayTotal(latest) : 0, sub: "Draws, repays and autopay" },
         { label: "Bad debt", value: live.pool.badDebt, sub: `${compactUsd(live.pool.reserves)} insurance fund` },
       ]
     : [
         { label: "Total supplied", value: POOL.supplied, sub: "$9.0M senior, $1.0M junior" },
         { label: "Total borrowed", value: TOTALS.borrowed, sub: `${pct(TOTALS.borrowed / POOL.supplied)} utilization` },
-        { label: "Collateral locked", value: TOTALS.collateral, sub: `${MARKETS.length} markets, ${CLASSES.length} asset classes` },
+        { label: "Collateral locked", value: TOTALS.collateral, sub: `${MARKETS.length} markets, 5 asset classes` },
         { label: "Fees, 30D", value: TOTALS.fees, sub: `${pct(TOTALS.avgApr)} avg borrow APR` },
-        { label: "Volume, 24H", value: TOTALS.volume, sub: "Draws and repays" },
+        { label: "Volume, 24H", value: TOTALS.volume, sub: "Draws, repays and autopay" },
         { label: "Bad debt", value: 0, sub: `${compactUsd(POOL.insurance)} insurance fund` },
       ];
   return (
@@ -92,6 +93,7 @@ const VOL_H = 240;
 const VOL_KEYS = [
   { key: "draws", label: "Draws", color: "#a98bff" },
   { key: "repays", label: "Repayments", color: "#c6f432" },
+  { key: "autopay", label: "Autopay", color: "#33c3d6" },
 ] as const;
 
 function VolumePanel({ stats }: { stats: DayStats[] }) {
@@ -305,7 +307,7 @@ function MixPanel({ markets }: { markets: Market[] }) {
     <section className="panel mt-4 grid grid-cols-[1fr_1fr_1.1fr] items-center gap-10 px-[22px] py-5">
       <MixBar title="Collateral by asset class" markets={markets} field="collateral" />
       <MixBar title="Borrowed by asset class" markets={markets} field="borrowed" />
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {CLASSES.map((c) => {
           const share = collateral > 0 ? sum(markets.filter((m) => m.cls === c), "collateral") / collateral : 0;
           return (
@@ -343,8 +345,10 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 const FILTER_ICONS: Record<"All" | AssetClass, string[]> = {
   All: [],
   SOL: ["sol.webp"],
-  "LP positions": ["orca.png"],
+  LSTs: ["jitosol.webp", "jupsol.webp", "msol.png"],
+  "LP positions": ["orca.png", "ray.webp", "met.webp"],
   Stocks: ["nvdax.webp", tokenIcon("AAPLx")],
+  Memes: ["bonk.webp"],
 };
 
 /** Whether the deployment lists the market, whether or not the app reads its totals */
@@ -529,8 +533,7 @@ export function OverviewDashboard() {
   const isLive = !!live;
   const [stats, setStats] = useState<DayStats[]>([]);
   useEffect(() => {
-    // autopay repays debt from lp fees, so its volume counts as repayments
-    if (isLive) fetchStats().then((days) => setStats(days.map((d) => ({ ...d, repays: d.repays + d.autopay }))), () => {});
+    if (isLive) fetchStats().then(setStats, () => {});
   }, [isLive]);
   const markets = useMemo(() => (live ? liveMarkets(live) : MARKETS), [live]);
   return (
@@ -544,6 +547,7 @@ export function OverviewDashboard() {
           <Chip>
             Utilization <b>{pct(live ? live.pool.utilization : TOTALS.borrowed / POOL.supplied)}</b>
           </Chip>
+          <CompoundButton />
         </div>
       </div>
       <KpiStrip markets={markets} stats={stats} />

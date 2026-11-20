@@ -16,9 +16,9 @@ const signed = (v: number) => `${v < 0 ? "−" : "+"}$${money(Math.abs(v))}`;
 
 /* ---------- The example account, shared by every tab ---------- */
 
-type Kind = "draw" | "repay" | "interest";
+type Kind = "draw" | "repay" | "autopay" | "interest";
 type Row = { id: string; date: string; kind: Kind; amount: number };
-const LABEL: Record<Kind, string> = { draw: "Draw", repay: "Repayment", interest: "Interest" };
+const LABEL: Record<Kind, string> = { draw: "Draw", repay: "Repayment", autopay: "Autopay from LP fees", interest: "Interest" };
 
 // Three months of the hero's example portfolio, ending with the debt the Borrow tab starts from
 const MONTHS: { key: string; name: string; rows: Row[] }[] = [
@@ -27,9 +27,9 @@ const MONTHS: { key: string; name: string; rows: Row[] }[] = [
     name: "September 2026",
     rows: [
       { id: "s1", date: "Sep 4", kind: "draw", amount: 2_000 },
-      { id: "s2", date: "Sep 12", kind: "repay", amount: -31.2 },
+      { id: "s2", date: "Sep 12", kind: "autopay", amount: -31.2 },
       { id: "s3", date: "Sep 20", kind: "interest", amount: 14.6 },
-      { id: "s4", date: "Sep 27", kind: "repay", amount: -29.8 },
+      { id: "s4", date: "Sep 27", kind: "autopay", amount: -29.8 },
     ],
   },
   {
@@ -37,9 +37,9 @@ const MONTHS: { key: string; name: string; rows: Row[] }[] = [
     name: "October 2026",
     rows: [
       { id: "o1", date: "Oct 6", kind: "interest", amount: 15.1 },
-      { id: "o2", date: "Oct 11", kind: "repay", amount: -36 },
+      { id: "o2", date: "Oct 11", kind: "autopay", amount: -36 },
       { id: "o3", date: "Oct 15", kind: "draw", amount: 500 },
-      { id: "o4", date: "Oct 19", kind: "repay", amount: -33.4 },
+      { id: "o4", date: "Oct 19", kind: "autopay", amount: -33.4 },
       { id: "o5", date: "Oct 30", kind: "repay", amount: -400 },
     ],
   },
@@ -48,7 +48,7 @@ const MONTHS: { key: string; name: string; rows: Row[] }[] = [
     name: "November 2026",
     rows: [
       { id: "n1", date: "Nov 3", kind: "draw", amount: 1_500 },
-      { id: "n2", date: "Nov 9", kind: "repay", amount: -38.4 },
+      { id: "n2", date: "Nov 9", kind: "autopay", amount: -38.4 },
       { id: "n3", date: "Nov 13", kind: "interest", amount: 21.75 },
     ],
   },
@@ -376,12 +376,13 @@ function EarnCard() {
 
 const FILTERS = [
   { key: "all", label: "All" },
+  { key: "autopay", label: "Autopay" },
   { key: "moves", label: "Draws & repays" },
   { key: "interest", label: "Interest" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["key"];
 const matches = (f: Filter, k: Kind) => f === "all" || (f === "moves" ? k === "draw" || k === "repay" : f === k);
-const rowColor = (k: Kind) => (k === "interest" ? "text-t2" : "text-t1");
+const rowColor = (k: Kind) => (k === "autopay" ? "text-green" : k === "interest" ? "text-t2" : "text-t1");
 
 function StatementCard({ today }: { today: Row[] }) {
   const [month, setMonth] = useState(MONTHS.length - 1);
@@ -391,6 +392,9 @@ function StatementCard({ today }: { today: Row[] }) {
   const shown = rows.filter((r) => matches(filter, r.kind));
   const opening = OPENINGS[month];
   const closing = opening + total(rows);
+  const interest = total(rows.filter((r) => r.kind === "interest"));
+  const autopay = -total(rows.filter((r) => r.kind === "autopay"));
+  const covered = interest > 0 ? Math.min(1, autopay / interest) : 1;
 
   const exportCsv = () => {
     const lines = ["date,type,amount", ...rows.map((r) => `${r.date},${LABEL[r.kind]},${r.amount.toFixed(2)}`)];
@@ -459,6 +463,13 @@ function StatementCard({ today }: { today: Row[] }) {
           <Num value={closing} decimals={2} prefix="$" />
         </span>
       </div>
+      <div className="mt-3 flex items-center gap-3 text-[12.5px]">
+        <span className="whitespace-nowrap text-t3">Interest covered by LP fees</span>
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+          <motion.div className="h-full rounded-full bg-green" animate={{ width: `${covered * 100}%` }} transition={SNAP} />
+        </div>
+        <span className="w-9 text-right font-medium tabular-nums text-green">{Math.round(covered * 100)}%</span>
+      </div>
     </>
   );
 }
@@ -471,7 +482,7 @@ const TABS = [
     label: "Borrow",
     title: "Borrow USDC against what you hold.",
     body: "Choose an amount and see how safe the loan would be before you sign. Borrow here, then open Statements to see it recorded.",
-    points: ["No end date: repay when you want", "Repay from your wallet or by selling collateral"],
+    points: ["No end date: repay when you want", "Repay from your wallet or by selling collateral", "Fees from your LP positions go toward the loan"],
     href: "/borrow",
     cta: "Open a credit line",
   },
@@ -488,8 +499,8 @@ const TABS = [
     key: "statements",
     label: "Statements",
     title: "See where every payment went.",
-    body: "A statement for each month: what you borrowed, what you repaid and the interest charged.",
-    points: ["Filter by type of payment", "Download any month as a CSV file"],
+    body: "A statement for each month: what you borrowed, what you repaid, the interest charged, and how much of it your LP fees paid for you.",
+    points: ["Filter by type of payment", "Compare LP fee repayments with interest", "Download any month as a CSV file"],
     href: "/statements",
     cta: "See statements",
   },
