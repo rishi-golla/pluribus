@@ -17,6 +17,10 @@ pub struct Health {
     pub price: [u128; MAX_POSITIONS],
     /// A token whose price is unclear right now, around a corporate action, which can't be seized until it is clear
     pub unclear: [bool; MAX_POSITIONS],
+    /// A token no liquidator can be handed right now, unclear or halted, which the liquidation order steps over
+    pub stuck: [bool; MAX_POSITIONS],
+    /// The liquidator's bonus in bps on each position
+    pub bonus: [u16; MAX_POSITIONS],
     /// Draw value per scenario of every position, paused or not, and the same with each position weighted by its risk premium
     /// Sums rather than a table per position, since the health check's stack has no room for one
     pub all_init: [u128; MAX_SCENARIOS],
@@ -42,6 +46,29 @@ impl Health {
 
     pub fn scenarios(&self) -> usize {
         self.scenarios
+    }
+
+    /// Whether a liquidation may take position `i` now
+    /// The order is the protocol's: first goes the position whose sale costs the liquidation limit least per dollar of debt repaid,
+    /// which is its value in the scenario that sets the limit, per dollar of market value, times one plus its bonus
+    /// So each sale closes as much of the shortfall as any could, and the collateral the crash test counts on most is kept longest
+    /// USDC is outside the order, since it is netted against debt at no bonus, and so is a position worth nothing
+    /// Only filled by a health check that values liquidations
+    pub fn first_in_order(&self, i: usize, positions: &[Position], usdc: &Pubkey, debt: u128) -> Result<bool> {
+        let limit = self.liquidation_limit();
+        if self.market[i] == 0 || debt * BPS > limit * (BPS + ORDER_SLACK_BPS) {
+            return Ok(true);
+        }
+        let Some(s) = (0..self.scenarios).min_by_key(|&s| self.maint[s]) else { return Ok(true) };
+        let key = |j: usize| mul_div_floor(self.pos_maint[j][s] * (BPS + self.bonus[j] as u128), ORDER_SCALE, self.market[j] * BPS);
+        let mine = key(i)?;
+        for (j, pos) in positions.iter().enumerate() {
+            let outside = pos.kind == KIND_EMPTY || j == i || self.stuck[j] || self.market[j] == 0 || (pos.kind == KIND_TOKEN && pos.mint == *usdc);
+            if !outside && key(j)? + ORDER_TIE < mine {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// The collateral's risk premium in bps a year: each position's premium weighted by its draw value
@@ -185,6 +212,8 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let halted = mint.is_some_and(|m| m.halted) || short;
                 let paused = asset.params.paused || now < pool.effective_at(asset.active_at) || halted || moving || !fresh;
                 h.unclear[i] = moving;
+                h.stuck[i] = moving || halted;
+                h.bonus[i] = asset.liq_bonus(params, false);
                 let d = asset.dynamic_shocks(params);
                 (valuer, asset.params.group, asset.params.liq_cost_bps as u128, paused, d, asset.premium_bps)
             }
@@ -203,6 +232,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 let (lower, upper) = range_sqrt_prices(lp.tick_lower, lp.tick_upper)?;
                 let valuer = Valuer::Lp { liquidity: lp.liquidity, lower, upper, decimals: asset.price_decimals() };
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
+                h.bonus[i] = asset.liq_bonus(params, true);
                 let d = asset.dynamic_shocks(params);
                 // An LP carries its base token's premium, since that is the side a crash takes down
                 (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d, asset.premium_bps)
@@ -220,6 +250,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 h.price[i] = priced.price;
                 let valuer = Valuer::Dlmm(dlmm::curve(pool, &market, pair, account, asset.price_decimals())?);
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
+                h.bonus[i] = asset.liq_bonus(params, true);
                 let d = asset.dynamic_shocks(params);
                 // Like any LP, it carries its base token's premium
                 (valuer, asset.params.group, market.liq_cost_bps as u128, market.paused || asset.params.paused || waiting, d, asset.premium_bps)
@@ -278,4 +309,38 @@ pub fn book_premium(pool: &mut Pool, credit: &mut Account<CreditAccount>, now: i
         emit!(PremiumBooked { account: credit.key(), amount, rate_bps, debt: to_u64(pool.debt_of(credit)?)? });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two tokens worth $100 each that one scenario values at $78.85 and $74.70, with debt just over the limit
+    fn order(bonus: [u16; 2], stuck: bool, debt: u128) -> [bool; 2] {
+        let mut h = Health { scenarios: 1, ..Default::default() };
+        for (i, maint) in [78_850_000u128, 74_700_000].into_iter().enumerate() {
+            (h.market[i], h.pos_maint[i][0], h.bonus[i]) = (100_000_000, maint, bonus[i]);
+            h.maint[0] += maint;
+        }
+        h.stuck[1] = stuck;
+        let token = Position { kind: KIND_TOKEN, mint: Pubkey::new_unique(), ..Default::default() };
+        let positions = [token, Position { mint: Pubkey::new_unique(), ..token }];
+        let usdc = Pubkey::new_unique();
+        [0, 1].map(|i| h.first_in_order(i, &positions, &usdc, debt).unwrap())
+    }
+
+    #[test]
+    fn the_order_follows_value_under_the_limits_scenario_times_one_plus_the_bonus() {
+        let over = 153_550_001;
+        // 0.7885 x 1.05 against 0.747 x 1.05: the second costs the limit less
+        assert_eq!(order([500, 500], false, over), [false, true]);
+        // 0.7885 x 1.00 against 0.747 x 1.10: the bonus turns it around
+        assert_eq!(order([0, 1000], false, over), [true, false]);
+        // 0.7885 x 1.00 against 0.747 x 1.0556: level within the tie
+        assert_eq!(order([0, 556], false, over), [true, true]);
+        // A position that can't be handed over is stepped over
+        assert_eq!(order([500, 500], true, over), [true, true]);
+        // More than a tenth over the limit, any position can go
+        assert_eq!(order([500, 500], false, 153_550_000 * 11 / 10 + 1), [true, true]);
+    }
 }

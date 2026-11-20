@@ -100,4 +100,6 @@ pub enum PluribusError {
     PoolPriceOff,
     #[msg("The dex took more than the position's fees")]
     CompoundOverdrawn,
+    #[msg("Another position comes first in the liquidation order")]
+    NotFirstInOrder,
 }

@@ -163,9 +163,9 @@ fn stock_absorbs_the_sol_drop_until_sol_falls_further() {
 
     env.set_price(&sol, 100 * USDC);
     assert!(margin(&mut env, &a) < 0);
-    for mint in [sol, stock] {
-        expect_ok(liquidate(&mut env, &liq, &a, &mint, 100 * USDC));
-    }
+    // The equity crash sets this account's limit, and there the stock counts for less per dollar, so it goes before the SOL
+    expect_err(liquidate(&mut env, &liq, &a, &sol, 100 * USDC), PluribusError::NotFirstInOrder);
+    expect_ok(liquidate(&mut env, &liq, &a, &stock, 100 * USDC));
     assert_eq!(env.balance(&stock, &liq.pubkey()), with_bonus(100 * USDC, 200 * USDC, STOCK));
     assert_books(&env);
 }
@@ -401,6 +401,11 @@ fn no_liquidation_costs_the_margin_more_than_rounding_tops_the_bonus_or_breaks_t
                 let case = format!("sol at ${sol_price}, asked {asked}, stock {take_stock}");
 
                 let res = liquidate(&mut env, &liq, &me, &mint, asked);
+                // Near the limit only the first position in the order can go, and the other asset's run covers this price
+                if failed_with(&res, PluribusError::NotFirstInOrder) {
+                    assert!(h.debt as u128 * 10 <= h.liquidation_limit as u128 * 11, "{case}");
+                    continue;
+                }
                 if with_bonus(asked, price, unit) == 0 {
                     // Too little to buy one base unit of the collateral
                     expect_err(res, PluribusError::ZeroAmount);
@@ -569,7 +574,8 @@ fn dust_position_is_taken_whole_and_charged_its_value_rounded_up() {
     // One base unit of stock is worth 200 millionths of a dollar
     let me = borrower(&mut env, 10 * SOL, 1, 95).pubkey();
     let liq = liquidator(&mut env);
-    env.set_price(&sol, 120 * USDC);
+    // Far enough under that the order no longer binds, so the dust can go before the SOL
+    env.set_price(&sol, 100 * USDC);
     let margin_before = margin(&mut env, &me);
 
     expect_ok(liquidate(&mut env, &liq, &me, &stock, u64::MAX));
@@ -1191,5 +1197,103 @@ fn liquidate_lp_rejects_accounts_that_do_not_belong() {
 
     expect_ok(env.send(&[good], &[&liq]));
     assert_eq!(env.balance(&nft, &payer), 1);
+    assert_books(&env);
+}
+
+// Each asset's own bonus, and the order positions are taken in
+
+fn set_bonus(env: &mut Env, mint: &Pubkey, token_bps: u16, lp_bps: u16) -> TxResult {
+    let admin = env.admin.insecure_clone();
+    env.send(&[env.set_asset_liq_bonus_ix(&admin.pubkey(), mint, token_bps, lp_bps)], &[&admin])
+}
+
+#[test]
+fn an_asset_with_its_own_bonus_pays_that_and_the_rest_pay_the_pools() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let (sol, stock) = (env.sol, env.stock);
+    expect_ok(set_bonus(&mut env, &sol, 100, 0));
+    let me = borrower(&mut env, 10 * SOL, 0, 95).pubkey();
+    let other = borrower(&mut env, 0, 10 * STOCK, 95).pubkey();
+    let liq = liquidator(&mut env);
+    env.set_price(&sol, 120 * USDC);
+    env.set_price(&stock, 150 * USDC);
+    let margin_before = margin(&mut env, &me);
+
+    expect_ok(liquidate(&mut env, &liq, &me, &sol, 100 * USDC));
+    // $100 plus 1% buys 0.841666666 SOL at $120
+    assert_eq!(env.balance(&sol, &liq.pubkey()), 841_666_666);
+    assert!(margin(&mut env, &me) >= margin_before);
+    expect_ok(liquidate(&mut env, &liq, &other, &stock, 150 * USDC));
+    // $150 plus the pool's 5% buys 1.05 shares at $150
+    assert_eq!(env.balance(&stock, &liq.pubkey()), 1_050_000);
+    assert_books(&env);
+}
+
+#[test]
+fn a_position_pays_the_bonus_set_for_positions_in_its_base_token() {
+    let mut env = Env::new();
+    env.lender(1_000_000 * USDC);
+    let sol = env.sol;
+    // The token's own bonus is left alone, so only the position's is read
+    expect_ok(set_bonus(&mut env, &sol, 0, 200));
+    let (user, nft) = lp_borrower(&mut env, 10_000, &TOKEN);
+    let me = user.pubkey();
+    let liq = liquidator(&mut env);
+    env.fund(&nft, &liq.pubkey(), 0);
+    env.set_price(&sol, 120 * USDC);
+    let h = env.health(&me);
+    assert!(h.debt > h.liquidation_limit);
+
+    expect_ok(env.send(&[env.liquidate_lp_ix(&liq.pubkey(), &me, &nft)], &[&liq]));
+    // The position's value with 2% taken off, rounded up
+    assert_eq!(spent(&env, &liq), (h.position_value[0] as u128 * 10_000).div_ceil(10_200) as u64);
+    assert_books(&env);
+}
+
+#[test]
+fn an_assets_bonus_is_the_admins_to_set_and_never_passes_the_pools() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let sol = env.sol;
+    let (admin, anyone) = (env.admin.insecure_clone(), env.wallet());
+    expect_err(set_bonus(&mut env, &sol, 501, 0), PluribusError::InvalidParams);
+    expect_err(set_bonus(&mut env, &sol, 0, 501), PluribusError::InvalidParams);
+    assert!(env.send(&[env.set_asset_liq_bonus_ix(&anyone.pubkey(), &sol, 100, 100)], &[&anyone]).is_err());
+    expect_ok(set_bonus(&mut env, &sol, 500, 500));
+    let asset: Asset = env.load(&env.asset_pda(&sol));
+    assert_eq!((asset.liq_bonus_bps, asset.lp_liq_bonus_bps), (500, 500));
+
+    // The pool's bonus is cut under the asset's, and the asset pays the pool's
+    let params = PoolParams { liq_bonus_bps: 300, ..default_params() };
+    expect_ok(env.send(&[env.set_params_ix(&admin.pubkey(), params)], &[&admin]));
+    let me = borrower(&mut env, 10 * SOL, 0, 95).pubkey();
+    let liq = liquidator(&mut env);
+    env.set_price(&sol, 120 * USDC);
+    expect_ok(liquidate(&mut env, &liq, &me, &sol, 100 * USDC));
+    // $100 plus 3% buys 0.858333333 SOL at $120
+    assert_eq!(env.balance(&sol, &liq.pubkey()), 858_333_333);
+}
+
+#[test]
+fn the_position_that_costs_the_limit_least_goes_first_until_the_account_is_deep_under() {
+    let mut env = Env::new();
+    env.lender(100_000 * USDC);
+    let (sol, stock) = (env.sol, env.stock);
+    // Mostly SOL, so the crypto crash sets the limit, and there SOL counts for less per dollar than the stock
+    let me = borrower(&mut env, 10 * SOL, STOCK, 100).pubkey();
+    let liq = liquidator(&mut env);
+    env.set_price(&sol, 125 * USDC);
+    let h = env.health(&me);
+    assert!(h.debt > h.liquidation_limit && (h.debt as u128) * 10 <= h.liquidation_limit as u128 * 11);
+
+    expect_err(liquidate(&mut env, &liq, &me, &stock, 10 * USDC), PluribusError::NotFirstInOrder);
+    expect_ok(liquidate(&mut env, &liq, &me, &sol, 10 * USDC));
+
+    // More than a tenth over the limit, any position can go
+    env.set_price(&sol, 100 * USDC);
+    let h = env.health(&me);
+    assert!((h.debt as u128) * 10 > h.liquidation_limit as u128 * 11);
+    expect_ok(liquidate(&mut env, &liq, &me, &stock, 10 * USDC));
     assert_books(&env);
 }

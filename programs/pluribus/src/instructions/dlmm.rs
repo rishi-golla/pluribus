@@ -560,9 +560,10 @@ pub fn handle_dlmm_liquidate<'info>(ctx: Context<'info, DlmmLiquidate<'info>>, r
     let h = evaluate(&a.pool, &a.credit, health, now, Scope::Liquidation)?;
     let (debt, limit) = (a.pool.debt_of(&a.credit)?, h.liquidation_limit());
     require!(debt > limit, PluribusError::NotLiquidatable);
+    require!(h.first_in_order(i, &a.credit.positions, &a.pool.usdc_mint, debt)?, PluribusError::NotFirstInOrder);
 
     let market = h.market[i];
-    let bonus = BPS + a.pool.params.liq_bonus_bps as u128;
+    let bonus = BPS + h.bonus[i] as u128;
     let max_repay = mul_div_floor(debt, a.pool.params.close_factor_bps as u128, BPS)?;
     // A position priced at nothing goes whole for no payment: left in place it blocks the write-off
     // and the debt stays behind lender shares for good

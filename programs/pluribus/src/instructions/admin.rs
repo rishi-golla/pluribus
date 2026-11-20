@@ -211,6 +211,18 @@ pub fn handle_set_asset_premium(ctx: Context<SetAssetPremium>, premium_bps: u16)
     Ok(())
 }
 
+/// Sets the liquidator's bonus on an asset and on liquidity positions in it, where 0 takes the pool's
+/// It applies at once either way: the pool's bonus is the most any collateral pays, and a change to that waits out the activation delay
+pub fn handle_set_asset_liq_bonus(ctx: Context<SetAssetPremium>, liq_bonus_bps: u16, lp_liq_bonus_bps: u16) -> Result<()> {
+    let max = ctx.accounts.pool.params.liq_bonus_bps;
+    require!(liq_bonus_bps <= max && lp_liq_bonus_bps <= max, PluribusError::InvalidParams);
+    let asset = &mut ctx.accounts.asset;
+    asset.liq_bonus_bps = liq_bonus_bps;
+    asset.lp_liq_bonus_bps = lp_liq_bonus_bps;
+    emit!(ChangeApplied { target: asset.key() });
+    Ok(())
+}
+
 #[derive(Accounts)]
 pub struct ApplyAssetPremium<'info> {
     #[account(mut, seeds = [ASSET_SEED, asset.mint.as_ref()], bump = asset.bump)]
@@ -587,7 +599,9 @@ pub fn handle_init_asset(ctx: Context<InitAsset>, params: AssetParams, sigma_see
         jump_seen: 0,
         live_price: false,
         price_exponent: 0,
-        reserved: [0; 5],
+        liq_bonus_bps: 0,
+        lp_liq_bonus_bps: 0,
+        reserved: [0; 1],
         premium_bps: 0,
         pending_premium_bps: 0,
         premium_pending_at: 0,

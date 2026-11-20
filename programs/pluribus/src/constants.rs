@@ -33,6 +33,13 @@ pub const MAX_SCENARIOS: usize = 4;
 pub const TIERS: usize = 3;
 
 pub const BPS: u128 = 10_000;
+/// The liquidation order compares what a dollar of debt repaid costs the liquidation limit, at this many units to the dollar
+pub const ORDER_SCALE: u128 = 1_000_000;
+/// Positions this close in the order count as level, so rounding never decides between two of a kind
+pub const ORDER_TIE: u128 = 100;
+/// With debt this far above the liquidation limit, in bps of the limit, the order no longer binds and any position can go:
+/// an account that deep must not wait for a liquidator who can afford the first one
+pub const ORDER_SLACK_BPS: u128 = 1_000;
 /// Prices and values carry 6 decimals, the same as USDC base units
 pub const PRICE_ONE: u128 = 1_000_000;
 pub const INDEX_ONE: u128 = 1_000_000_000_000_000_000;

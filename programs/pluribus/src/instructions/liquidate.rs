@@ -75,9 +75,10 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     require!(debt > limit, PluribusError::NotLiquidatable);
     // Its price may be off by a split's ratio, so it waits until clear while other collateral can go
     require!(!h.unclear[i], PluribusError::PriceUnclear);
+    require!(h.first_in_order(i, &a.credit.positions, &a.pool.usdc_mint, debt)?, PluribusError::NotFirstInOrder);
 
     let held = a.credit.positions[i].amount as u128;
-    let bonus = BPS + a.pool.params.liq_bonus_bps as u128;
+    let bonus = BPS + h.bonus[i] as u128;
     let unit = pow10(a.asset.price_decimals())?;
     let max_repay = mul_div_floor(debt, a.pool.params.close_factor_bps as u128, BPS)?;
     // a position priced at nothing, as when the issuer emptied its vault, goes whole for no payment:
@@ -168,8 +169,9 @@ pub fn handle_liquidate_lp(ctx: Context<LiquidateLp>) -> Result<()> {
     let h = evaluate(&a.pool, &a.credit, ctx.remaining_accounts, now, Scope::Liquidation)?;
     let (debt, limit) = (a.pool.debt_of(&a.credit)?, h.liquidation_limit());
     require!(debt > limit, PluribusError::NotLiquidatable);
+    require!(h.first_in_order(i, &a.credit.positions, &a.pool.usdc_mint, debt)?, PluribusError::NotFirstInOrder);
 
-    let payment = mul_div_ceil(h.market[i], BPS, BPS + a.pool.params.liq_bonus_bps as u128)?;
+    let payment = mul_div_ceil(h.market[i], BPS, BPS + h.bonus[i] as u128)?;
     let repay = payment.min(mul_div_floor(debt, a.pool.params.close_factor_bps as u128, BPS)?);
     let excess = payment - repay;
 

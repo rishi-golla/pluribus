@@ -909,6 +909,14 @@ impl Env {
         )
     }
 
+    pub fn set_asset_liq_bonus_ix(&self, admin: &Pubkey, mint: &Pubkey, liq_bonus_bps: u16, lp_liq_bonus_bps: u16) -> Instruction {
+        self.ix(
+            pluribus::instruction::SetAssetLiqBonus { liq_bonus_bps, lp_liq_bonus_bps }.data(),
+            pluribus::accounts::SetAssetPremium { admin: *admin, pool: self.pool, asset: self.asset_pda(mint) }.to_account_metas(None),
+            None,
+        )
+    }
+
     pub fn set_asset_premium_ix(&self, admin: &Pubkey, mint: &Pubkey, premium_bps: u16) -> Instruction {
         self.ix(
             pluribus::instruction::SetAssetPremium { premium_bps }.data(),

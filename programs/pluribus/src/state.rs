@@ -807,8 +807,12 @@ pub struct Asset {
     /// Prices are quoted per 10^price_exponent whole tokens, so a token worth a tiny fraction of a cent keeps its precision
     /// at six decimals; 0 for anything priced in cents or more
     pub price_exponent: u8,
+    /// The liquidator's bonus in bps on this token, and on a liquidity position in it, where 0 takes the pool's
+    /// Carved out of `reserved`, so an asset listed before them reads zero
+    pub liq_bonus_bps: u16,
+    pub lp_liq_bonus_bps: u16,
     /// Room for fields added later without moving the ones above
-    pub reserved: [u8; 5],
+    pub reserved: [u8; 1],
     /// Extra yearly rate on debt this asset backs, paid to junior lenders, who lose first if it fails
     /// Added after launch: `migrate_account` grows an asset listed before it, and the new bytes start at zero
     pub premium_bps: u16,
@@ -818,6 +822,15 @@ pub struct Asset {
 }
 
 impl Asset {
+    /// The liquidator's bonus in bps on this token, or with `lp` on a liquidity position in it
+    /// Its own when set and never above the pool's, so every cost that covers the pool's bonus covers this one
+    pub fn liq_bonus(&self, p: &PoolParams, lp: bool) -> u16 {
+        match if lp { self.lp_liq_bonus_bps } else { self.liq_bonus_bps } {
+            0 => p.liq_bonus_bps,
+            own => own.min(p.liq_bonus_bps),
+        }
+    }
+
     /// Decimals that turn a base-unit amount into the unit this asset's price is quoted for
     pub fn price_decimals(&self) -> u8 {
         self.decimals.saturating_add(self.price_exponent)

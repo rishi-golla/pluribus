@@ -224,6 +224,10 @@ pub mod pluribus {
         admin::handle_set_asset_premium(ctx, premium_bps)
     }
 
+    pub fn set_asset_liq_bonus(ctx: Context<SetAssetPremium>, liq_bonus_bps: u16, lp_liq_bonus_bps: u16) -> Result<()> {
+        admin::handle_set_asset_liq_bonus(ctx, liq_bonus_bps, lp_liq_bonus_bps)
+    }
+
     pub fn apply_asset_premium(ctx: Context<ApplyAssetPremium>) -> Result<()> {
         admin::handle_apply_asset_premium(ctx)
     }
