@@ -43,7 +43,8 @@ import {
 import { cluster, connection, key, me, root, url, wallet } from "./orca-common.ts";
 
 const DAY = 86_400;
-const SEED_USDC = { senior: 1_000_000, junior: 100_000 };
+// $50k in all, with juniors at the tenth of the pool their premium is tuned for
+const SEED_USDC = { senior: 45_000, junior: 5_000 };
 // A local validator cannot skip days, so localnet runs the same rules on seconds, with the shortest claim window allowed
 // The program requires activation >= exit wait + claim window, and a gap >= exit wait + 3 days (the longest window) and >= activation
 const WAITS =
