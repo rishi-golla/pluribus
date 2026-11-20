@@ -552,10 +552,9 @@ export function ProductTour() {
             >
               <h3 className="text-[30px] font-semibold leading-[1.1] tracking-[-0.025em]">{t.title}</h3>
               <p className="mt-4 max-w-[440px] text-[15px] leading-[1.65] text-t2">{t.body}</p>
-              <ul className="mt-6 space-y-2.5">
+              <ul className="mt-7 max-w-[440px] border-b border-line">
                 {t.points.map((p) => (
-                  <li key={p} className="flex items-center gap-2.5 text-[14px] text-t2">
-                    <Check size={14} strokeWidth={2.25} className="text-brand" />
+                  <li key={p} className="border-t border-line py-3 text-[14px] text-t2">
                     {p}
                   </li>
                 ))}
