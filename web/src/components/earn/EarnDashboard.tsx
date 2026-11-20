@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { Chip, KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
@@ -449,7 +448,6 @@ function SupplyPanel({ tranche, onTranche }: { tranche: Tranche; onTranche: (t: 
             <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
               <Token src="/tokens/usdc.webp" size={20} />
               USDC
-              <ChevronDown size={16} strokeWidth={1.75} className="text-t3" />
             </span>
           </div>
         </label>
