@@ -8740,7 +8740,7 @@ export type Pluribus = {
           {
             "name": "juniorTargetBps",
             "docs": [
-              "Junior share of lender assets at which junior lenders earn the whole premium, below it the premium scales down"
+              "Junior share of lender assets the premium is sized for, below a tenth of it the junior rate multiple stops rising"
             ],
             "type": "u16"
           },
@@ -8748,7 +8748,7 @@ export type Pluribus = {
             "name": "juniorPremiumBps",
             "docs": [
               "Risk premium: junior lenders earn the senior rate plus this share of the senior yield on every senior dollar they cover",
-              "Junior rate = senior rate x (1 + premium x senior / junior), the premium scaled down below the target share"
+              "Junior rate = senior rate x (1 + premium x senior / junior), the junior share counted as at least a tenth of the target"
             ],
             "type": "u16"
           },
