@@ -8,6 +8,7 @@ import { PortfolioGrid } from "@/components/landing/PortfolioGrid";
 import { ProductTour } from "@/components/landing/ProductTour";
 import { FadeUp } from "@/components/motion";
 import { SiteNav } from "@/components/SiteNav";
+import ScrollReveal from "@/components/reactbits/ScrollReveal";
 import { Button } from "@/components/ui";
 import { CLUSTER } from "@/lib/cluster";
 
@@ -104,6 +105,16 @@ export default function Home() {
         </div>
 
         <main className="pb-32">
+          <ScrollReveal
+            containerClassName="mt-24 max-w-[1040px] sm:mt-[144px] !mb-0"
+            textClassName="!text-[30px] !leading-[1.18] tracking-[-0.03em] sm:!text-[52px]"
+            baseOpacity={0.12}
+            blurStrength={6}
+            wordAnimationEnd="center center"
+          >
+            Pluribus values everything you hold together, as it would stand after a sharp price drop, and lends you USDC against what is left.
+          </ScrollReveal>
+
           <div className="mt-24 sm:mt-[128px]">
             <CreditLimit />
           </div>
