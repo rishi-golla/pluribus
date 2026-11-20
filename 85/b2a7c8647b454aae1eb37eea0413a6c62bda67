@@ -1,0 +1,27 @@
+web/src/app/globals.css
+  s_6b968bfb01b567::t_4a949670b8955a 188-216
+web/src/components/borrow/BorrowDashboard.tsx
+  s_6b968bfb01b567::t_ae2707a8caed86 1033
+web/src/components/earn/EarnDashboard.tsx
+  s_6b968bfb01b567::t_08158d57dfc8d9 703
+web/src/components/overview/OverviewDashboard.tsx
+  s_6b968bfb01b567::t_4d7edfe6c06eea 540
+web/src/components/statements/StatementsDashboard.tsx
+  s_6b968bfb01b567::t_9c515889aa5a0b 235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85b2a7c8647b454aae1eb37eea0413a6c62bda67",
+  "prompts": {},
+  "sessions": {
+    "s_6b968bfb01b567": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_6b968bfb01b567",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
