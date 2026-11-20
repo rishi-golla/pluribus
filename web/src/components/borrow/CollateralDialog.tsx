@@ -193,7 +193,7 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
         <Label>Assets</Label>
         <Label>Pick several to move them together</Label>
       </div>
-      <div role="group" aria-label="Assets" className="grid max-h-[262px] gap-2 overflow-y-auto">
+      <div role="group" aria-label="Assets" className="thin-scroll -mr-3.5 grid max-h-[262px] gap-2 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
         {options.map((o) => {
           const on = chosen.some((c) => c.id === o.id);
           // A pair or position that takes nothing right now is greyed out and cannot be picked, unless it was opened from its row
@@ -332,7 +332,7 @@ export function CollateralDialog({ live, open, onClose }: { live: Live; open: { 
             role="dialog"
             aria-modal="true"
             aria-label="Collateral"
-            className="panel max-h-[calc(100dvh-32px)] w-[420px] max-w-[calc(100vw-32px)] overflow-y-auto"
+            className="panel thin-scroll max-h-[calc(100dvh-32px)] w-[420px] max-w-[calc(100vw-32px)] overflow-y-auto"
             initial={{ y: 12, scale: 0.98 }}
             animate={{ y: 0, scale: 1 }}
             exit={{ y: 8, scale: 0.98 }}
