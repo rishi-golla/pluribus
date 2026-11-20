@@ -38,6 +38,9 @@ export const { values: args } = parseArgs({
     positions: { type: "string" },
     asset: { type: "string" },
     price: { type: "string" },
+    // npm run lending: the dollars each tranche should hold
+    senior: { type: "string" },
+    junior: { type: "string" },
   },
 });
 export const url = args.url;

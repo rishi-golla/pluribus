@@ -50,7 +50,11 @@ agent() {
 </plist>
 EOF
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
+  # bootout returns before the old process is gone, and loading the label again meanwhile fails with an I/O error
+  local i
+  for i in {1..30}; do launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1 || break; sleep 0.5; done
+  for i in {1..5}; do launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null && break; sleep 1; done
+  launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1 || { echo "Could not load $label"; exit 1; }
   echo "Loaded $label, logs in $LOGS/$name.log"
 }
 
@@ -59,6 +63,7 @@ agent localnet -- run localnet -- --url "http://127.0.0.1:$RPC_PORT" --keep
 agent keeper -- run keeper
 agent indexer "PORT=$INDEXER_PORT" "STREAMS_TOKEN=$TOKEN" -- run indexer
 agent replay "PORT=$INDEXER_PORT" "STREAMS_TOKEN=$TOKEN" -- run indexer:replay -- --follow
+agent pricefeed -- run pricefeed
 
 # Each service on its own path of one public port; Funnel strips the path before passing a request on
 $TS funnel --bg --https=$FUNNEL_PORT --set-path=/rpc "http://127.0.0.1:$RPC_PORT"
