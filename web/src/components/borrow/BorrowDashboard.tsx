@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, ArrowRight, Award, ChevronRight, Info, Plus, ShieldCheck, TrendingUp, TriangleAlert } from "lucide-react";
+import { Activity, ArrowRight, Award, ChevronDown, ChevronRight, Info, Plus, ShieldCheck, TrendingUp, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Chip, KV, Label, StatusDot, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
@@ -339,6 +339,7 @@ function DrawPanel({ form, onApply }: { form: DrawForm; onApply: (mode: Mode, am
             <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
               <Token src="/tokens/usdc.webp" size={20} />
               USDC
+              <ChevronDown {...ic} className="text-t3" />
             </span>
           </div>
           <div className="mt-1 text-[12.5px] text-t3">${money(amount)}</div>
