@@ -89,7 +89,8 @@ async function logsOf(signature: string) {
 // Sends one transaction and checks that exactly the expected events come back out of its logs
 let decoded = 0;
 async function run(name: string, ixs: Promise<TransactionInstruction[]>, signer: Keypair, expected: string[]) {
-  const events = decodeEvents(await logsOf(await send(await ixs, [signer])));
+  // a premium is booked only when a second has passed since the last one, so it shows up at random
+  const events = decodeEvents(await logsOf(await send(await ixs, [signer]))).filter((e) => e.name !== "premiumBooked");
   const names = events.map((e) => e.name);
   check(name, names.join() === expected.join(), `events [${names.join(", ")}]${names.join() === expected.join() ? "" : `, wanted [${expected.join(", ")}]`}`);
   decoded += 1;
@@ -390,8 +391,8 @@ try {
     const base = math.poolStats(await fetchPool(program)).borrowRateBps;
     check(
       "The borrower reached the top tier and pays the discounted rate",
-      tier.from === 0 && tier.to === 2 && promoted.tier === 2 && Math.abs(promoted.borrowRateBps - (base - params.tierDiscountBps[2])) <= 2,
-      `${promoted.borrowRateBps} bps against a base rate of ${base.toFixed(1)} bps`,
+      tier.from === 0 && tier.to === 2 && promoted.tier === 2 && Math.abs(promoted.borrowRateBps - promoted.premiumRateBps - (base - params.tierDiscountBps[2])) <= 2,
+      `${promoted.borrowRateBps} bps, ${promoted.premiumRateBps} of it risk premium, against a base rate of ${base.toFixed(1)} bps`,
     );
   } finally {
     await setParamsNow(params);

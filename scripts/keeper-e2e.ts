@@ -121,7 +121,7 @@ try {
   // The keeper leaves LP fees to whoever collects them for the bounty, so the test collects them itself, as anyone may
   step("Fees: collected for the bounty");
   const bountyAccounts = [NATIVE_MINT, usdc].map((m) => createAssociatedTokenAccountIdempotentInstruction(me, getAssociatedTokenAddressSync(m, me), me, m));
-  await send([...bountyAccounts, ...(await ix.autopay(program, d, me, owner, positionMint))], []);
+  await send([...bountyAccounts, ...(await ix.autopay(program, d, me, owner, positionMint))]);
 
   step("Keeper");
   const keeper = start("keeper", "keeper/index.ts", [], {
