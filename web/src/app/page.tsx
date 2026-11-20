@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BorrowLimit } from "@/components/landing/BorrowLimit";
+import { Closing } from "@/components/landing/Closing";
 import { Features } from "@/components/landing/Features";
 import { MARKS, type MarkName } from "@/components/landing/marks";
 import { EarnUpTo, PoolStats } from "@/components/landing/PoolFacts";
@@ -133,6 +134,22 @@ export default function Home() {
             <div className="grid grid-cols-2 border-y border-line md:grid-cols-4 [&>*:nth-child(3)]:border-l-0 [&>*:nth-child(3)]:pl-0 md:[&>*:nth-child(3)]:border-l md:[&>*:nth-child(3)]:pl-7">
               <PoolStats />
             </div>
+          </FadeUp>
+
+          <FadeUp y={20} className="mt-24 sm:mt-[160px]">
+            <Closing>
+              <h2 className="text-[40px] font-semibold leading-[1] tracking-[-0.035em] sm:text-[64px]">
+                One loan against
+                <br />
+                everything you hold.
+              </h2>
+              <div className="flex flex-wrap gap-3">
+                <Cta href="/borrow" primary>
+                  Open a credit line
+                </Cta>
+                <Cta href="/earn">Earn on USDC</Cta>
+              </div>
+            </Closing>
           </FadeUp>
         </main>
       </div>
