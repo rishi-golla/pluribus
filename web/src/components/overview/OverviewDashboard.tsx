@@ -13,8 +13,7 @@ import { CompoundButton } from "@/components/compound/CompoundButton";
 import { niceMax } from "@/lib/chart";
 import { deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
-import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market, focusMarket, useFocusedMarket } from "@/lib/markets";
-import { DLMM_PROGRAM_ID, RAYDIUM_CLMM_PROGRAM_IDS } from "@/lib/pluribus/sdk";
+import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market, focusMarket, listed, useFocusedMarket } from "@/lib/markets";
 import { iconSrc } from "@/lib/tokens";
 
 const RANGES = ["7D", "30D", "90D"] as const;
@@ -342,17 +341,6 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "fees", label: "Fees, 30D" },
   { key: "volume", label: "Volume, 24H" },
 ];
-
-/** Whether the deployment lists the market, whether or not the app reads its totals */
-function listed(m: Market) {
-  const d = deployment;
-  if (!d) return false;
-  // A token market is named for its symbol
-  if (!m.dex) return Object.values(d.assets).some((a) => a.symbol === m.name);
-  if (m.dex === "orca") return !!d.whirlpool;
-  const programs = m.dex === "meteora" ? [DLMM_PROGRAM_ID.toBase58()] : RAYDIUM_CLMM_PROGRAM_IDS.map((k) => k.toBase58());
-  return !!d.lpMarkets?.some((l) => programs.includes(l.dexProgram));
-}
 
 function MarketIcon({ m }: { m: Market }) {
   if (!m.lpBadge) return <Token src={iconSrc(m.icon)} size={32} />;

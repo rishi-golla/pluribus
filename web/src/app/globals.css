@@ -77,9 +77,10 @@
 
   /* The hero grid. --pitch is one cell plus its gap and --gap the gap, both set by the component to whole device pixels;
      until it has measured, the cell is rounded down to a whole css pixel here */
-  /* The landing's first screen from tablet width up. The headline, the board and the collateral strip always fit the window,
+  /* The landing's first screen from tablet width up. The headline, the board and the collateral strip fit the window,
      so the board takes the room the header, the spacing and the strip leave, and the type and spacing give way with it.
-     Under the min-height nothing more can give, and the page scrolls */
+     A short window stops that at a board about a third of the page wide, 320px at least: under it the headline falls out of scale with the
+     paragraph and the buttons, which do not shrink, so the page scrolls instead */
   @media (min-width: 48rem) {
     .first-screen {
       --hero-pad: clamp(1rem, 7svh, 4rem);
@@ -90,7 +91,7 @@
       /* the strip's label, rows and rules: its marks take two rows until they fit on one */
       --strip-h: 99px;
       /* the height left for the headline and the board; 4rem is the header */
-      --hero-room: calc(100svh - 4rem - var(--hero-pad) - var(--strip-gap) - 2 * var(--strip-pad) - var(--strip-h) - var(--hero-end));
+      --hero-room: max(calc(100svh - 4rem - var(--hero-pad) - var(--strip-gap) - 2 * var(--strip-pad) - var(--strip-h) - var(--hero-end)), clamp(320px, 36vw, 400px));
       /* as tall as that room, and no wider than about half the page */
       --hero-board: clamp(200px, min(var(--hero-room), 50vw - 80px), 560px);
       /* the text column is three headline lines (2.94 of its size), the paragraph and the buttons (152px with their margins)
@@ -98,7 +99,8 @@
       --hero-h1: clamp(32px, min((var(--hero-room) - 152px - var(--hero-gap)) / 2.94, (100vw - 136px - var(--hero-board)) / 6.9), 80px);
       /* the board sits a little under the row's middle, level with the text and the yield line together */
       --hero-drop: clamp(10px, 3.2svh, 30px);
-      height: calc(100svh - 4rem);
+      /* the parts added up: the window's height while the room is what the window leaves, more once the room stops shrinking */
+      height: calc(var(--hero-pad) + var(--hero-room) + var(--strip-gap) + 2 * var(--strip-pad) + var(--strip-h) + var(--hero-end));
       min-height: calc(415px + var(--strip-h));
     }
   }

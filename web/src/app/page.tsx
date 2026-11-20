@@ -95,8 +95,9 @@ export default function Home() {
 
         <FadeUp onMount delay={0.34} className="mt-16 border-y border-line py-6 sm:mt-20 md:mb-[var(--hero-end)] md:mt-[var(--strip-gap)] md:shrink-0 md:py-[var(--strip-pad)]">
           <div className="text-[12px] uppercase tracking-[0.06em] text-t3">Collateral on Solana</div>
-          {/* one row on desktop and two under it, so the strip's height is known to the first screen's sums */}
-          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4 lg:flex-nowrap lg:justify-between lg:gap-x-4">
+          {/* one row on desktop and two under it, so the strip's height is known to the first screen's sums.
+              the two rows are four columns, so the last name never sits alone on its row */}
+          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4 md:grid md:grid-cols-[repeat(4,auto)] md:justify-between lg:flex lg:flex-nowrap lg:gap-x-4">
             {collateral.map(([marks, name]) => (
               <span key={name} className="flex items-center gap-2.5 whitespace-nowrap text-[14px] font-medium text-t1">
                 <span className="flex items-center gap-1.5">
