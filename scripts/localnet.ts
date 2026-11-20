@@ -4,10 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
-import { PROGRAM_ID, WHIRLPOOL_PROGRAM_ID } from "../sdk/index.ts";
+import { DLMM_PROGRAM_ID, PROGRAM_ID, WHIRLPOOL_PROGRAM_ID } from "../sdk/index.ts";
 import { args, connection, key, me, root, url, wallet } from "./orca-common.ts";
 
 const orca = path.join(root, "programs/pluribus/tests/fixtures/orca");
+const dlmm = path.join(root, "programs/pluribus/tests/fixtures/dlmm");
 const port = Number(new URL(url).port);
 // Every port sits in the 2000 above this, which for 8899 is the stock layout
 // A chain on another RPC port then never collides with one on the default
@@ -27,6 +28,13 @@ if (!fs.existsSync(path.join(orca, "whirlpool.so"))) {
   const dump = ["program", "dump", WHIRLPOOL_PROGRAM_ID.toBase58(), path.join(orca, "whirlpool.so")];
   execFileSync("solana", [...dump, "--url", "https://api.devnet.solana.com"], { env, stdio: "inherit" });
 }
+// Meteora's DLMM, so the chain has a pair to list next to the whirlpool, as devnet does
+// The devnet build, since mainnet's makes pairs the program will not list
+if (!fs.existsSync(path.join(dlmm, "lb_clmm.so"))) {
+  console.log("Fetching the Meteora DLMM program from devnet");
+  const dump = ["program", "dump", DLMM_PROGRAM_ID.toBase58(), path.join(dlmm, "lb_clmm.so")];
+  execFileSync("solana", [...dump, "--url", "https://api.devnet.solana.com"], { env, stdio: "inherit" });
+}
 if (!fs.existsSync(path.join(root, "target/deploy/pluribus.so"))) {
   console.log("Building the Pluribus program, which takes a few minutes the first time");
   // The program keypair is not in the repo, and the validator loads the binary at the declared id anyway
@@ -34,9 +42,13 @@ if (!fs.existsSync(path.join(root, "target/deploy/pluribus.so"))) {
 }
 const ledger = args.ledger ?? path.join(root, "test-ledger");
 // A server keeps its chain across restarts, so users and addresses survive, and only sets it up the first time
-const keep = Boolean(args.keep) && fs.existsSync(ledger) && fs.existsSync(path.join(root, "deployments/localnet.json"));
+// Written once setup finishes, so a chain whose setup failed partway is started over instead of kept half done
+const ready = path.join(ledger, "pluribus-ready");
+const keep = Boolean(args.keep) && fs.existsSync(ready) && fs.existsSync(path.join(root, "deployments/localnet.json"));
 // Orca's devnet upgrade authority, kept so the program account matches the snapshot
 const orcaAuthority = "8rHQUMS8qg4qrQriPpTbrZqk2yjLrUHSLpA6MzgMSiM";
+// Meteora's devnet upgrade authority, for the same reason
+const dlmmAuthority = "DHLXnJdACTY83yKwnUkeoDjqi4QBbsYGa1v8tJL76ViX";
 
 const validator = spawn(
   "solana-test-validator",
@@ -50,6 +62,9 @@ const validator = spawn(
     ...["--gossip-port", String(base), "--dynamic-port-range", `${base}-${base + 2000}`],
     ...["--upgradeable-program", WHIRLPOOL_PROGRAM_ID.toBase58(), path.join(orca, "whirlpool.so"), orcaAuthority],
     ...["--account", "-", path.join(orca, "config.json"), "--account", "-", path.join(orca, "fee_tier.json")],
+    // A pair can only be made from a preset Meteora published, and this is a 10 bps one from devnet
+    ...["--upgradeable-program", DLMM_PROGRAM_ID.toBase58(), path.join(dlmm, "lb_clmm.so"), dlmmAuthority],
+    ...["--account", "-", path.join(dlmm, "preset_bin_step_10.json")],
     ...["--upgradeable-program", PROGRAM_ID.toBase58(), path.join(root, "target/deploy/pluribus.so"), me.toBase58()],
   ],
   { env, stdio: "inherit" },
@@ -88,8 +103,10 @@ try {
     await import("./orca-fixture.ts");
     await import("./setup.ts");
     await import("./faucet-stock.ts");
+    await import("./dlmm-market.ts");
   }
   execFileSync("npm", ["run", "--silent", "sdk:sync"], { cwd: root, stdio: "inherit" });
+  fs.writeFileSync(ready, `${new Date().toISOString()}\n`);
   const secret = JSON.stringify([...key("faucet").secretKey]);
   fs.writeFileSync(webEnv, `# Written by npm run localnet and removed when it stops\nNEXT_PUBLIC_LOCAL=1\nFAUCET_SECRET=${secret}\n`);
   console.log(`Ready: Pluribus localnet at ${url}, stop it with ctrl-c`);

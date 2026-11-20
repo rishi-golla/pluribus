@@ -60,6 +60,8 @@ const POLL_MS = 15_000;
 const MAX_SAMPLES = 240;
 
 export type OnStage = (stage: Stage) => void;
+/** One piece of collateral to move: a token mint and whole tokens, or an LP position's NFT mint */
+export type Move = { mint: string; amount: number } | { positionMint: string };
 /** One reading of the account and pool, kept for the charts while the app is open */
 export type Sample = { at: number; collateral: number; limit: number; debt: number; utilization: number; apy: Record<Tranche, number>; supplied: Record<Tranche, number> };
 type Tranche = "senior" | "junior";
@@ -78,9 +80,11 @@ export type Live = LiveData & {
   harvest: () => Promise<Harvest | null>;
   /** Asks the server's faucet to fill the connected wallet, once per wallet */
   fund: () => Promise<boolean>;
-  /** Deposits or withdraws a token, in whole tokens, opening the credit account on the first deposit */
-  moveToken: (mint: string, amount: number, deposit: boolean, onStage: OnStage) => Promise<boolean>;
-  moveLp: (positionMint: string, deposit: boolean, onStage: OnStage) => Promise<boolean>;
+  /**
+   * Deposits or withdraws several tokens and LP positions in one transaction, opening the credit account on the first deposit.
+   * A token moves `amount` whole tokens, and an LP position, which has no amount, moves whole
+   */
+  moveCollateral: (items: Move[], deposit: boolean, onStage: OnStage) => Promise<boolean>;
   /**
    * Opens a new Meteora position of `width` bins from `lowerBin` in a listed pair and puts `base` whole base tokens and `usdc`
    * USDC into it, in one transaction. "opened" means a position was opened with nothing to add, and it can be added to from
@@ -382,22 +386,32 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
           await refresh().catch(() => {});
           return true;
         },
-        moveToken: (mint, amount, deposit, onStage) =>
+        moveCollateral: (items, deposit, onStage) =>
           run(async () => {
-            const key = new PublicKey(mint);
-            const held = data.collateral.find((c) => c.mint === mint);
-            const units = BigInt(Math.round(amount * 10 ** d.assets[mint].decimals));
-            // Token-2022 assets like xStocks move through their own token program
-            const listed = d.assets[mint].tokenProgram;
-            const tokenProgram = listed ? new PublicKey(listed) : undefined;
-            if (deposit) return [...(await open()), ...(await ix.depositToken(program, me, key, units, tokenProgram))];
-            // Typed amounts are rounded, so taking everything uses the exact balance and leaves no dust
-            return ix.withdrawToken(program, d, me, key, held && amount >= Math.floor(held.amount * 1e4) / 1e4 ? BigInt(held.raw) : units);
-          }, onStage),
-        moveLp: (positionMint, deposit, onStage) =>
-          run(async () => {
-            const key = new PublicKey(positionMint);
-            return deposit ? [...(await open()), ...(await ix.depositLp(program, d, me, key))] : ix.withdrawLp(program, d, me, key);
+            const units = (mint: string, amount: number) => BigInt(Math.round(amount * 10 ** d.assets[mint].decimals));
+            if (!deposit) {
+              return ix.withdrawMany(
+                program,
+                d,
+                me,
+                items.map((m) => {
+                  if ("positionMint" in m) return { positionMint: new PublicKey(m.positionMint) };
+                  const held = data.collateral.find((c) => c.mint === m.mint);
+                  // Typed amounts are rounded, so taking everything uses the exact balance and leaves no dust
+                  const all = held && m.amount >= Math.floor(held.amount * 1e4) / 1e4;
+                  return { mint: new PublicKey(m.mint), amount: all ? BigInt(held.raw) : units(m.mint, m.amount) };
+                }),
+              );
+            }
+            const each = await Promise.all(
+              items.map((m) => {
+                if ("positionMint" in m) return ix.depositLp(program, d, me, new PublicKey(m.positionMint));
+                // Token-2022 assets like xStocks move through their own token program
+                const listed = d.assets[m.mint].tokenProgram;
+                return ix.depositToken(program, me, new PublicKey(m.mint), units(m.mint, m.amount), listed ? new PublicKey(listed) : undefined);
+              }),
+            );
+            return [...(await open()), ...each.flat()];
           }, onStage),
         openDlmm: async (pairKey, lowerBin, width, base, quote, onStage) => {
           const pair = new PublicKey(pairKey);

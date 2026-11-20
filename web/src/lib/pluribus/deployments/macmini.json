@@ -82,7 +82,22 @@
       "pythAccount": "DBE3N8uNjhKPRHfANdwGvCZghWXyLPdqdSbEW2XFwBiX"
     }
   },
-  "lookupTable": "CN8uHfkom5KsatvbVuNEtJZvbpsKotj8XfaCsHGd7RzX",
+  "lookupTable": "6Gs19Zmok35EkbpQhTyddiZ6vLzfSke2qCUPhqvAK2vR",
+  "lpMarkets": [
+    {
+      "pool": "5w18UgKok28NpWrR759KnwpG21EwNAsjs28S1shWHJBd",
+      "dexProgram": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+      "baseMint": "So11111111111111111111111111111111111111112",
+      "accounts": [
+        "FYP5T7sUoKkHNGuub3Ebzx279NL5vFw2qUyqXfmzpZhA",
+        "9k2rCMEQRTU2pyENd7dnr1X1FDxNwvu4mR9c2NWwEjQ4",
+        "N8mG5UBdygDVhoP3jdfvcQBJQoR3zom7w2JRcB6kQqW",
+        "5PCBD5Pvrq6WqJCD69WBPdCL238quSqmo1HNHWdfWdp2",
+        "BVgzMeC1h9JjmUQ6MRcJ82Sr3TUBUhxGAa3JLSLStHGY",
+        "4eGcWhoA47x9q4x4V631fceSAopgAiDkWNCcUdM3Qsut"
+      ]
+    }
+  ],
   "wsUrl": "wss://dylans-mac-mini.tail70e062.ts.net:10000/rpc-ws",
   "indexerUrl": "https://dylans-mac-mini.tail70e062.ts.net:10000/indexer"
 }
