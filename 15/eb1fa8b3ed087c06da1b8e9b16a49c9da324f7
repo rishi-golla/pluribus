@@ -1,0 +1,27 @@
+web/src/app/page.tsx
+  s_72f9bdb96cd57c::t_b1489035554a5e 3-4,12-13,27-34,116-127,133-134,140-141,146-161,163-174
+web/src/components/landing/BorrowLimit.tsx
+  s_72f9bdb96cd57c::t_536443a1987b3f 1-113
+web/src/components/landing/Closing.tsx
+  s_72f9bdb96cd57c::t_553e1dd5e1f3f8 1-15
+web/src/components/landing/Features.tsx
+  s_72f9bdb96cd57c::t_8b4e9295765a5d 1-3,5-7,9-10,12-20,24-28,31,34-36,39-43,45-68,70-75,77-80,83-85
+web/src/components/landing/ProductTour.tsx
+  s_72f9bdb96cd57c::t_a61ede841adaab 10-11,155-156,158-176,184-185,498-569,608-609,621-628,635-637,653-667,689
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15eb1fa8b3ed087c06da1b8e9b16a49c9da324f7",
+  "prompts": {},
+  "sessions": {
+    "s_72f9bdb96cd57c": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_72f9bdb96cd57c",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
