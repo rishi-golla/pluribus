@@ -6,6 +6,7 @@ import { Num } from "@/components/motion";
 import { FeeBars } from "./FeeBars";
 import { CLUSTER, deployment, getConnection } from "@/lib/cluster";
 import { SCENARIO_NAMES, fetchStats } from "@/lib/live";
+import { JUNIOR_EXAMPLE_SHARE } from "@/lib/markets";
 import { type Asset, type Pool, type PluribusProgram, fetchAsset, fetchLpMarket, fetchPool, fetchPrices, getProgram, math } from "@/lib/pluribus/sdk";
 
 /** The example portfolio the hero draws and the product tour borrows against, in dollars */
@@ -112,15 +113,15 @@ async function load(): Promise<PoolFacts> {
   const pool = await fetchPool(program);
   const now = math.poolStats(pool);
   const p = pool.params;
-  const [kink, target] = [p.kinkBps / 1e4, p.juniorTargetBps / 1e4];
+  const kink = p.kinkBps / 1e4;
   const size = 1e12;
-  // the pool's own rate curve and split, at its kink with juniors at their target share:
+  // the pool's own rate curve and split, at its kink with juniors at the example share of the pool:
   // a pool nobody has borrowed from yet pays nothing, which says nothing about the design
   const example = math.poolStats({
     cash: (1 - kink) * size,
     debtShares: [kink * size],
     borrowIndex: [1e18],
-    juniorAssets: target * size,
+    juniorAssets: JUNIOR_EXAMPLE_SHARE * size,
     reserves: 0,
     protocolFees: 0,
     yieldBuffer: 0,

@@ -54,6 +54,34 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `close_factor_bps` | 5000 | 1 to 5000 | Most of the debt one liquidation can repay. |
 | `warn_health_bps` | 11000 | ≥ 10000 | Health below this drops the account to the base rate tier. |
 
+### Proposed SOL column (not deployed)
+
+Devnet runs the values in the table above. Backtest by aykk on 18 Nov 2026: hourly SOL prices from October 2020 to November 2026, accounts opened on every day and held 90 days.
+
+| | Deployed | Proposed |
+|---|---|---|
+| `init_shock_bps`, SOL per scenario | 3000 / 1500 / 2500 | 2100 / 1050 / 1750 |
+| `maint_shock_bps`, SOL per scenario | 2000 / 1000 / 1700 | 1400 / 700 / 1200 |
+| SOL credit limit and liquidation line | 66.5% and 76.0% | 75.0% and 81.7% |
+| $5,000 SOL + $5,000 stock | 69.4% and 76.5% | 71.8% and 77.9% |
+
+Kamino takes SOL at 74% and 80%, Project 0 at 72.7% and 85.7% (read 17 Nov 2026).
+
+Bad debt in bps of debt, SOL borrowed to the limit, by time from crossing the line to liquidation:
+
+| Rules | 1 hour | 4 hours | 24 hours | 72 hours | Liquidated within 30 days |
+|---|---|---|---|---|---|
+| Deployed | 0.00 | 0.00 | 111.0 | 118.3 | 55.4% |
+| Proposed | 0.03 | 2.33 | 96.2 | 184.1 | 63.0% |
+| Kamino's limits | 0.53 | 3.11 | 102.2 | 157.5 | 71.5% |
+| Project 0's limits | 3.58 | 22.26 | 212.2 | 317.2 | 51.5% |
+
+- The deployed column left no bad debt at a 4 hour stall. The proposed one leaves 2.33 bps.
+- The volatility term lowers the limit when SOL is volatile: 75.0% on the median day, 71.2% on average, 61.8% or less on the most volatile tenth of days.
+- The LST column follows through the add-on: 2600 / 1550 / 2250 draw and 1700 / 1000 / 1500 liquidation. No LST price history was tested.
+- The stock column stays. Since 2007 NVDA passed the 25% liquidation shock in one episode, 33.4% over three days from 1 July 2008. AAPL and TSLA never did.
+- On the live pool this is a loosening, so it waits out `activation_delay_secs`. A fresh deployment takes it from the two `shocks(...)` lines in `scripts/setup.ts`.
+
 ### Liquidation bonus per asset, and the order positions go in
 
 | Setting | Devnet | Allowed | Tuning notes |
@@ -201,7 +229,7 @@ These need a program upgrade to change.
 | `MIN_JUNIOR_EXIT_WINDOW_SECS` / `MAX_JUNIOR_EXIT_WINDOW_SECS` | 60s / 3d | The claim window; the max also sets the minimum pause gap |
 | `MAX_JUNIOR_EXIT_FEE_BPS` | 100 | The exit fee |
 | `JUNIOR_FLOOR_DIVISOR` | 10 | The junior multiple stops rising below a tenth of the target share |
-| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 6 / 3 | Account and table sizes (changing these is a migration) |
+| `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 16 / 4 / 6 / 3 | Account and table sizes (changing these is a migration). 16 slots keep every health-checked path of a full account inside one transaction with room spare: a Meteora liquidation, the dearest, takes about 1.06M of the 1.4M compute units, and a liquidation through the deployment's lookup table about 1040 of the 1232 bytes. Past about 21 a liquidation no longer fits the transaction, and past 32 the credit account overflows the stack when it is read |
 | `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
 | `MIN_EPOCH_SECS` / `MAX_EPOCH_SECS` | 60s / 30d | Yield epoch length when not 0 |
 | `STAKE_POOL_PROGRAMS` | SPL stake pool, Sanctum multi-validator | Programs whose pools can back an LST |

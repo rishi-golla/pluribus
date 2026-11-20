@@ -969,6 +969,7 @@ pub struct CreditAccount {
     pub tier: u8,
     pub healthy_since: i64,
     pub debt_shares: u128,
+    /// Grew from `OLD_MAX_POSITIONS` slots after launch: `migrate_account` moves the fields after them on an older account
     pub positions: [Position; MAX_POSITIONS],
     /// Risk premium of the collateral when last valued, before the tier's share, in bps a year
     /// Added after launch: `migrate_account` grows an account opened before it, and the new bytes start at zero

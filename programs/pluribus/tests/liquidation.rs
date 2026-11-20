@@ -868,10 +868,13 @@ fn lp_liquidation_with_every_slot_full_reuses_the_freed_slot_for_the_excess() {
     env.deposit(&user, &sol, SOL);
     env.deposit(&user, &stock, STOCK);
     let nft = add_lp(&mut env, &user, 100_000, &TOKEN);
-    add_lp(&mut env, &user, 1000, &TOKEN);
-    add_lp(&mut env, &user, 1000, &TOKEN);
+    for _ in 3..MAX_POSITIONS {
+        add_lp(&mut env, &user, 1000, &TOKEN);
+    }
+    // A full account's health check needs more than the default compute, as the SDK asks for
     let limit = env.health(&me).credit_limit;
-    expect_ok(env.draw(&user, limit));
+    env.fund(&usdc, &me, 0);
+    expect_ok(env.send(&[budget(), env.draw_ix(&me, limit)], &[&user]));
     let liq = liquidator(&mut env);
     env.fund(&nft, &liq.pubkey(), 0);
     env.set_price(&sol, 120 * USDC);
@@ -879,7 +882,7 @@ fn lp_liquidation_with_every_slot_full_reuses_the_freed_slot_for_the_excess() {
     let h = env.health(&me);
     let (payment, repay) = (discounted(h.position_value[2]), h.debt / 2);
     assert!(h.debt > h.liquidation_limit && payment > repay);
-    expect_ok(env.send(&[env.liquidate_lp_ix(&liq.pubkey(), &me, &nft)], &[&liq]));
+    expect_ok(env.send(&[budget(), env.liquidate_lp_ix(&liq.pubkey(), &me, &nft)], &[&liq]));
     let credit = env.credit(&me);
     let parked = credit.positions[2];
     assert_eq!((parked.kind, parked.mint, parked.amount), (KIND_TOKEN, usdc, payment - repay));

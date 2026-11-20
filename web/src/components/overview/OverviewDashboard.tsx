@@ -62,7 +62,7 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
         { label: "Bad debt", value: live.pool.badDebt, sub: `${compactUsd(live.pool.reserves)} insurance fund` },
       ]
     : [
-        { label: "Total supplied", value: POOL.supplied, sub: "$9.0M senior, $1.0M junior" },
+        { label: "Total supplied", value: POOL.supplied, sub: "$9.2M senior, $800K junior" },
         { label: "Total borrowed", value: TOTALS.borrowed, sub: `${pct(TOTALS.borrowed / POOL.supplied)} utilization` },
         { label: "Collateral locked", value: TOTALS.collateral, sub: `${MARKETS.length} markets, 5 asset classes` },
         { label: "Fees, 30D", value: TOTALS.fees, sub: `${pct(TOTALS.avgApr)} avg borrow APR` },

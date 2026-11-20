@@ -3,28 +3,46 @@ use anchor_lang::prelude::*;
 use crate::{clmm, constants::*, dlmm, error::PluribusError, events::PremiumBooked, math::*, oracle::*, state::*, token2022};
 
 /// An account's collateral valued under every scenario
-#[derive(Default)]
+/// The per-position fields live on the heap, one entry per slot, since at 16 slots they would overflow the 4 KiB stack frame
 pub struct Health {
     scenarios: usize,
     /// Portfolio value per scenario after shocks and liquidation costs
     pub init: [u128; MAX_SCENARIOS],
     pub maint: [u128; MAX_SCENARIOS],
     /// Each position's share of `maint`, kept so a liquidation can be re-checked without a second pass
-    pub pos_maint: [[u128; MAX_SCENARIOS]; MAX_POSITIONS],
+    pub pos_maint: Vec<[u128; MAX_SCENARIOS]>,
     /// Unshocked value per position
-    pub market: [u128; MAX_POSITIONS],
+    pub market: Vec<u128>,
     /// Price of the token, or of the LP base token
-    pub price: [u128; MAX_POSITIONS],
+    pub price: Vec<u128>,
     /// A token whose price is unclear right now, around a corporate action, which can't be seized until it is clear
-    pub unclear: [bool; MAX_POSITIONS],
+    pub unclear: Vec<bool>,
     /// A token no liquidator can be handed right now, unclear or halted, which the liquidation order steps over
-    pub stuck: [bool; MAX_POSITIONS],
+    pub stuck: Vec<bool>,
     /// The liquidator's bonus in bps on each position
-    pub bonus: [u16; MAX_POSITIONS],
+    pub bonus: Vec<u16>,
     /// Draw value per scenario of every position, paused or not, and the same with each position weighted by its risk premium
-    /// Sums rather than a table per position, since the health check's stack has no room for one
+    /// Sums rather than a table per position, which keeps the heap small
     pub all_init: [u128; MAX_SCENARIOS],
     pub premium_weighted: [u128; MAX_SCENARIOS],
+}
+
+impl Default for Health {
+    fn default() -> Self {
+        Health {
+            scenarios: 0,
+            init: [0; MAX_SCENARIOS],
+            maint: [0; MAX_SCENARIOS],
+            pos_maint: vec![[0; MAX_SCENARIOS]; MAX_POSITIONS],
+            market: vec![0; MAX_POSITIONS],
+            price: vec![0; MAX_POSITIONS],
+            unclear: vec![false; MAX_POSITIONS],
+            stuck: vec![false; MAX_POSITIONS],
+            bonus: vec![0; MAX_POSITIONS],
+            all_init: [0; MAX_SCENARIOS],
+            premium_weighted: [0; MAX_SCENARIOS],
+        }
+    }
 }
 
 /// The worst scenario for the whole portfolio
@@ -91,10 +109,11 @@ pub enum Scope {
     All,
 }
 
-enum Valuer {
+enum Valuer<'a> {
     Token { amount: u64, decimals: u8 },
     Lp { liquidity: u128, lower: u128, upper: u128, decimals: u8 },
-    Dlmm(dlmm::Curve),
+    /// The one curve the health check refills for each Meteora position
+    Dlmm(&'a dlmm::Curve),
 }
 
 /// Square roots of the prices already seen in this health check
@@ -123,7 +142,7 @@ impl Roots {
     }
 }
 
-impl Valuer {
+impl Valuer<'_> {
     /// Value at `price`, with the USDC side of an LP position marked down by `usdc_shock`
     /// A position that has gone all USDC would otherwise sail through every crash untouched
     fn at(&self, price: u128, usdc_shock: u128, roots: &mut Roots) -> Result<u128> {
@@ -134,7 +153,7 @@ impl Valuer {
                 // Kept at or under the payout on either dex
                 Ok(under_payout(base + cut(usdc, usdc_shock)?))
             }
-            Valuer::Dlmm(ref curve) => curve.value(price, usdc_shock),
+            Valuer::Dlmm(curve) => curve.value(price, usdc_shock),
         }
     }
 }
@@ -150,6 +169,7 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
     let (want_init, want_maint) = (scope != Scope::Liquidation, scope != Scope::Draw);
     let mut h = Health { scenarios: n, ..Default::default() };
     let mut roots = Roots::default();
+    let mut curve = dlmm::Curve::default();
     let mut accs = rem.iter();
     let mut next = || accs.next().ok_or_else(|| error!(PluribusError::MissingAccount));
 
@@ -248,7 +268,8 @@ pub fn evaluate(pool: &Pool, credit: &CreditAccount, rem: &[AccountInfo], now: i
                 // Oracle price only, and the pair's active bin and reserves are never read
                 let priced = read_price(pool, &asset, next()?, now)?;
                 h.price[i] = priced.price;
-                let valuer = Valuer::Dlmm(dlmm::curve(pool, &market, pair, account, asset.price_decimals())?);
+                dlmm::read_curve(&mut curve, pool, &market, pair, account, asset.price_decimals())?;
+                let valuer = Valuer::Dlmm(&curve);
                 let waiting = now < pool.effective_at(market.active_at) || now < pool.effective_at(asset.active_at) || !priced.fresh;
                 h.bonus[i] = asset.liq_bonus(params, true);
                 let d = asset.dynamic_shocks(params);

@@ -7807,6 +7807,9 @@
           },
           {
             "name": "positions",
+            "docs": [
+              "Grew from `OLD_MAX_POSITIONS` slots after launch: `migrate_account` moves the fields after them on an older account"
+            ],
             "type": {
               "array": [
                 {
@@ -7814,7 +7817,7 @@
                     "name": "Position"
                   }
                 },
-                5
+                16
               ]
             }
           },
@@ -7843,7 +7846,7 @@
             "type": {
               "array": [
                 "u16",
-                5
+                16
               ]
             }
           }
@@ -8009,7 +8012,7 @@
             "type": {
               "array": [
                 "u64",
-                5
+                16
               ]
             }
           },
@@ -8018,7 +8021,7 @@
             "type": {
               "array": [
                 "u64",
-                5
+                16
               ]
             }
           },
@@ -8030,7 +8033,7 @@
             "type": {
               "array": [
                 "bool",
-                5
+                16
               ]
             }
           },

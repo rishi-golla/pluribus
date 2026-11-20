@@ -853,10 +853,10 @@ fn only_usdc_can_be_drawn_or_supplied() {
     assert_books_balance(&env, &[me, other.pubkey()]);
 }
 
-// Rule 7: at most 5 positions
+// Rule 7: at most MAX_POSITIONS positions
 
 #[test]
-fn a_sixth_position_is_rejected() {
+fn a_position_past_the_last_slot_is_rejected() {
     let mut env = Env::new();
     let admin = env.admin.insecure_clone();
     let user = env.user();
@@ -869,27 +869,29 @@ fn a_sixth_position_is_rejected() {
     });
     let open_slots = |env: &Env| env.credit(&me).positions.iter().filter(|p| p.kind == KIND_EMPTY).count();
 
-    for mint in [sol, stock, usdc, extra[0]] {
+    // Four tokens, and LP positions in every slot left
+    let tokens = [sol, stock, usdc, extra[0]];
+    for mint in tokens {
         env.deposit(&user, &mint, 1_000_000);
     }
-    let first = env.deposit_lp(&user, 120.0, 180.0, 1_000_000);
+    let lps: Vec<Pubkey> = (tokens.len()..MAX_POSITIONS).map(|_| env.deposit_lp(&user, 120.0, 180.0, 1_000_000)).collect();
     assert_eq!(open_slots(&env), 0);
 
     env.fund(&extra[1], &me, 1_000_000);
-    let sixth_token = env.deposit_token_ix(&me, &extra[1], 1_000_000);
+    let one_more_token = env.deposit_token_ix(&me, &extra[1], 1_000_000);
     let second = env.lp(&me, &whirlpool, 120.0, 180.0, 1_000_000, &TOKEN);
-    let sixth_lp = env.deposit_lp_ix(&me, &whirlpool, &second);
-    expect_err(env.send(&[sixth_token.clone()], &[&user]), PluribusError::TooManyPositions);
-    expect_err(env.send(&[sixth_lp.clone()], &[&user]), PluribusError::TooManyPositions);
+    let one_more_lp = env.deposit_lp_ix(&me, &whirlpool, &second);
+    expect_err(env.send(&[one_more_token.clone()], &[&user]), PluribusError::TooManyPositions);
+    expect_err(env.send(&[one_more_lp.clone()], &[&user]), PluribusError::TooManyPositions);
     assert_eq!((env.balance(&extra[1], &me), env.balance(&second, &me)), (1_000_000, 1));
 
     // Adding to an asset that already has a slot is not a new position
     env.deposit(&user, &sol, 1_000_000);
 
     // A freed slot can be taken once
-    expect_ok(env.send(&[env.withdraw_lp_ix(&me, &first)], &[&user]));
-    expect_ok(env.send(&[sixth_token], &[&user]));
-    expect_err(env.send(&[sixth_lp], &[&user]), PluribusError::TooManyPositions);
+    expect_ok(env.send(&[env.withdraw_lp_ix(&me, &lps[0])], &[&user]));
+    expect_ok(env.send(&[one_more_token], &[&user]));
+    expect_err(env.send(&[one_more_lp], &[&user]), PluribusError::TooManyPositions);
     assert_eq!(open_slots(&env), 0);
 }
 

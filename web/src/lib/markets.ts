@@ -2,8 +2,13 @@ import { useSyncExternalStore } from "react";
 import { series } from "./chart";
 import { tokenIcon } from "./tokens";
 
+/** Share of the pool the example figures put in the junior tranche. At the rate kink it pays juniors 17.2% a year */
+export const JUNIOR_EXAMPLE_SHARE = 0.08;
+/** Junior rate over senior rate with juniors at `share` of the pool: the premium on each senior dollar a junior dollar covers */
+export const juniorMultipleAt = (share: number, premium: number) => 1 + (premium * (1 - share)) / share;
+
 /** Pool-level figures from the ARCHITECTURE.pdf example ($10M pool, 80% utilization). */
-export const POOL = { supplied: 10_000_000, borrowed: 8_000_000, senior: 9_000_000, junior: 1_000_000, insurance: 100_000, reserveFactor: 0.1 };
+export const POOL = { supplied: 10_000_000, borrowed: 8_000_000, senior: 9_200_000, junior: 800_000, insurance: 100_000, reserveFactor: 0.1 };
 
 export type AssetClass = "SOL" | "LSTs" | "LP positions" | "Stocks" | "Memes";
 export type Market = {

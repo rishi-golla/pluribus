@@ -155,22 +155,24 @@ pub struct MigrateAccount<'info> {
 /// Permissionless: grows an asset or credit account created before fields were appended to it, the payer covering the extra rent
 /// The new bytes start at zero, which every appended field takes as its starting value, so growing one changes nothing it holds,
 /// and one already at size is left alone
+/// A credit account from before the slots grew to `MAX_POSITIONS` also has the fields after its slots moved past the new ones
 pub fn handle_migrate_account(ctx: Context<MigrateAccount>) -> Result<()> {
     let a = ctx.accounts;
     let account = a.account.to_account_info();
     require_keys_eq!(*account.owner, crate::ID, PluribusError::WrongOwner);
-    let size = {
+    let (size, credit) = {
         let data = account.try_borrow_data()?;
         require!(data.len() >= 8, PluribusError::AccountMismatch);
         if data[..8] == *Asset::DISCRIMINATOR {
-            8 + Asset::INIT_SPACE
+            (8 + Asset::INIT_SPACE, false)
         } else if data[..8] == *CreditAccount::DISCRIMINATOR {
-            8 + CreditAccount::INIT_SPACE
+            (8 + CreditAccount::INIT_SPACE, true)
         } else {
             return err!(PluribusError::AccountMismatch);
         }
     };
-    if account.data_len() >= size {
+    let old = account.data_len();
+    if old >= size {
         return Ok(());
     }
     let rent = Rent::get()?.minimum_balance(size).saturating_sub(account.lamports());
@@ -179,6 +181,25 @@ pub fn handle_migrate_account(ctx: Context<MigrateAccount>) -> Result<()> {
         anchor_lang::system_program::transfer(CpiContext::new(a.system_program.key(), accounts), rent)?;
     }
     account.resize(size)?;
+    if credit {
+        widen_slots(&mut account.try_borrow_mut_data()?, old)?;
+    }
+    Ok(())
+}
+
+/// The credit account layout `widen_slots` moves fields in: header, the slots, then premium, its clock and one compound setting per slot
+const _: () = assert!(CreditAccount::INIT_SPACE == 32 + 1 + 1 + 8 + 16 + MAX_POSITIONS * Position::INIT_SPACE + 2 + 8 + 2 * MAX_POSITIONS);
+
+/// Moves a credit account of `OLD_MAX_POSITIONS` slots, already grown from `old` bytes to the current size, to `MAX_POSITIONS` slots
+/// Its slots stay where they are, and whatever it had of the fields after them moves back past the new slots, which start empty
+/// A compound setting belongs to the slot of the same index, so the old ones keep their slots and the new ones start at zero
+fn widen_slots(data: &mut [u8], old: usize) -> Result<()> {
+    let end = 8 + CreditAccount::INIT_SPACE - (2 + 8 + 2 * MAX_POSITIONS);
+    let start = end - MAX_POSITIONS * Position::INIT_SPACE;
+    let old_end = start + OLD_MAX_POSITIONS * Position::INIT_SPACE;
+    require!(old >= old_end && old - old_end <= 2 + 8 + 2 * OLD_MAX_POSITIONS, PluribusError::AccountMismatch);
+    data.copy_within(old_end..old, end);
+    data[old_end..end].fill(0);
     Ok(())
 }
 

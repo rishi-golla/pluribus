@@ -42,8 +42,10 @@ const key = (s: string) => new PublicKey(s);
 const systemProgram = SystemProgram.programId;
 const tokenProgram = TOKEN_PROGRAM_ID;
 
-// A health check over five LP positions costs about 125k units and a liquidation adds to that
-const budget = () => ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 });
+// A health check walks every slot of the account: with all 16 holding LP positions a draw costs about 450k units, a liquidation
+// about 550k and a Meteora liquidation about 1.06M, so anything that checks health asks for the most one transaction can have
+const HEALTH_UNITS = 1_400_000;
+const budget = () => ComputeBudgetProgram.setComputeUnitLimit({ units: HEALTH_UNITS });
 
 const ata = (mint: PublicKey, owner: PublicKey, program = TOKEN_PROGRAM_ID) =>
   getAssociatedTokenAddressSync(mint, owner, true, program);
@@ -1119,7 +1121,7 @@ const dlmmPairAccounts = (c: Awaited<ReturnType<typeof dlmmPairContext>>) => ({
   dlmmProgram: DLMM_PROGRAM_ID,
 });
 
-// Meteora walks every bin, so its instructions need far more than the default compute
+// Meteora walks every bin, so its instructions need far more than the default compute, and those that check health the most
 const dlmmBudget = (units = 800_000) => ComputeBudgetProgram.setComputeUnitLimit({ units });
 
 // First 8 bytes of sha256("global:initialize_bin_array")
@@ -1272,7 +1274,7 @@ export async function dlmmRemove(program: PluribusProgram, d: Deployment, owner:
   const bins = binArrays(c.pair.address, c.held.lower, c.held.upper);
   const native = c.pair.mintX.equals(NATIVE_MINT) || c.pair.mintY.equals(NATIVE_MINT);
   return [
-    dlmmBudget(),
+    dlmmBudget(HEALTH_UNITS),
     createAta(owner, c.pair.mintX),
     createAta(owner, c.pair.mintY),
     await program.methods
@@ -1293,7 +1295,7 @@ export async function dlmmClose(program: PluribusProgram, d: Deployment, owner: 
   const bins = infos.every(Boolean) ? all : [];
   const native = c.pair.mintX.equals(NATIVE_MINT) || c.pair.mintY.equals(NATIVE_MINT);
   return [
-    dlmmBudget(400_000),
+    dlmmBudget(HEALTH_UNITS),
     createAta(owner, c.pair.mintX),
     createAta(owner, c.pair.mintY),
     await program.methods
@@ -1319,7 +1321,7 @@ export async function dlmmLiquidate(
   const bins = holdsLiquidity(c.held) ? binArrays(c.pair.address, c.held.lower, c.held.upper) : [];
   const usdc = key(d.usdcMint);
   return [
-    dlmmBudget(),
+    dlmmBudget(HEALTH_UNITS),
     createAta(liquidator, c.pair.mintX),
     createAta(liquidator, c.pair.mintY),
     await program.methods
