@@ -10,7 +10,7 @@ import { ProductTour } from "@/components/landing/ProductTour";
 import { FadeUp } from "@/components/motion";
 import { SiteNav } from "@/components/SiteNav";
 import ScrollReveal from "@/components/reactbits/ScrollReveal";
-import { Button } from "@/components/ui";
+import { Brandmark, Button } from "@/components/ui";
 import { CLUSTER } from "@/lib/cluster";
 
 // what devnet takes today, by kind, with the marks of the assets in it; LP venues are named, since the venue is what a holder looks for
@@ -22,6 +22,14 @@ const collateral: [MarkName[], string][] = [
   [["met"], "Meteora LPs"],
   [["nvdax", "aaplx"], "Tokenized stocks"],
   [["bonk"], "Memecoins"],
+];
+
+const footer = [
+  ["/overview", "Overview"],
+  ["/borrow", "Borrow"],
+  ["/earn", "Earn"],
+  ["/statements", "Statements"],
+  ["/docs", "Docs"],
 ];
 
 function Cta({ href, primary, children }: { href: string; primary?: boolean; children: ReactNode }) {
@@ -105,7 +113,7 @@ export default function Home() {
         </FadeUp>
         </div>
 
-        <main className="pb-32">
+        <main>
           <ScrollReveal
             containerClassName="mt-24 max-w-[1040px] sm:mt-[144px] !mb-0"
             textClassName="!text-[30px] !leading-[1.18] tracking-[-0.03em] sm:!text-[52px]"
@@ -152,6 +160,18 @@ export default function Home() {
             </Closing>
           </FadeUp>
         </main>
+
+        <footer className="mt-24 flex flex-col gap-6 border-t border-line py-10 text-[13.5px] text-t2 sm:mt-[128px] sm:flex-row sm:items-center sm:justify-between">
+          <Brandmark className="text-[17px] text-t1" />
+          <nav className="flex flex-wrap gap-x-7 gap-y-2">
+            {footer.map(([href, label]) => (
+              <Link key={href} href={href} className="transition-colors hover:text-t1">
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <span className="text-t3">Running on {CLUSTER}</span>
+        </footer>
       </div>
     </div>
   );
