@@ -1,0 +1,19 @@
+web/eslint.config.mjs
+  s_62a6961beae9d4::t_b912b076564105 17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34302642263be636d889adba4ef8484b5c3e9e46",
+  "prompts": {},
+  "sessions": {
+    "s_62a6961beae9d4": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_62a6961beae9d4",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
