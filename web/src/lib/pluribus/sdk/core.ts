@@ -34,6 +34,9 @@ const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 export type Deployment = {
   cluster: string;
   rpcUrl: string;
+  // For a chain behind a proxy, such as the Mac mini's: its websocket endpoint and the statements indexer
+  wsUrl?: string;
+  indexerUrl?: string;
   programId: string;
   whirlpoolProgramId: string;
   admin: string;
