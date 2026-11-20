@@ -354,14 +354,17 @@ try {
   await run("Third borrower draws up to 90% of the limit", ix.draw(program, d, D, await top(D)), third, ["drawn"]);
   await fails("A draw past the limit is refused", ix.draw(program, d, D, Math.floor(0.2 * n((await view(D)).creditLimit))), third, "ExceedsCreditLimit");
 
-  // Autopay: Orca trading fees pay the debt down
+  // Autopay: Orca trading fees pay the debt down, collected by anyone for the bounty
   await swapRound(3000);
   const beforeFees = { debt: n((await view(A)).debt), sol: await slot(A, sol) };
+  const bountyAccounts = [sol, usdc].map((m) =>
+    createAssociatedTokenAccountIdempotentInstruction(keeper.publicKey, getAssociatedTokenAddressSync(m, keeper.publicKey), keeper.publicKey, m),
+  );
   const [solFee, repaid] = await run(
-    "Keeper runs autopay on the borrower's position",
-    ix.autopay(program, d, keeper.publicKey, A, lpA),
+    "A bounty hunter runs autopay on the borrower's position",
+    ix.autopay(program, d, keeper.publicKey, A, lpA).then((ixs) => [...bountyAccounts, ...ixs]),
     keeper,
-    ["collateralChanged", "repaid"],
+    ["collateralChanged", "repaid", "autopaid"],
   );
   check(
     "Autopay: the USDC fee repaid debt",

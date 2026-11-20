@@ -19,7 +19,7 @@ import {
   type TransactionInstruction,
   sendAndConfirmTransaction, AddressLookupTableProgram } from "@solana/web3.js";
 import BN from "bn.js";
-import { type AssetParams, type Deployment, type PoolParams, getProgram, ix, math, pda, Asset, PythQuote, decodePriceUpdate, lookupAddresses } from "../sdk/index.ts";
+import { type AssetParams, type Deployment, type PoolParams, compound, getProgram, ix, math, pda, Asset, PythQuote, decodePriceUpdate, lookupAddresses } from "../sdk/index.ts";
 import {
   DEC_A,
   DEC_B,
@@ -116,6 +116,8 @@ export const PREMIUM_BPS: Record<string, number> = { BONK: 1500, NVDAx: 300, AAP
 export const PREMIUM_TIERS = [10_000, 6_000, 3_000];
 // The liquidator's bonus in bps on a token and on liquidity positions in it; an asset not named here pays the pool's
 export const LIQ_BONUS_BPS: Record<string, [number, number]> = { SOL: [100, 200] };
+// The share of a position's fees paid to whoever collects them, by compounding or by autopay, since no keeper does it
+export const COMPOUND_BOUNTY_BPS = 200;
 
 // A mock memecoin in a shock column of its own: scenarios are crypto crash, equity crash and broad selloff
 export const MEME = {
@@ -226,6 +228,14 @@ export async function ensurePremiums(d: Deployment) {
     await send(await ix.setPremiumTiers(program, me, PREMIUM_TIERS));
     console.log(`Premium tiers set to ${PREMIUM_TIERS.join("/")} bps`);
   }
+}
+
+// Sets the bounty that pays whoever collects LP fees, which applies at once inside its cap
+export async function ensureCompoundBounty() {
+  const pool = await program.account.pool.fetch(pda.pool());
+  if (pool.compoundBountyBps === COMPOUND_BOUNTY_BPS) return;
+  await send(await compound.setCompoundBounty(program, me, COMPOUND_BOUNTY_BPS));
+  console.log(`Fee bounty set to ${COMPOUND_BOUNTY_BPS} bps`);
 }
 
 // Sets each asset's own liquidation bonus

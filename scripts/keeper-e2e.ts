@@ -1,5 +1,6 @@
 // Proves the keeper and the indexer on a local chain
 // A borrower draws near the limit, the SOL price falls, and the keeper has to clean up alone while the indexer records it
+// The position's fees are collected the way anyone may, for the bounty, since the keeper leaves them alone
 import assert from "node:assert";
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -9,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { Percentage } from "@orca-so/common-sdk";
 import { IGNORE_CACHE, swapQuoteByInputToken } from "@orca-so/whirlpools-sdk";
-import { NATIVE_MINT, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { NATIVE_MINT, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import type { Row, StoredEvent } from "../indexer/events.ts";
@@ -117,13 +118,17 @@ try {
     await (await orcaPool.swap(quote)).buildAndExecute();
   }
 
+  // The keeper leaves LP fees to whoever collects them for the bounty, so the test collects them itself, as anyone may
+  step("Fees: collected for the bounty");
+  const bountyAccounts = [NATIVE_MINT, usdc].map((m) => createAssociatedTokenAccountIdempotentInstruction(me, getAssociatedTokenAddressSync(m, me), me, m));
+  await send([...bountyAccounts, ...(await ix.autopay(program, d, me, owner, positionMint))], []);
+
   step("Keeper");
   const keeper = start("keeper", "keeper/index.ts", [], {
     RPC_URL: url,
     CLUSTER: cluster,
     KEEPER_KEYPAIR: path.join(os.homedir(), ".config/solana/id.json"),
     INTERVAL_MS: "1000",
-    AUTOPAY_INTERVAL_MS: "600000",
     DRY_RUN: "",
   });
   await until("the keeper to promote the account to tier 1", async () => (await fetchCredit(program, owner))?.tier === 1);
@@ -205,9 +210,7 @@ try {
   const autopays = of(all, "autopay");
   assert.equal(autopays.length, 1, `Expected autopay to run once, saw ${autopays.length} rows`);
   assert(autopays[0].amount > 0 && autopays[0].source === "orca", "The autopay row is empty or has no source");
-  // Other accounts on the chain may hold Orca positions too, so only this borrower's line counts
-  const logged = keeper.output().match(new RegExp(`Autopay for ${owner.toBase58()}.*, tx `, "g"));
-  assert.equal(logged?.length, 1, "The keeper did not log exactly one autopay for the borrower");
+  assert(!keeper.output().includes("Autopay"), "The keeper collected LP fees, which it leaves to bounty hunters");
 
   const liquidations = liquidated(all);
   const byKeeper = liquidations.every((r) => r.kind === "repay" && r.detail === `Liquidation by ${short(me)}`);

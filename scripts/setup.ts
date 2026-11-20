@@ -26,6 +26,7 @@ import {
   addFeeds,
   demoActivateNow,
   deploymentFile,
+  ensureCompoundBounty,
   ensureFeedIds,
   ensureLookupTable,
   ensureLiqBonuses,
@@ -286,6 +287,7 @@ addFeeds(d);
 await ensureFeedIds(d);
 await ensurePremiums(d);
 await ensureLiqBonuses(d);
+await ensureCompoundBounty();
 await demoActivateNow(d);
 
 for (const junior of [false, true]) {
