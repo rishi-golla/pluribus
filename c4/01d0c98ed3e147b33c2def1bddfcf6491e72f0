@@ -1,0 +1,19 @@
+web/src/components/reactbits/CursorGrid.tsx
+  s_95811a63316bfe::t_13ca1d6a0644fa 1-661
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c401d0c98ed3e147b33c2def1bddfcf6491e72f0",
+  "prompts": {},
+  "sessions": {
+    "s_95811a63316bfe": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_95811a63316bfe",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
