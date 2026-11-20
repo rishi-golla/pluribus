@@ -1,0 +1,19 @@
+.gitignore
+  s_12dd016577b3f4::t_e4715d25b35e8b 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "67f18dae71857bca4f363945cb40a2d5cb74abcb",
+  "prompts": {},
+  "sessions": {
+    "s_12dd016577b3f4": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_12dd016577b3f4",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
