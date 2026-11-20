@@ -59,6 +59,8 @@ import {
   whirlpoolPda,
 } from "./orca-common.ts";
 
+import { mainnetSolPrice } from "./mainnet-price.ts";
+
 const usd = new Decimal(args.usd);
 const exists = async (a: PublicKey) => (await connection.getAccountInfo(a)) !== null;
 const raw = (x: Decimal) => new BN(x.floor().toFixed(0));
@@ -70,10 +72,13 @@ assert(
 if (!(await exists(usdc))) await createMint(connection, wallet, me, null, DEC_B, usdcKey);
 
 if (!(await exists(whirlpool))) {
+  // A new chain starts at SOL's real price, which the price feed then keeps it at
+  const start = await mainnetSolPrice();
+  console.log(`Opening the whirlpool at $${start}, SOL's price on mainnet`);
   await toTx(
     ctx,
     WhirlpoolIx.initializePoolIx(ctx.program, {
-      initSqrtPrice: PriceMath.priceToSqrtPriceX64(new Decimal(150), DEC_A, DEC_B),
+      initSqrtPrice: PriceMath.priceToSqrtPriceX64(new Decimal(start), DEC_A, DEC_B),
       whirlpoolsConfig: config,
       whirlpoolPda,
       tokenMintA: NATIVE_MINT,
@@ -93,9 +98,11 @@ assert(pool.getData().tokenMintA.equals(NATIVE_MINT));
 const tick = (price: number) =>
   Math.round(PriceMath.priceToTickIndex(new Decimal(price), DEC_A, DEC_B) / TICK_SPACING) * TICK_SPACING;
 const [minTick, maxTick] = TickUtil.getFullRangeTickIndex(TICK_SPACING);
+// Shaped around the pool's own price: a wide range, a tight one and the full range
+const at = PriceMath.sqrtPriceX64ToPrice(pool.getData().sqrtPrice, DEC_A, DEC_B).toNumber();
 const specs = [
-  { name: "p1", lower: tick(120), upper: tick(180), tokenProgram: TOKEN_PROGRAM_ID },
-  { name: "p2", lower: tick(145.5), upper: tick(154.5), tokenProgram: TOKEN_2022_PROGRAM_ID },
+  { name: "p1", lower: tick(at * 0.7), upper: tick(at * 1.3), tokenProgram: TOKEN_PROGRAM_ID },
+  { name: "p2", lower: tick(at * 0.97), upper: tick(at * 1.03), tokenProgram: TOKEN_2022_PROGRAM_ID },
   { name: "p3", lower: minTick, upper: maxTick, tokenProgram: TOKEN_2022_PROGRAM_ID },
 ].map((s) => {
   const mint = key(`${s.name}-mint`);

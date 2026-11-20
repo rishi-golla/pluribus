@@ -409,11 +409,14 @@ export type FaucetOptions = {
   usdc?: number;
   // Whole tokens of any other mock mint the admin can mint, by mint address
   tokens?: Record<string, number>;
-  // Dollar value of the Orca position to open, over `range` in dollars per SOL
+  // Dollar value of the Orca position to open, over `range` in dollars per SOL, or by default `spread` either side of the pool's price
   lp?: number;
   range?: [number, number];
+  spread?: number;
   nftProgram?: PublicKey;
 };
+// A new LP range reaches this far either side of the price, here and in the app's Meteora form
+export const LP_SPREAD = 0.3;
 
 // Makes a wallet demo-ready and returns the mint of the Orca position it was given, if any
 export async function faucet(d: Deployment, to: PublicKey, o: FaucetOptions): Promise<PublicKey | null> {
@@ -440,14 +443,16 @@ export async function faucet(d: Deployment, to: PublicKey, o: FaucetOptions): Pr
   }
   if (mints.length) await send(mints);
 
-  return o.lp ? openPosition(to, o.lp, o.range ?? [120, 180], o.nftProgram ?? TOKEN_2022_PROGRAM_ID) : null;
+  return o.lp ? openPosition(to, o.lp, o.range, o.spread ?? LP_SPREAD, o.nftProgram ?? TOKEN_2022_PROGRAM_ID) : null;
 }
 
 // Opens a position as the admin, who holds the mock USDC mint authority, then hands the NFT over
-async function openPosition(to: PublicKey, usd: number, range: [number, number], nftProgram: PublicKey) {
+async function openPosition(to: PublicKey, usd: number, given: [number, number] | undefined, spread: number, nftProgram: PublicKey) {
   const pool = await client.getPool(whirlpool, IGNORE_CACHE);
   const { sqrtPrice, tokenVaultA, tokenVaultB } = pool.getData();
   const price = PriceMath.sqrtPriceX64ToPrice(sqrtPrice, DEC_A, DEC_B).toNumber();
+  // Centred on wherever the pool trades now, which the price feed keeps at SOL's real price
+  const range = given ?? [price * (1 - spread), price * (1 + spread)];
   const [lower, upper] = range.map((p) => Math.round(math.priceToTick(p) / TICK_SPACING) * TICK_SPACING);
   if (!(lower < upper)) throw new Error(`Range ${range.join("-")} is empty at tick spacing ${TICK_SPACING}`);
   // Value is linear in liquidity

@@ -5,6 +5,7 @@
 //   - Orca Whirlpool pools, for assets Pyth leaves stale on-chain: NVDAx and AAPLx from their USDC pools, and BONK from
 //     the SOL/BONK pool times Pyth's SOL price. A pool's price is its last trade, so its fee is taken as the band around it
 // A Pyth quote older than the asset's limit is not used, and the asset keeps its last price, which the keeper keeps fresh
+// On a local chain it also trades the chain's own SOL/USDC pools to SOL's price, see arb.ts
 //
 //   npm run pricefeed                        the deployment for CLUSTER, localnet by default
 //   PRICEFEED_SYMBOLS=SOL,BONK npm run pricefeed   only these assets, so the others can be set by hand with npm run price
@@ -15,6 +16,7 @@ import { Connection, Keypair, PublicKey, type TransactionInstruction } from "@so
 import BN from "bn.js";
 import Decimal from "decimal.js";
 import { type Deployment, buildTransaction, decodePriceUpdate, getProgram, ix, pda } from "../sdk/index.ts";
+import { makeArb } from "./arb.ts";
 
 const env = process.env;
 const positive = (name: string, fallback: number) => {
@@ -27,6 +29,8 @@ const intervalMs = positive("PRICEFEED_INTERVAL_MS", 10_000);
 const minMoveBps = positive("PRICEFEED_MIN_MOVE_BPS", 1);
 // A Pyth push feed this much older than now counts as stale
 const maxPythAge = positive("PRICEFEED_MAX_AGE_SECS", 600);
+// A local pool further than this from SOL's oracle price is traded back to it
+const arbBps = positive("PRICEFEED_ARB_BPS", 50);
 
 // Mainnet Orca Whirlpools by asset symbol, with the side the asset sits on and what it is quoted in
 // The deepest pool for each when this was written: NVDAx/USDC about $233k, AAPLx/USDC $20k, SOL/BONK $224k
@@ -47,6 +51,7 @@ const admin = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(env.DEMO_ADMIN_SE
 const connection = new Connection(env.RPC_URL ?? d.rpcUrl, "confirmed");
 const program = getProgram(connection);
 const mainnet = new Connection(env.MAINNET_RPC_URL ?? "https://api.mainnet-beta.solana.com", "confirmed");
+const align = cluster === "localnet" && env.PRICEFEED_ARB !== "0" ? makeArb(connection, d, admin, (line) => log(line)) : null;
 
 const only = env.PRICEFEED_SYMBOLS?.split(",").map((s) => s.trim().toUpperCase());
 // Every asset with a demo price account and a source; USDC is fixed at $1 and has neither
@@ -140,7 +145,10 @@ async function tick() {
     ixs.push(...(await ix.setDemoPrice(program, admin.publicKey, a.mint, fresh.price, fresh.conf)));
     moved.push(`${a.symbol} $${dollars(fresh.price)} (${fresh.source}${fresh.source === "pyth" ? `, ${now - fresh.publishTime}s old` : ""})`);
   }
-  if (!ixs.length) return;
+  // Pools follow the price this tick settled on, whether or not it moved enough to resend
+  const sol = quotes.get("SOL");
+  const arb = align && sol ? () => align(Number(sol.price.toString()) / 1e6, arbBps) : async () => {};
+  if (!ixs.length) return arb();
   const latest = await connection.getLatestBlockhash();
   const tx = await buildTransaction(connection, d, admin.publicKey, ixs, latest.blockhash);
   tx.sign([admin]);
@@ -148,6 +156,7 @@ async function tick() {
   const { value } = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
   if (value.err) throw new Error(`set_demo_price failed: ${JSON.stringify(value.err)}`);
   log(`Set ${moved.join(", ")}`);
+  await arb();
 }
 
 log(`Price feed for ${cluster} at ${env.RPC_URL ?? d.rpcUrl}: ${assets.map((a) => `${a.symbol} (${a.pool ? "orca" : "pyth"})`).join(", ")}, every ${intervalMs} ms from mainnet`);

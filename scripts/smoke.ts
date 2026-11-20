@@ -68,7 +68,7 @@ if (lst && !positions.some((p) => p.mint.toBase58() === lst)) {
   await send(await ix.depositToken(program, who, new PublicKey(lst), 500_000_000), [borrower]);
 }
 if (!positions.some((p) => p.kind === KIND_LP)) {
-  await faucet(d, who, { lp: 20, range: [120, 180] });
+  await faucet(d, who, { lp: 20 });
   const [position] = await listOrcaPositions(connection, d, who);
   if (!position) throw new Error("The faucet's Orca position did not reach the wallet");
   await send(await ix.depositLp(program, d, who, position.positionMint), [borrower]);

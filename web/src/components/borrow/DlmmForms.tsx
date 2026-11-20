@@ -14,6 +14,7 @@ import { iconSrc, tokenIcon } from "@/lib/tokens";
 import {
   BASE_COLOR,
   DEFAULT_RANGE,
+  defaultRange,
   DistributionChart,
   PriceBox,
   REACH,
@@ -192,7 +193,9 @@ function TokenCard({
 export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; market: DlmmMarket | undefined; row?: Collateral; onClose: () => void }) {
   const toast = useToast();
   const d = deployment!;
-  const [range, setRange] = useState<Range>(DEFAULT_RANGE);
+  // Null until the range is moved, so it follows the pair's own default whenever the pair loads or the reset is pressed
+  const [picked, setRange] = useState<Range | null>(null);
+  const range = picked ?? (market ? defaultRange(market) : DEFAULT_RANGE);
   const [strategy, setStrategy] = useState<Strategy>("Spot");
   const [autoOn, setAutoOn] = useState(true);
   const [raw, setRaw] = useState({ base: "", usdc: "" });
@@ -328,7 +331,7 @@ export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; ma
             <div className="flex items-center gap-2">
               <Label>Price Range</Label>
               {!row && (
-                <button type="button" aria-label="Reset the price range" onClick={() => setRange(DEFAULT_RANGE)} className="cursor-pointer text-t3 transition-colors hover:text-t1">
+                <button type="button" aria-label="Reset the price range" onClick={() => setRange(null)} className="cursor-pointer text-t3 transition-colors hover:text-t1">
                   <RotateCcw size={12} strokeWidth={1.75} />
                 </button>
               )}
@@ -367,8 +370,8 @@ export function DlmmDepositForm({ live, market, row, onClose }: { live: Live; ma
                     label={label}
                     price={disp(priceAt(range[which]))}
                     pool={disp(market.price)}
-                    onPrice={(p) => setRange((r) => moveEdge(r, which, positionOf(market, flip ? 1 / p : p)))}
-                    onStep={(step) => setRange((r) => moveEdge(r, which, r[which] + (flip ? -step : step)))}
+                    onPrice={(p) => setRange(moveEdge(range, which, positionOf(market, flip ? 1 / p : p)))}
+                    onStep={(step) => setRange(moveEdge(range, which, range[which] + (flip ? -step : step)))}
                   />
                 ))}
               </div>

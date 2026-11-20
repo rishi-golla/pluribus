@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import { DLMM_PROGRAM_ID, binArrayIndexes, binForPrice, decodeDlmmPair, dlmmPda, fetchPrices, ix, pda } from "../sdk/index.ts";
 import { deploymentFile, demoActivateNow, ensureLookupTable, loadDeployment, program, send } from "./lib.ts";
@@ -13,8 +13,9 @@ import { connection, me, root } from "./orca-common.ts";
 
 // The haircut on a position for the cost of selling it, the same as the other SOL/USDC markets
 const LIQ_COST_BPS = 500;
-// The preset bin step to use, in bps: 10 bps a bin covers a 70-bin position over about 7%
-const BIN_STEP = 10;
+// The preset bin step to use, in bps: at 1% a bin, a 70-bin position reaches 30% either side of the price, where
+// 10 bps would cover only about 7% in all. A pair already recorded in the deployment keeps the step it was made with
+const BIN_STEP = 100;
 // Bin arrays made on each side of the active one, so positions near the price can be opened at once
 const ARRAYS_EACH_SIDE = 1;
 
@@ -111,7 +112,8 @@ const create = around.flatMap((index, i) => {
   ];
 });
 if (create.length) {
-  await send(create);
+  // About 203k compute units each, past the default budget for three
+  await send([ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 * create.length }), ...create]);
   console.log(`Created ${create.length} bin arrays around bin ${pair.activeId}`);
 }
 

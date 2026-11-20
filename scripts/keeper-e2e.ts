@@ -97,7 +97,7 @@ try {
   await setSol(solPrice0.price, solPrice0.conf);
 
   step(`Borrower ${owner.toBase58()}: 10 SOL and a $5,000 Orca position, drawn to 97% of the limit`);
-  const positionMint = (await faucet(d, owner, { sol: 30, lp: 5000, range: [120, 180] }))!;
+  const positionMint = (await faucet(d, owner, { sol: 30, lp: 5000, spread: 0.2 }))!;
   await send(await ix.openAccount(program, owner), [borrower]);
   await send(await ix.depositToken(program, owner, NATIVE_MINT, 10 * LAMPORTS_PER_SOL), [borrower]);
   await send(await ix.depositLp(program, d, owner, positionMint), [borrower]);
