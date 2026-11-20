@@ -7,7 +7,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { FadeUp, Num } from "@/components/motion";
 import { Tag, Token } from "@/components/ui";
 import { CLUSTER } from "@/lib/cluster";
-import { ExampleNote, usePoolFacts } from "./PoolFacts";
+import WakeSlider from "@/components/reactbits/WakeSlider";
+import { EXAMPLE_USD, ExampleNote, usePoolFacts, type ExampleKey } from "./PoolFacts";
 
 const SNAP = { type: "spring", stiffness: 560, damping: 44, mass: 0.7 } as const;
 const QUICK = { duration: 0.16 } as const;
@@ -151,17 +152,37 @@ function ActionButton({ stage, disabled, onClick, children, done }: { stage: Sta
 
 /* ---------- Borrow ---------- */
 
+type Plan = { mode: "draw" | "repay"; raw: number };
+
 /** `limits` is undefined while the pool is read and null when it could not be */
-function BorrowCard({ debt, limits, onCommit }: { debt: number; limits: Limits | null | undefined; onCommit: (kind: "draw" | "repay", amount: number) => void }) {
-  const [mode, setMode] = useState<"draw" | "repay">("draw");
+function BorrowCard({
+  debt,
+  limits,
+  plan,
+  onPlan,
+  onCommit,
+  onPreview,
+}: {
+  debt: number;
+  limits: Limits | null | undefined;
+  /** what the card is set to do; it lives above the card so the collateral bars can set it too */
+  plan: Plan;
+  onPlan: (plan: Plan) => void;
+  onCommit: (kind: "draw" | "repay", amount: number) => void;
+  onPreview: (debt: number) => void;
+}) {
+  const { mode, raw } = plan;
+  const setMode = (next: Plan["mode"]) => onPlan({ mode: next, raw });
+  const setRaw = (next: number) => onPlan({ mode, raw: next });
   // nothing can be drawn or repaid until the pool's limits are known
   const LIMIT = limits?.credit ?? 0;
   const max = limits ? Math.floor(mode === "draw" ? Math.max(0, LIMIT - debt) : debt) : 0;
-  const [raw, setRaw] = useState(2_500);
   const amount = Math.min(raw, max);
   const after = mode === "draw" ? debt + amount : debt - amount;
   const [now, next] = limits ? [health(debt, limits.liquidation), health(after, limits.liquidation)] : [NaN, NaN];
   const tx = useFakeTx();
+  // the collateral bars beside the card follow the slider, not just what has been signed
+  useEffect(() => onPreview(after), [after, onPreview]);
   const fmtH = (h: number) => (Number.isNaN(h) ? "—" : Number.isFinite(h) ? h.toFixed(2) : "No debt");
 
   return (
@@ -474,6 +495,78 @@ function StatementCard({ today }: { today: Row[] }) {
   );
 }
 
+/* ---------- The collateral behind the loan ---------- */
+
+// The LP is the example's concentrated SOL-USDC position; on this page it stands in for a Raydium CLMM one
+const HOLDINGS: { key: ExampleKey; name: string; sub: string; icon: string }[] = [
+  { key: "sol", name: "SOL", sub: "Solana", icon: "sol.webp" },
+  { key: "lst", name: "JitoSOL", sub: "Staked SOL", icon: "jitosol.webp" },
+  { key: "lp", name: "SOL/USDC CLMM", sub: "Raydium position, mock", icon: "ray.webp" },
+  { key: "meme", name: "BONK", sub: "Memecoin", icon: "bonk.webp" },
+];
+// how many bars a holding with a 100% maximum LTV would get
+const LTV_BARS = 36;
+
+/**
+ * What stands behind the example loan, one holding a row. The loan is drawn against the whole basket, so every
+ * holding is used to the same share of its own maximum LTV: the bars fill in step as the Borrow card's amount goes
+ * up, and each is as long as its holding's maximum.
+ */
+function CollateralBars({ credit, used, onUse }: { credit: Record<ExampleKey, number> | undefined; used: number; onUse: (used: number) => void }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between border-b border-line-2 pb-3 text-[12.5px] text-t3">
+        <span>Collateral</span>
+        <span>LTV / max, drag to change</span>
+      </div>
+      {HOLDINGS.map((h) => {
+        // the most this holding lets you borrow, as a share of its value; unknown until the pool has been read
+        const maxLtv = credit ? credit[h.key] / EXAMPLE_USD[h.key] : undefined;
+        return (
+          <div key={h.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-3 border-b border-line py-5 sm:grid-cols-[176px_minmax(0,1fr)_88px]">
+            <div className="flex items-center gap-3">
+              <Token src={`/tokens/${h.icon}`} size={28} />
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium">{h.name}</div>
+                <div className="truncate text-[12px] text-t3">{h.sub}</div>
+              </div>
+            </div>
+            {/* the row is a scale from 0 to 100% LTV and the bar stops at the holding's maximum, so a riskier asset gets a shorter bar */}
+            <div className="order-last col-span-2 sm:order-none sm:col-span-1">
+              <div style={{ width: `${(maxLtv ?? 1) * 100}%` }}>
+                <WakeSlider
+                  // the number of bars follows the length, which keeps every bar the same width
+                  key={Math.round((maxLtv ?? 1) * LTV_BARS)}
+                  className="aria-disabled:opacity-100!"
+                  ariaLabel={`Share of ${h.name}'s maximum LTV in use`}
+                  value={used * 100}
+                  onChange={(v) => onUse(v / 100)}
+                  disabled={!credit}
+                  bars={Math.max(2, Math.round((maxLtv ?? 1) * LTV_BARS))}
+                  height={36}
+                  restHeight={12}
+                  gap={3}
+                  fillColor="var(--color-brand)"
+                  trackColor="var(--color-s3)"
+                />
+              </div>
+            </div>
+            <div className="text-right text-[13px] tabular-nums">
+              {maxLtv !== undefined ? (
+                <>
+                  {Math.round(maxLtv * used * 100)}% <span className="text-t3">/ {Math.round(maxLtv * 100)}%</span>
+                </>
+              ) : (
+                <span className="text-t3">—</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ---------- The showcase ---------- */
 
 const TABS = [
@@ -512,6 +605,8 @@ export function ProductTour() {
   const [tab, setTab] = useState<Tab>("borrow");
   const [today, setToday] = useState<Row[]>([]);
   const debt = START_DEBT + total(today);
+  // the debt the Borrow card's slider is pointing at, before anything is signed
+  const [preview, setPreview] = useState<number | null>(null);
   const index = TABS.findIndex((t) => t.key === tab);
   const [dir, setDir] = useState(1);
   const go = (next: Tab) => {
@@ -522,6 +617,14 @@ export function ProductTour() {
   const facts = usePoolFacts();
   const ex = facts === undefined ? undefined : facts?.example;
   const limits = ex && { credit: ex.creditLimit, liquidation: ex.liquidationLimit };
+
+  const [plan, setPlan] = useState<Plan>({ mode: "draw", raw: 2_500 });
+  // Dragging a collateral bar to a share of the limit sets the card to the draw or repayment that gets there
+  const aim = (used: number) => {
+    if (!limits) return;
+    const change = Math.round((used * limits.credit - debt) / 25) * 25;
+    setPlan(change >= 0 ? { mode: "draw", raw: change } : { mode: "repay", raw: -change });
+  };
 
   const commit = (kind: "draw" | "repay", amount: number) =>
     setToday((rows) => [...rows, { id: `t${rows.length}`, date: "Today", kind, amount: kind === "draw" ? amount : -amount }]);
@@ -550,15 +653,21 @@ export function ProductTour() {
               exit="exit"
               transition={{ x: SNAP, opacity: QUICK }}
             >
-              <h3 className="text-[30px] font-semibold leading-[1.1] tracking-[-0.025em]">{t.title}</h3>
-              <p className="mt-4 max-w-[440px] text-[15px] leading-[1.65] text-t2">{t.body}</p>
-              <ul className="mt-7 max-w-[440px] border-b border-line">
-                {t.points.map((p) => (
-                  <li key={p} className="border-t border-line py-3 text-[14px] text-t2">
-                    {p}
-                  </li>
-                ))}
-              </ul>
+              {tab === "borrow" ? (
+                <CollateralBars credit={ex?.credit} used={limits ? Math.min(1, Math.max(0, (preview ?? debt) / limits.credit)) : 0} onUse={aim} />
+              ) : (
+                <>
+                  <h3 className="text-[30px] font-semibold leading-[1.1] tracking-[-0.025em]">{t.title}</h3>
+                  <p className="mt-4 max-w-[440px] text-[15px] leading-[1.65] text-t2">{t.body}</p>
+                  <ul className="mt-7 max-w-[440px] border-b border-line">
+                    {t.points.map((p) => (
+                      <li key={p} className="border-t border-line py-3 text-[14px] text-t2">
+                        {p}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <Link href={t.href} className="group mt-7 inline-flex items-center gap-1.5 text-[14px] font-medium text-t1">
                 {t.cta}
                 <ArrowRight size={15} strokeWidth={1.75} className="transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -580,7 +689,7 @@ export function ProductTour() {
               transition={{ x: SNAP, opacity: QUICK }}
               className="absolute inset-0 p-5 sm:p-7"
             >
-              {tab === "borrow" && <BorrowCard debt={debt} limits={limits} onCommit={commit} />}
+              {tab === "borrow" && <BorrowCard debt={debt} limits={limits} plan={plan} onPlan={setPlan} onCommit={commit} onPreview={setPreview} />}
               {tab === "earn" && <EarnCard />}
               {tab === "statements" && <StatementCard today={today} />}
             </motion.div>
