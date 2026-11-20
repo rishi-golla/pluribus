@@ -1,0 +1,21 @@
+.gitignore
+  s_0214aeb4876a64::t_b3fa8ba612a53f 18-19
+README.md
+  s_0214aeb4876a64::t_05548cf22f69ca 1-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da762ef6beeab60dd283ad9ec6f81f164d2d486f",
+  "prompts": {},
+  "sessions": {
+    "s_0214aeb4876a64": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_0214aeb4876a64",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
