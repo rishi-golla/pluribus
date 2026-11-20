@@ -28,7 +28,7 @@ export const percent = (bps: number) => `${+(bps / 100).toFixed(2)}%`;
 export async function bountyAccounts(connection: Connection, d: Deployment, payer: PublicKey, recipient: PublicKey): Promise<TransactionInstruction[]> {
   const bases = [d.solMint, ...(d.lpMarkets ?? []).map((m) => m.baseMint)];
   // The SDK only reads each item's base token, so a bare one stands in for a compoundable position
-  const items = bases.map((m) => ({ baseMint: new PublicKey(m) }) as compound.Compoundable);
+  const items = bases.map((m) => ({ baseMint: new PublicKey(m) }) as compound.Harvestable);
   return compound.bountyAccountSetup(connection, d, payer, recipient, items);
 }
 

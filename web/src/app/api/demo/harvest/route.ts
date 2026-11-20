@@ -87,8 +87,8 @@ export async function GET() {
 }
 
 /**
- * Stands in for a busy pool and a keeper on a short timer: the faucet trades SWAP_USD each way through the Whirlpool,
- * which leaves trading fees in every position, then runs the permissionless autopay on each LP position `owner` has deposited
+ * Stands in for a busy pool and a bounty hunter on a short timer: the faucet trades SWAP_USD each way through the Whirlpool,
+ * which leaves trading fees in every position, then collects the fees of each LP position `owner` has deposited, taking the bounty
  */
 export async function POST(request: Request) {
   const signer = faucet();
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
   const connection = getConnection();
   const program = getProgram(connection);
   const credit = await fetchCredit(program, owner);
-  // A position set to compound is compounded instead, the faucet taking the bounty, since autopay would be refused
+  // A position set to compound is compounded and any other autopaid, the faucet taking the bounty either way
   const positions = (credit?.positions ?? []).map((p, slot) => ({ ...p, compounds: (credit?.compoundSlippageBps[slot] ?? 0) > 0 })).filter((p) => p.kind === KIND_LP);
   const lps = positions.map((p) => p.mint);
   if (!lps.length) return refuse("No LP position is deposited", 409);
@@ -165,7 +165,8 @@ export async function POST(request: Request) {
       const signature = await sendAndConfirmTransaction(connection, tx, [signer], { commitment: "confirmed" });
       const logs = (await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 }))?.meta?.logMessages ?? [];
       for (const { name, data } of decodeEvents(logs)) {
-        const amount = Number(data.amount.toString());
+        // compounded and autopaid carry no single amount
+        const amount = data.amount === undefined ? 0 : Number(data.amount.toString());
         if (name === "repaid") totals.repaid += amount / 10 ** usdcDecimals;
         else if (name === "collateralChanged" && data.mint.toBase58() === d.usdcMint) totals.keptUsdc += amount / 10 ** usdcDecimals;
         else if (name === "collateralChanged" && data.mint.toBase58() === d.solMint) totals.sol += amount / 10 ** solDecimals;

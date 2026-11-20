@@ -9,11 +9,11 @@ import { AUTO_MS, CONCURRENCY, FEE_LAMPORTS, FUND_SOL, MIN_BOUNTY_USD, MIN_SESSI
 import { compound, getProgram } from "@/lib/pluribus/sdk";
 import { explain, sendAsKeypair } from "@/lib/tx";
 
-type Compoundable = compound.Compoundable;
+type Harvestable = compound.Harvestable;
 export type CompoundLog = { id: number; at: number; tone: "ok" | "info" | "error"; text: string };
 export type CompoundTotals = { rounds: number; batches: number; positions: number; failed: number; usd: number };
 /** What the last look at the chain found: setup means the wallet has no token accounts for the bounty yet, so nothing can be checked */
-export type Scan = { status: "idle" | "scanning" | "setup" | "ready" | "error"; items: Compoundable[]; at: number | null; error: string | null };
+export type Scan = { status: "idle" | "scanning" | "setup" | "ready" | "error"; items: Harvestable[]; at: number | null; error: string | null };
 
 export type Auto = {
   /** Whether the session key is looking for positions every few minutes */
@@ -78,7 +78,7 @@ const ENSURE_MS = 120_000;
 const RESCAN_MS = 8_000;
 const MAX_LOG = 40;
 
-const sum = (items: Compoundable[]) => items.reduce((s, i) => s + i.usd, 0);
+const sum = (items: Harvestable[]) => items.reduce((s, i) => s + i.usd, 0);
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Why a look or a batch failed, in a line */
 function reason(error: string) {
@@ -119,8 +119,8 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
     setTotals(NO_TOTALS);
   }
 
-  const looking = useRef<Promise<Compoundable[]> | null>(null);
-  const lastLook = useRef<{ owner: string; at: number; items: Compoundable[] }>({ owner: "", at: 0, items: [] });
+  const looking = useRef<Promise<Harvestable[]> | null>(null);
+  const lastLook = useRef<{ owner: string; at: number; items: Harvestable[] }>({ owner: "", at: 0, items: [] });
   const stopped = useRef(true);
   const wake = useRef<(() => void) | null>(null);
   const loopDone = useRef<Promise<void> | null>(null);
@@ -131,7 +131,7 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
 
   /* ---------- Looking ---------- */
 
-  const scanNow = useCallback((): Promise<Compoundable[]> => {
+  const scanNow = useCallback((): Promise<Harvestable[]> => {
     if (looking.current) return looking.current;
     const l = liveRef.current;
     const d = deployment;
@@ -150,7 +150,7 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
           put({ status: "setup", items: [], at: Date.now(), error: null });
           return [];
         }
-        const items = await compound.findCompoundable(getProgram(connection), d, me, me, { concurrency: CONCURRENCY, minUsd: MIN_BOUNTY_USD });
+        const items = await compound.findHarvestable(getProgram(connection), d, me, me, { concurrency: CONCURRENCY, minUsd: MIN_BOUNTY_USD });
         lastLook.current = { owner: who, at: Date.now(), items };
         put({ status: "ready", items, at: Date.now(), error: null });
         return items;
@@ -204,17 +204,20 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
       const connection = getConnection();
       setWorking(true);
       try {
-        const fresh = lastLook.current.owner === l.owner && Date.now() - lastLook.current.at < FRESH_MS;
+        // looking simulates each compound against the bounty's token accounts, so a wallet without them makes them first
+        const accounts = await bountyAccounts(connection, d, me, me);
+        if (accounts.length && !(await l.send(async () => accounts, onStage))) return false;
+        const fresh = !accounts.length && lastLook.current.owner === l.owner && Date.now() - lastLook.current.at < FRESH_MS;
         const items = fresh ? lastLook.current.items : await scanNow();
         if (!items.length) {
-          toast({ title: "Nothing to compound right now", detail: "Positions show up here when their fees are worth the bounty", tone: "info" });
+          toast({ title: "Nothing to collect right now", detail: "A position shows up once its fees are worth the bounty", tone: "info" });
           return false;
         }
         const missing = await compound.bountyAccountSetup(connection, d, me, me, items);
         if (missing.length && !(await l.send(async () => missing, onStage))) return false;
-        const packed = await compound.packCompounds(connection, d, me, items);
+        const packed = await compound.packHarvests(connection, d, me, items);
         // The wallet signs every batch in one prompt, and one that fails on chain leaves the others alone
-        const results = await compound.sendCompounds(
+        const results = await compound.sendHarvests(
           connection,
           packed,
           {
@@ -235,7 +238,7 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
         } else {
           const failed = bad.reduce((s, r) => s + r.items.length, 0);
           toast({
-            title: `Compounded ${positions} ${positions === 1 ? "position" : "positions"}`,
+            title: `Collected the fees of ${positions} ${positions === 1 ? "position" : "positions"}`,
             detail: `${usd(done.reduce((s, r) => s + sum(r.items), 0), 4)} of bounty${failed ? `, ${failed} left for the next try` : ""}`,
             tone: failed ? "info" : "success",
           });
@@ -277,7 +280,7 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
           stop();
           return true;
         }
-        const found = await compound.findCompoundable(getProgram(connection), d, kp.publicKey, me, { concurrency: CONCURRENCY, minUsd: MIN_BOUNTY_USD });
+        const found = await compound.findHarvestable(getProgram(connection), d, kp.publicKey, me, { concurrency: CONCURRENCY, minUsd: MIN_BOUNTY_USD });
         setTotals((t) => ({ ...t, rounds: t.rounds + 1 }));
         if (stopped.current) return true;
         if (!found.length) {
@@ -288,15 +291,15 @@ export function CompounderProvider({ children }: { children: ReactNode }) {
         // The session key pays for any token account the bounty needs and the wallet owns it
         const missing = await compound.bountyAccountSetup(connection, d, kp.publicKey, me, found);
         if (missing.length) await sendAsKeypair(connection, kp, missing);
-        const packed = await compound.packCompounds(connection, d, kp.publicKey, found);
-        const results = await compound.sendCompounds(connection, packed, { keypair: kp }, { concurrency: CONCURRENCY });
+        const packed = await compound.packHarvests(connection, d, kp.publicKey, found);
+        const results = await compound.sendHarvests(connection, packed, { keypair: kp }, { concurrency: CONCURRENCY });
         for (const r of results) {
           const n = `${r.items.length} ${r.items.length === 1 ? "position" : "positions"}`;
           if (r.error) {
             note("error", `A batch of ${n} failed: ${reason(r.error)}`);
             setTotals((t) => ({ ...t, failed: t.failed + r.items.length }));
           } else {
-            note("ok", `Compounded ${n}, ${usd(sum(r.items), 4)} of bounty`);
+            note("ok", `Collected ${n}, ${usd(sum(r.items), 4)} of bounty`);
             setTotals((t) => ({ ...t, batches: t.batches + 1, positions: t.positions + r.items.length, usd: t.usd + sum(r.items) }));
           }
         }
