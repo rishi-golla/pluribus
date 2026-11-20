@@ -131,7 +131,7 @@ An account can be liquidated when its debt is above its liquidation limit. That 
 | Rate | the senior rate | senior rate × (1 + premium × senior ÷ junior) |
 | Exit | at once from idle USDC, otherwise the withdrawal queue | through the exit queue |
 
-Lenders receive the borrower interest left after the reserve factor and the protocol fee. The junior premium is paid in full once juniors hold the target share of the pool and scales down below it.
+Lenders receive the borrower interest left after the reserve factor and the protocol fee. Juniors earn the premium on every senior dollar they cover, so the fewer juniors there are, the more each junior dollar earns. The multiple stops rising once juniors hold under a tenth of the target share.
 
 Interest is not paid as it arrives. It collects in a buffer, and each epoch pays out the buffer it opened with, less a margin, evenly over its length. The yield you see this week comes from last week's interest.
 
@@ -229,7 +229,10 @@ Held in two separate accounts, the last row would have a credit limit of $6,250.
 |---|---|
 | Junior premium | 15% |
 | Junior target share | 10% of the pool |
+| Junior rate at 1% of the pool or less | 15.85 × the senior rate |
+| Junior rate at 5% of the pool | 3.85 × the senior rate |
 | Junior rate at the target share | 2.35 × the senior rate |
+| Junior rate at 50% of the pool | 1.15 × the senior rate |
 | Example at 90% utilization, juniors at 10% | senior 6.34%, junior 14.91% |
 | Epoch | 7 days, from Friday 00:00 UTC |
 | Margin held back each epoch | 10% of the buffer |

@@ -29,8 +29,8 @@ Every setting worth revisiting before mainnet, with the value deployed on devnet
 | `junior_max_pause_secs` | 90d | ≤ 90d | Longest single governance pause. |
 | `junior_pause_gap_secs` | 14d | ≥ max wait + 3d, ≥ activation delay | Unpaused time between two pauses. |
 | `activation_delay_secs` | 8d | ≥ max wait + claim window, ≤ 30d | How long new collateral and loosening changes wait. Must leave juniors time to queue, wait and claim first. |
-| `junior_premium_bps` | 1500 | ≤ 5000 | Yuzu-style risk premium: junior rate = senior rate × (1 + premium × senior / junior). At 15% and juniors at 10% of the pool, juniors earn 2.35× the senior rate. Main lever for junior APY. |
-| `junior_target_bps` | 1000 | 100 to 10000 | Junior share of the pool at which the premium is paid in full; below it the premium scales down. |
+| `junior_premium_bps` | 1500 | ≤ 5000 | Yuzu-style risk premium on every senior dollar juniors cover: junior rate = senior rate × (1 + premium × senior / junior), the junior share counted as at least a tenth of the target. At 15% with a 10% target, juniors earn 15.85× the senior rate at 1% of the pool or less, 3.85× at 5%, 2.35× at 10%, 1.6× at 20% and 1.15× at 50%. Whenever juniors hold more than a tenth of the target they take an extra 15% of what seniors earn. Main lever for junior APY. |
+| `junior_target_bps` | 1000 | 100 to 10000 | Junior share of the pool the premium is sized for. Below a tenth of it the junior multiple stops rising, which caps what a sliver of junior money earns. |
 | `SEED_USDC` (setup.ts) | 1M senior, 100k junior | | Initial deposits from the admin on a fresh deployment. |
 
 The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up to `junior_max_pause_secs`.
@@ -200,6 +200,7 @@ These need a program upgrade to change.
 | `MAX_ACTIVATION_DELAY_SECS` | 30d | How long the admin can lock itself out of loosening |
 | `MIN_JUNIOR_EXIT_WINDOW_SECS` / `MAX_JUNIOR_EXIT_WINDOW_SECS` | 60s / 3d | The claim window; the max also sets the minimum pause gap |
 | `MAX_JUNIOR_EXIT_FEE_BPS` | 100 | The exit fee |
+| `JUNIOR_FLOOR_DIVISOR` | 10 | The junior multiple stops rising below a tenth of the target share |
 | `MAX_POSITIONS` / `MAX_SCENARIOS` / `MAX_GROUPS` / `TIERS` | 5 / 4 / 6 / 3 | Account and table sizes (changing these is a migration) |
 | `VIRTUAL_SHARES` | 1 USDC | First-depositor protection per tranche |
 | `MIN_EPOCH_SECS` / `MAX_EPOCH_SECS` | 60s / 30d | Yield epoch length when not 0 |
