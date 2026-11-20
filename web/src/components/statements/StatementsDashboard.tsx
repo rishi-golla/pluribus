@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDownLeft, ArrowUpRight, Award, Calendar, Check, ChevronDown, Download, FileSpreadsheet, Lock, Percent, Repeat, ShieldAlert, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { LendingHistory } from "@/components/earn/LendingHistory";
@@ -188,6 +188,9 @@ export function StatementsDashboard() {
   const summaries = useMemo(() => summarize(months, debt), [months, debt]);
   const [picked, setMonthKey] = useState(live ? "" : "2026-10");
   const [filter, setFilter] = useState<Filter>("All");
+  const [expanded, setExpanded] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
   // The newest month stands in when the picked one is not in this account's history
   const month = months.find((m) => m.key === picked) ?? months[months.length - 1];
   const monthKey = month.key;
@@ -203,6 +206,17 @@ export function StatementsDashboard() {
   const short = month.short;
   const covered = s.interest > 0 ? s.autopay / s.interest : 0;
   const widest = Math.max(s.autopay, s.interest) || 1;
+
+  // measured, not counted: how many rows fit depends on the height of the column beside the list
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    const check = () => setClipped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const watch = new ResizeObserver(check);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [rows.length, expanded]);
 
   const tiers = live
     ? live.tiers.map((t, i) => ({ name: `Tier ${i + 1}`, rate: t.discount ? `-${(t.discount * 100).toFixed(2)}%` : "0%", minDays: t.minDays }))
@@ -298,13 +312,16 @@ export function StatementsDashboard() {
       </section>
 
       <section className="mt-4 grid grid-cols-[minmax(0,1fr)_372px] gap-4">
-        <div className="panel">
+        {/* collapsed, the list is taken out of the flow, so the row is as tall as the column beside it. print gets every row */}
+        <div className={`panel ${expanded ? "" : "relative print:static"}`}>
+          <div className={expanded ? "" : "absolute inset-0 flex flex-col overflow-hidden print:static print:block"}>
           <div className="flex items-center justify-between px-[22px] pt-[18px]">
             <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
               Activity <span className="font-normal text-t3">{listed.length} events</span>
             </h3>
             <Segmented small label="Filter activity" items={FILTERS} value={filter} onChange={setFilter} />
           </div>
+          <div ref={list} className={expanded ? "" : "relative min-h-0 flex-1 overflow-hidden print:overflow-visible"}>
           <table className="mt-3.5 w-full border-collapse">
             <thead>
               <tr className="text-[12.5px] text-t3 [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
@@ -361,6 +378,20 @@ export function StatementsDashboard() {
             </tbody>
           </table>
           {!rows.length && <div className="px-[22px] py-10 text-center text-t3">{filter === "All" ? "No activity this month" : `No ${filter.toLowerCase()} this month`}</div>}
+          {clipped && !expanded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t from-s1 to-transparent print:hidden" />}
+          </div>
+          {(clipped || expanded) && (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded(!expanded)}
+              className="flex h-11 w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 border-t border-line text-[13px] font-medium text-t2 transition-colors hover:text-t1 print:hidden"
+            >
+              {expanded ? "Show less" : `View all ${rows.length} events`}
+              <ChevronDown size={15} strokeWidth={1.75} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          )}
+          </div>
         </div>
 
         <div className="grid content-start gap-4">
