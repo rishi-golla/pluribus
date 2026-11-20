@@ -8,7 +8,7 @@ import { EASE, Num } from "@/components/motion";
 import { Fold } from "@/components/Fold";
 import { Segmented } from "@/components/Segmented";
 import { LineChart, axisDates, dateLabel, type ChartLine } from "@/components/charts/LineChart";
-import { useAccount, useToast, type Live, type Sample } from "@/components/app/providers";
+import { ConnectPanel, useAccount, useToast, type Live, type Sample } from "@/components/app/providers";
 import { displayAmount, money, usd } from "@/lib/account";
 import { axisTimes, inRange, niceMax, series, smoothPath, timeLabel, type Point } from "@/lib/chart";
 import { JUNIOR_EXAMPLE_SHARE, compactUsd, juniorMultipleAt } from "@/lib/markets";
@@ -681,7 +681,7 @@ function Donut({ split, apr }: { split: Split[]; apr: number }) {
 }
 export function EarnDashboard() {
   const [tranche, setTranche] = useState<Tranche>("senior");
-  const { live } = useAccount();
+  const { live, signedOut } = useAccount();
   const pool = live?.pool;
   const layer = (n: number, name: string, color: string, v: number) => {
     const share = pool && pool.supplied > 0 ? (v / pool.supplied) * 100 : 0;
@@ -733,7 +733,11 @@ export function EarnDashboard() {
 
       <section className="mt-4 grid grid-cols-[minmax(0,1fr)_384px] gap-4">
         <YieldHistory />
-        <SupplyPanel tranche={tranche} onTranche={setTranche} />
+        {signedOut ? (
+          <ConnectPanel detail="Supply USDC to either tranche, and see your own positions, once a wallet is connected." />
+        ) : (
+          <SupplyPanel tranche={tranche} onTranche={setTranche} />
+        )}
       </section>
 
       <section className="mt-4">

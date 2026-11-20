@@ -20,14 +20,14 @@ const label = (stage: Stage) =>
  */
 export function CompoundButton() {
   const c = useCompounder();
-  const { live } = useAccount();
+  const { live, signedOut } = useAccount();
   const toast = useToast();
   const [stage, setStage] = useState<Stage>("idle");
   const bounty = percent(live ? live.pool.compoundBountyBps : SAMPLE_BOUNTY_BPS);
   const busy = stage !== "idle" || c.working;
 
   const run = async () => {
-    if (c.mode === "preview") return toast({ title: "Connect a wallet to collect fees", detail: `${bounty} of the fees is paid to it`, tone: "info" });
+    if (c.mode === "preview" || signedOut) return toast({ title: "Connect a wallet to collect fees", detail: `${bounty} of the fees is paid to it`, tone: "info" });
     setStage("working");
     try {
       // makes the bounty's token accounts when missing, looks, sends, and says how it went in a toast
