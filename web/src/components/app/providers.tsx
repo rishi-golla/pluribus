@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Info, TriangleAlert, Wallet } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { WalletProvider, useWallet, type WalletContextState } from "@solana/wallet-adapter-react";
@@ -61,6 +61,7 @@ const SENIOR_PRICE = 1.0412;
 const JUNIOR_PRICE = 1.1876;
 const POLL_MS = 15_000;
 const MAX_SAMPLES = 240;
+const noSubscribe = () => () => {};
 // An address nobody holds, whose account reads as empty: what a visitor with no wallet sees is only what the chain shows
 const VIEWER = Keypair.generate().publicKey.toBase58();
 
@@ -516,6 +517,8 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
 /** Asks for a wallet: the wallets this browser has, each a button that connects it */
 export function ConnectPanel({ detail, className = "" }: { detail: string; className?: string }) {
   const { wallets, select } = useWallet();
+  // Wallets are only found in the browser, so the server renders none and the list waits for the page to run
+  const inBrowser = useSyncExternalStore(noSubscribe, () => true, () => false);
   const ready = wallets.filter((w) => w.readyState === WalletReadyState.Installed || w.readyState === WalletReadyState.Loadable);
   return (
     <div className={`panel flex flex-col items-center justify-center gap-2 px-6 py-10 text-center ${className}`}>
@@ -525,7 +528,7 @@ export function ConnectPanel({ detail, className = "" }: { detail: string; class
       <div className="mt-2 text-[15px] font-medium">Connect a wallet</div>
       <div className="max-w-[360px] text-[13.5px] text-t2">{detail}</div>
       <div className="mt-3 flex flex-wrap justify-center gap-2">
-        {ready.map((w) => (
+        {inBrowser && ready.map((w) => (
           <button
             key={w.adapter.name}
             type="button"
@@ -536,7 +539,7 @@ export function ConnectPanel({ detail, className = "" }: { detail: string; class
             {w.adapter.name}
           </button>
         ))}
-        {!ready.length && <div className="text-[13px] text-t3">No wallet found. Install Phantom or Solflare, then reload.</div>}
+        {inBrowser && !ready.length && <div className="text-[13px] text-t3">No wallet found. Install Phantom or Solflare, then reload.</div>}
       </div>
     </div>
   );
