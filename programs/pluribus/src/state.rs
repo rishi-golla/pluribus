@@ -30,10 +30,10 @@ pub struct PoolParams {
     pub epoch_secs: u32,
     pub tier_discount_bps: [u16; TIERS],
     pub tier_min_healthy_secs: [i64; TIERS],
-    /// Junior share of lender assets at which junior lenders earn the whole premium, below it the premium scales down
+    /// Junior share of lender assets the premium is sized for, below a tenth of it the junior rate multiple stops rising
     pub junior_target_bps: u16,
     /// Risk premium: junior lenders earn the senior rate plus this share of the senior yield on every senior dollar they cover
-    /// Junior rate = senior rate x (1 + premium x senior / junior), the premium scaled down below the target share
+    /// Junior rate = senior rate x (1 + premium x senior / junior), the junior share counted as at least a tenth of the target
     pub junior_premium_bps: u16,
     /// Wait before a queued junior exit can be claimed, from the min with an empty queue up to the max
     pub junior_min_delay_secs: u32,
@@ -91,7 +91,7 @@ impl PoolParams {
             && self.tier_min_healthy_secs[0] == 0
             && self.tier_discount_bps.windows(2).all(|w| w[0] <= w[1])
             && self.tier_min_healthy_secs.windows(2).all(|w| w[0] < w[1])
-            // A tiny target with a large premium would hand most of the yield to a sliver of junior money
+            // A tenth of the target caps what a junior dollar can earn, so a tiny target would hand a sliver of junior money a huge multiple
             && (100..=BPS).contains(&(self.junior_target_bps as u128))
             && self.junior_premium_bps <= 5_000
             && self.junior_min_delay_secs <= self.junior_max_delay_secs
@@ -510,8 +510,10 @@ impl Pool {
     }
 
     /// How a payout splits between the tranches, as senior and junior weights
-    /// Juniors earn the senior rate per dollar plus the premium on every senior dollar they cover
-    /// A thin junior tranche covers little, so the premium scales down until juniors hold the target share
+    /// Juniors earn the senior rate per dollar plus the premium on every senior dollar they cover,
+    /// so the thinner the junior tranche, the more each junior dollar earns
+    /// The cover counts as at most what juniors would cover at a tenth of the target share, which caps what a sliver of junior money can earn
+    /// Seniors give up the premium on their own yield whenever juniors hold more than that, and less below it
     pub fn split_weights(&self) -> Result<(u128, u128)> {
         let lenders = self.lender_assets()?;
         let junior = self.tranche_assets(true)?;
@@ -519,11 +521,10 @@ impl Pool {
         if junior == 0 {
             return Ok((senior, 0));
         }
-        let target = self.params.junior_target_bps as u128;
-        // Saturating, since nothing here may fail and these products are far past any real pool
-        let filled = junior.saturating_mul(BPS).min(lenders.saturating_mul(target));
-        let scale = BPS.saturating_mul(lenders).saturating_mul(target);
-        let premium = mul_div_wide(senior.saturating_mul(self.params.junior_premium_bps as u128), filled, scale)?;
+        // Nothing here may fail: the target is never zero and every product stays far inside 256 bits
+        let target = (self.params.junior_target_bps as u128).clamp(1, BPS);
+        let most = mul_div_wide(junior, JUNIOR_FLOOR_DIVISOR * BPS - target, target)?;
+        let premium = mul_div_wide(senior.min(most), self.params.junior_premium_bps as u128, BPS)?;
         Ok((senior, junior.saturating_add(premium)))
     }
 

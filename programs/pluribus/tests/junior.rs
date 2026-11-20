@@ -661,8 +661,9 @@ fn share_tokens_of_the_pool_can_never_be_listed_as_collateral() {
 // The junior premium
 
 #[test]
-fn juniors_earn_the_senior_rate_times_one_plus_the_premium_per_senior_dollar_scaled_below_the_target() {
-    for (senior_usdc, junior_usdc) in [(9_000u64, 1_000u64), (9_999, 1)] {
+fn juniors_earn_the_premium_on_every_senior_dollar_they_cover_capped_at_a_tenth_of_the_target() {
+    // At the target, at a tenth of it, below that, and above the target
+    for (senior_usdc, junior_usdc) in [(9_000u64, 1_000u64), (9_900, 100), (9_999, 1), (5_000, 5_000)] {
         let mut env = Env::with(PoolParams { junior_premium_bps: 1_500, ..default_params() }, true);
         open_junior(&mut env);
         lend(&mut env, senior_usdc * USDC, false);
@@ -671,11 +672,11 @@ fn juniors_earn_the_senior_rate_times_one_plus_the_premium_per_senior_dollar_sca
         let before = env.pool_state();
         pass(&mut env, YEAR);
         let after = env.pool_state();
-        // Everything lenders earned, split senior : junior as S : J + 15% x filled x S
+        // Everything lenders earned, split senior : junior as S : J x (1 + 15% x (1 - c) / c), c the junior share counted as at least 1%
         let to_lenders = (after.lender_assets().unwrap() - before.lender_assets().unwrap()) as f64;
         let (senior, junior) = ((senior_usdc * USDC) as f64, (junior_usdc * USDC) as f64);
-        let filled = (junior / ((senior + junior) * 0.1)).min(1.0);
-        let junior_weight = junior + 0.15 * filled * senior;
+        let c = (junior / (senior + junior)).max(0.01);
+        let junior_weight = junior * (1.0 + 0.15 * (1.0 - c) / c);
         let want = to_lenders * junior_weight / (senior + junior_weight);
         let junior_gain = (after.junior_assets - before.junior_assets) as f64;
         assert!(near(junior_gain, want, 1e-4), "{junior_usdc}: junior gained {junior_gain}, expected {want}");

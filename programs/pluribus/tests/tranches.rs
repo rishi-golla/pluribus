@@ -153,7 +153,7 @@ fn only_the_admin_opens_the_junior_tranche_and_only_the_pools_own_mints_are_shar
 }
 
 #[test]
-fn a_thin_junior_tranche_earns_only_a_matching_slice_of_the_premium() {
+fn a_thin_junior_tranche_earns_the_capped_multiple_and_costs_seniors_next_to_nothing() {
     let mut env = Env::new();
     let admin = env.admin.insecure_clone();
     expect_ok(env.send(&[env.init_junior_ix(&admin.pubkey())], &[&admin]));
@@ -171,11 +171,12 @@ fn a_thin_junior_tranche_earns_only_a_matching_slice_of_the_premium() {
     let pool = env.pool_state();
     let base_yield = 5_000.0 * rate * 0.8 / 10_001.0;
     let junior_yield = pool.junior_assets as f64 / USDC as f64 - 1.0;
-    // A thousandth of the target, so the premium is a thousandth of 15% on each of 10000 senior dollars: 1.5 on top of its own 1
-    // At the target a junior dollar would earn 1 + 15% x 9 = 2.35 times the base, here it earns about 2.5, never the whole premium
-    assert!(junior_yield < base_yield * 2.55, "junior yield {junior_yield} against base {base_yield}");
-    assert!(junior_yield > base_yield * 2.45);
-    // Senior lenders give up next to nothing to it
+    // A hundredth of the target's tenth, so the dollar counts as covering what it would at 1% of the pool: 99 senior dollars,
+    // 1 + 15% x 99 = 15.85 times the senior rate, never the premium on all 10000
+    // At the target a junior dollar would earn 1 + 15% x 9 = 2.35 times the senior rate
+    assert!(junior_yield < base_yield * 15.87, "junior yield {junior_yield} against base {base_yield}");
+    assert!(junior_yield > base_yield * 15.78, "junior yield {junior_yield} against base {base_yield}");
+    // Senior lenders give up next to nothing to it: the 14.85 dollars of premium weight next to 10001
     let senior_yield = pool.tranche_assets(false).unwrap() as f64 / (10_000.0 * USDC as f64) - 1.0;
-    assert!(senior_yield > base_yield * 0.999, "senior yield {senior_yield} against base {base_yield}");
+    assert!(senior_yield > base_yield * 0.998, "senior yield {senior_yield} against base {base_yield}");
 }

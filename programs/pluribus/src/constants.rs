@@ -57,6 +57,9 @@ pub const MAX_ACTIVATION_DELAY_SECS: u32 = 30 * 86_400;
 pub const MIN_JUNIOR_EXIT_WINDOW_SECS: u32 = 60;
 /// Longest claim window, which the pause gap is measured against so no pause can cut a window short
 pub const MAX_JUNIOR_EXIT_WINDOW_SECS: u32 = 3 * 86_400;
+/// The junior multiple stops rising once junior lenders hold less than this fraction of the target share,
+/// which caps what a sliver of junior money can earn per dollar
+pub const JUNIOR_FLOOR_DIVISOR: u128 = 10;
 /// Payout epochs start on Fridays at 00:00 UTC: 1970-01-02, the first Friday, is this many seconds into Unix time
 pub const EPOCH_ANCHOR: i64 = 86_400;
 pub const MIN_EPOCH_SECS: u32 = 60;
