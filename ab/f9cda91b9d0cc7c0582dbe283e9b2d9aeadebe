@@ -1,0 +1,21 @@
+README.md
+  s_1b60fe68198b36::t_8f3348fc9b54c4 136-144,148-149
+docs/diagrams/architecture.dot
+  s_1b60fe68198b36::t_af91c25dc0d280 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abf9cda91b9d0cc7c0582dbe283e9b2d9aeadebe",
+  "prompts": {},
+  "sessions": {
+    "s_1b60fe68198b36": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_1b60fe68198b36",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
