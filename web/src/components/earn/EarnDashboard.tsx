@@ -37,7 +37,7 @@ const TRANCHES = {
     tone: "orange" as const,
     badge: Zap,
     tag: { icon: Flame, text: "First loss" },
-    blurb: "Senior rate plus 15% risk premium",
+    blurb: "Up to 15.9× the senior rate, 2.35× at 10% of pool",
     deposits: "$1.00M",
     exit: "6-day queue",
     lossOrder: "2nd",
@@ -67,6 +67,7 @@ const DAYS: Record<EarnRange, number> = { "30D": 30, "90D": 90, "1Y": 365 };
 const MOCK_90D_LABELS = ["Aug 16", "Sep 1", "Sep 15", "Oct 1", "Oct 15", "Nov 1", "Nov 14"];
 const avg = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
 const whole = (v: number) => Math.round(v * 100);
+const times = (v: number) => `${v >= 10 ? v.toFixed(1) : +v.toFixed(2)}×`;
 
 function Sparkline({ data, color }: { data: number[]; color: string }) {
   const w = 200;
@@ -104,13 +105,12 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
   const soon = !!pool && !stat;
   const apy = pool ? (stat?.apy ?? null) : t.apy;
   const apyHistory = live ? inRange(live.samples, 90).map((s) => s.apy[id]) : (id === "senior" ? SENIOR_APY : JUNIOR_APY).slice(-90);
-  const premium = pool ? whole(pool.juniorPremiumMax) : 0;
   const target = pool ? whole(pool.juniorTarget) : 10;
   const queue = live ? `${span(live.juniorRules.waitSecs)} queue` : t.exit;
   const blurb = !stat
     ? t.blurb
     : id === "junior"
-      ? `Senior rate plus ${premium}% of senior yield, full at ${target}% of pool`
+      ? `Up to ${times(pool?.juniorMultipleMax ?? 1)} the senior rate, ${times(pool?.juniorMultipleAtTarget ?? 1)} at ${target}% of pool`
       : pool?.epoch
         ? "Weekly yield from borrower interest"
         : "Yield from borrower interest";

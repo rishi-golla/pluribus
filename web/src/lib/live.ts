@@ -244,7 +244,7 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
   const tierDebt = pool.debtShares.map((s, t) => (Number(s.toString()) * Number(pool.borrowIndex[t].toString())) / 1e24);
   const avgRateBps = stats.debt > 0 ? tierDebt.reduce((sum, debt, t) => sum + debt * (stats.borrowRateBps - params.tierDiscountBps[t]), 0) / stats.debt : stats.borrowRateBps;
   const lenderShare = 1 - (params.reserveFactorBps + params.protocolFeeBps) / 1e4;
-  // The lenders' part splits senior : junior as S : J + premium x S, the premium scaled below the target share
+  // The lenders' part splits senior : junior as S : J + premium x the senior dollars juniors cover, see `poolStats`
   const seniorCut = lenderShare * stats.seniorShare;
   const senior: TrancheStats = { assets: stats.seniorAssets, apy: stats.seniorApyBps / 1e4, sharePrice: stats.seniorShareValue ?? 1 };
   const junior: TrancheStats | null = juniorSupply && { assets: stats.juniorAssets, apy: stats.juniorApyBps / 1e4, sharePrice: stats.juniorShareValue ?? 1 };
@@ -363,10 +363,11 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       junior,
       /** Where each dollar of borrower interest goes, which adds up to 1 */
       split: { senior: seniorCut, junior: lenderShare - seniorCut, protocol: params.protocolFeeBps / 1e4, insurance: params.reserveFactorBps / 1e4 },
-      /** The premium juniors earn on senior yield right now, for taking losses first */
-      juniorPremium: stats.juniorPremium,
-      /** The most the premium can be, and the junior share of the pool at which it is paid in full */
-      juniorPremiumMax: params.juniorPremiumBps / 1e4,
+      /** Junior rate over senior rate right now, for taking losses first */
+      juniorMultiple: stats.juniorMultiple,
+      /** The most the multiple can be while juniors are thin, and what it is at the target share of the pool */
+      juniorMultipleMax: stats.juniorMultipleMax,
+      juniorMultipleAtTarget: stats.juniorMultipleAtTarget,
       juniorTarget: params.juniorTargetBps / 1e4,
       /** This week's payout: a budget fixed when the epoch opened on Friday, paid out evenly until `end` (unix seconds) */
       epoch: params.epochSecs > 0 ? { end: pool.epochEnd.toNumber(), budget: num(pool.epochBudget), buffer: stats.yieldBuffer } : null,
