@@ -3,13 +3,21 @@ import Markdown from "react-markdown";
 import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 import { GUIDES, guideHref, readGuide, type GuideSlug } from "@/lib/docs";
+import type { BranchedMenuItem } from "./BranchedMenu";
+import { SectionsMenu } from "./SectionsMenu";
 
 /** One guide from the docs folder, with both guides and this one's sections in a sidebar */
 export function Guide({ slug }: { slug: GuideSlug }) {
   const guide = readGuide(slug);
-  const sections = guide.headings.filter((h) => h.depth === 2 || h.depth === 3);
+  const items: BranchedMenuItem[] = [];
+  for (const h of guide.headings) {
+    const entry = { value: h.id, label: h.text };
+    const parent = items[items.length - 1];
+    if (h.depth === 2 || (h.depth === 3 && !parent)) items.push(entry);
+    else if (h.depth === 3) (parent.children ??= []).push(entry);
+  }
   return (
-    <div className="mx-auto grid max-w-[1180px] grid-cols-[220px_minmax(0,1fr)] gap-14 px-10 pb-32 pt-12">
+    <div className="mx-auto grid max-w-[1180px] grid-cols-[260px_minmax(0,1fr)] gap-14 px-10 pb-32 pt-12">
       <aside className="sticky top-24 max-h-[calc(100vh-8rem)] self-start overflow-y-auto pr-2 text-[13.5px]">
         <nav aria-label="Guides" className="grid gap-0.5">
           {GUIDES.map((g) => (
@@ -24,13 +32,9 @@ export function Guide({ slug }: { slug: GuideSlug }) {
           ))}
         </nav>
         <div className="mt-7 px-3 text-[12px] font-medium text-t3">On this page</div>
-        <nav aria-label="Sections" className="mt-2 grid gap-px">
-          {sections.map((h) => (
-            <a key={h.id} href={`#${h.id}`} className={`rounded py-1 pr-2 text-t2 transition-colors hover:text-t1 ${h.depth === 3 ? "pl-6 text-[13px] text-t3" : "pl-3"}`}>
-              {h.text}
-            </a>
-          ))}
-        </nav>
+        <div className="mt-2 pl-3">
+          <SectionsMenu items={items} />
+        </div>
       </aside>
       <article className="docs min-w-0 max-w-[760px]">
         <Markdown
