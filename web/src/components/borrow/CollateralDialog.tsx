@@ -1,11 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight, Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { KV, Label, Token } from "@/components/ui";
 import { Segmented } from "@/components/Segmented";
-import { useToast, type Live } from "@/components/app/providers";
+import { useToast, type Live, type Move } from "@/components/app/providers";
 import { displayAmount, healthOf, healthTone, money, usd } from "@/lib/account";
 import { deployment } from "@/lib/cluster";
 import type { Collateral, DlmmMarket } from "@/lib/live";
@@ -43,8 +43,11 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
   const toast = useToast();
   const d = deployment!;
   const [mode, setMode] = useState<Mode>(withdraw ? "Withdraw" : "Deposit");
-  const [picked, setPicked] = useState(withdraw ?? add);
-  const [raw, setRaw] = useState("");
+  // Ids of the picked options, in the order they were picked, or null before anything is clicked
+  const [picked, setPicked] = useState<string[] | null>(withdraw ?? add ? [(withdraw ?? add)!] : null);
+  // Typed amounts, by option id, kept while an option is unpicked and picked again
+  const [raws, setRaws] = useState<Record<string, string>>({});
+  const setRaw = (id: string, v: string) => setRaws((r) => ({ ...r, [id]: v }));
   const [status, setStatus] = useState<"idle" | "signing" | "confirming">("idle");
   const deposit = mode === "Deposit";
 
@@ -99,40 +102,69 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
             ? lpOption(c.mint, c.lp.lower, c.lp.upper, c.value)
             : { id: c.mint, icon: tokenIcon(c.symbol), name: c.symbol, sub: `${money(c.amount, 4)} deposited`, right: usd(c.value), symbol: c.symbol, max: c.amount },
       );
-  const option = options.find((o) => o.id === picked) ?? options[0];
-  const isLp = option?.max === undefined;
-  const amount = isLp ? 1 : Number(raw) || 0;
+  const byId = new Map(options.map((o) => [o.id, o]));
+  // Until something is clicked the first pickable option is picked, as it always was
+  const first = options.find((o) => !o.off);
+  const chosen = (picked ?? (first ? [first.id] : [])).flatMap((id) => byId.get(id) ?? []);
+  // A Meteora option has its own form, so it is only ever picked alone
+  const dlmmPick = chosen.find((o) => o.dlmm);
+  const picks = dlmmPick ? [] : chosen;
+  const amountOf = (o: Option) => (o.max === undefined ? 1 : Number(raws[o.id]) || 0);
 
-  const held = live.collateral.find((c) => c.mint === option?.id);
-  const others = live.collateral.filter((c) => c.mint !== option?.id).map((c) => c.risk);
-  const walletLp = live.wallet.lps.find((lp) => lp.positionMint.toBase58() === option?.id);
-  const total = (held?.amount ?? 0) + (deposit ? amount : -amount);
-  const changed = !option ? [] : isLp ? (walletLp ? [live.lpRisk(walletLp)] : []) : total > 0 ? [{ ...(held?.risk ?? live.tokenRisk(option.id, 0)), amount: total }] : [];
+  const toggle = (o: Option) => {
+    if (o.dlmm) return setPicked([o.id]);
+    const ids = chosen.filter((c) => !c.dlmm).map((c) => c.id);
+    setPicked(ids.includes(o.id) ? ids.filter((id) => id !== o.id) : [...ids, o.id]);
+  };
+
+  const pickedIds = new Set(picks.map((o) => o.id));
+  const others = live.collateral.filter((c) => !pickedIds.has(c.mint)).map((c) => c.risk);
+  const changed = picks.flatMap((o) => {
+    if (o.max === undefined) {
+      // A deposited LP position comes off the account whole, and one from the wallet goes on whole
+      const walletLp = live.wallet.lps.find((lp) => lp.positionMint.toBase58() === o.id);
+      return walletLp ? [live.lpRisk(walletLp)] : [];
+    }
+    const held = live.collateral.find((c) => c.mint === o.id);
+    const total = (held?.amount ?? 0) + (deposit ? amountOf(o) : -amountOf(o));
+    return total > 0 ? [{ ...(held?.risk ?? live.tokenRisk(o.id, 0)), amount: total }] : [];
+  });
   const next = math.limits([...others, ...changed], live.shock, live.prices);
   const now = healthOf(live.debt, live.liquidationLimit);
   const after = healthOf(live.debt, next.liquidationLimit);
+  // Every LP deposit and every token not already held takes a slot of its own
+  const newSlots = deposit ? picks.filter((o) => o.max === undefined || !live.collateral.some((c) => c.mint === o.id)).length : 0;
 
-  const error = !option
+  const tokens = picks.filter((o) => o.max !== undefined);
+  const blank = tokens.find((o) => amountOf(o) <= 0);
+  // A deposit is shown to four decimals, and typing that figure back in has to work
+  const over = tokens.find((o) => amountOf(o) > (deposit ? o.max! : Math.round(o.max! * 1e4) / 1e4) + 1e-9);
+  const error = !options.length
     ? `Nothing to ${mode.toLowerCase()}`
-    : amount <= 0
-      ? "Enter an amount"
-      : // A deposit is shown to four decimals, and typing that figure back in has to work
-        !isLp && amount > (deposit ? option.max! : Math.round(option.max! * 1e4) / 1e4) + 1e-9
-        ? deposit
-          ? "Exceeds wallet balance"
-          : "Exceeds your deposit"
-        : deposit && !held && live.collateral.length >= MAX_POSITIONS
-          ? "No free position slot"
-          : !deposit && live.debt > next.creditLimit
-            ? "Debt would exceed the credit limit"
-            : null;
-  const what = isLp ? "LP position" : `${displayAmount(String(amount))} ${option?.symbol}`;
+    : !picks.length
+      ? "Pick an asset"
+      : blank
+        ? `Enter an amount${tokens.length > 1 ? ` of ${blank.symbol}` : ""}`
+        : over
+          ? deposit
+            ? `Exceeds wallet ${over.symbol}`
+            : `Exceeds your ${over.symbol} deposit`
+          : deposit && live.collateral.length + newSlots > MAX_POSITIONS
+            ? newSlots > 1
+              ? "Not enough free position slots"
+              : "No free position slot"
+            : !deposit && live.debt > next.creditLimit
+              ? "Debt would exceed the credit limit"
+              : null;
+  const name = (o: Option) => (o.max === undefined ? "LP position" : `${displayAmount(String(amountOf(o)))} ${o.symbol}`);
+  const what = picks.length > 2 ? `${picks.length} assets` : picks.map(name).join(" and ");
   const label = status === "signing" ? "Confirm in wallet..." : status === "confirming" ? "Confirming on Solana..." : (error ?? `${mode} ${what}`);
   const arrow = <ArrowRight size={13} strokeWidth={1.75} className="text-t3" />;
 
   const submit = async () => {
     if (error || status !== "idle") return;
-    const ok = isLp ? await live.moveLp(option.id, deposit, setStatus) : await live.moveToken(option.id, amount, deposit, setStatus);
+    const items: Move[] = picks.map((o) => (o.max === undefined ? { positionMint: o.id } : { mint: o.id, amount: amountOf(o) }));
+    const ok = await live.moveCollateral(items, deposit, setStatus);
     setStatus("idle");
     if (!ok) return;
     toast({ title: `${deposit ? "Deposited" : "Withdrew"} ${what}`, detail: `Credit limit ${usd(live.creditLimit)} to ${usd(next.creditLimit)}` });
@@ -153,29 +185,27 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
         value={mode}
         onChange={(m) => {
           setMode(m);
-          setPicked(undefined);
-          setRaw("");
+          setPicked(null);
+          setRaws({});
         }}
       />
-      <div className="mb-2 mt-[18px]">
-        <Label>Asset</Label>
+      <div className="mb-2 mt-[18px] flex items-center justify-between">
+        <Label>Assets</Label>
+        <Label>Pick several to move them together</Label>
       </div>
-      <div role="radiogroup" aria-label="Asset" className="grid max-h-[262px] gap-2 overflow-y-auto">
+      <div role="group" aria-label="Assets" className="grid max-h-[262px] gap-2 overflow-y-auto">
         {options.map((o) => {
-          const on = o.id === option.id;
+          const on = chosen.some((c) => c.id === o.id);
           // A pair or position that takes nothing right now is greyed out and cannot be picked, unless it was opened from its row
           const off = !!o.off && !on;
           return (
             <button
               key={o.id}
               type="button"
-              role="radio"
+              role={o.dlmm ? "radio" : "checkbox"}
               aria-checked={on}
               disabled={off}
-              onClick={() => {
-                setPicked(o.id);
-                setRaw("");
-              }}
+              onClick={() => toggle(o)}
               className={`flex w-full items-center gap-3 rounded-[10px] border px-3.5 py-3 text-left transition-colors ${off ? "cursor-not-allowed border-line bg-bg opacity-50" : "cursor-pointer"} ${
                 on ? "border-brand/45 bg-brand/5" : off ? "" : "border-line bg-bg hover:border-line-2"
               }`}
@@ -186,61 +216,67 @@ function Form({ live, withdraw, add, onClose }: { live: Live; withdraw?: string;
                 <div className="text-xs text-t3">{o.sub}</div>
               </div>
               <span className="ml-auto font-medium">{o.right}</span>
-              <span className={`ml-3 size-4 shrink-0 rounded-full transition-[border-width] duration-200 ${on ? "border-[5px] border-brand" : "border-[1.5px] border-line-2"}`} />
+              {o.dlmm ? (
+                <span className={`ml-3 size-4 shrink-0 rounded-full transition-[border-width] duration-200 ${on ? "border-[5px] border-brand" : "border-[1.5px] border-line-2"}`} />
+              ) : (
+                <span className={`ml-3 grid size-4 shrink-0 place-items-center rounded-[4px] transition-colors duration-200 ${on ? "bg-brand" : "border-[1.5px] border-line-2"}`}>
+                  {on && <Check size={11} strokeWidth={3} className="text-[#0c0c0c]" />}
+                </span>
+              )}
             </button>
           );
         })}
         {!options.length && <div className="rounded-[10px] border border-line bg-bg px-3.5 py-6 text-center text-t3">No collateral deposited yet.</div>}
       </div>
-      {option && !isLp && (
-        <>
+      {tokens.map((o) => (
+        <div key={o.id}>
           <label className="mt-3.5 block rounded-[10px] border border-line bg-bg px-4 py-3.5 transition-colors focus-within:border-line-2">
             <div className="flex items-center justify-between">
-              <Label>Amount</Label>
+              <Label>{tokens.length > 1 ? `${o.symbol} amount` : "Amount"}</Label>
               <Label>
-                {deposit ? "Available" : "Deposited"} {money(option.max!, 4)}
+                {deposit ? "Available" : "Deposited"} {money(o.max!, 4)}
               </Label>
             </div>
             <div className="mt-2.5 flex items-center justify-between gap-3">
               <input
                 inputMode="decimal"
-                aria-label={`${mode} amount in ${option.symbol}`}
+                aria-label={`${mode} amount in ${o.symbol}`}
                 placeholder="0.00"
-                value={displayAmount(raw)}
+                value={displayAmount(raws[o.id] ?? "")}
                 onChange={(e) => {
                   const v = e.target.value.replace(/,/g, "");
-                  if (/^\d*\.?\d{0,4}$/.test(v)) setRaw(v);
+                  if (/^\d*\.?\d{0,4}$/.test(v)) setRaw(o.id, v);
                 }}
-                className="w-full min-w-0 bg-transparent text-[32px] font-medium tracking-[-0.035em] text-t1 outline-none placeholder:text-t3"
+                className={`w-full min-w-0 bg-transparent font-medium text-t1 outline-none placeholder:text-t3 ${tokens.length > 1 ? "text-[24px] tracking-[-0.03em]" : "text-[32px] tracking-[-0.035em]"}`}
               />
               <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-line-2 bg-s3 pl-1.5 pr-2.5 font-medium">
-                <Token src={iconSrc(option.icon)} size={20} />
-                {option.symbol}
+                <Token src={iconSrc(o.icon)} size={20} />
+                {o.symbol}
               </span>
             </div>
-            <div className="mt-1 text-[12.5px] text-t3">{usd(amount * live.prices[option.id])}</div>
+            <div className="mt-1 text-[12.5px] text-t3">{usd(amountOf(o) * (live.prices[o.id] ?? 0))}</div>
           </label>
           <div className="mt-2.5 flex gap-1.5">
             {QUICK.map((q) => (
               <button
                 key={q.label}
                 type="button"
-                onClick={() => setRaw((Math.floor(option.max! * q.pct * 1e4) / 1e4).toString())}
+                onClick={() => setRaw(o.id, (Math.floor(o.max! * q.pct * 1e4) / 1e4).toString())}
                 className="flex-1 cursor-pointer rounded-md border border-line py-1.5 text-center text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1"
               >
                 {q.label}
               </button>
             ))}
           </div>
-        </>
-      )}
-      {option?.dlmm &&
-        (!deposit && option.dlmm.row ? (
-          <DlmmExitForm key={option.id} live={live} row={option.dlmm.row} onClose={onClose} />
+        </div>
+      ))}
+      {dlmmPick?.dlmm &&
+        (!deposit && dlmmPick.dlmm.row ? (
+          <DlmmExitForm key={dlmmPick.id} live={live} row={dlmmPick.dlmm.row} onClose={onClose} />
         ) : (
-          <DlmmDepositForm key={option.id} live={live} market={option.dlmm.market} row={option.dlmm.row} onClose={onClose} />
+          <DlmmDepositForm key={dlmmPick.id} live={live} market={dlmmPick.dlmm.market} row={dlmmPick.dlmm.row} onClose={onClose} />
         ))}
-      {!option?.dlmm && (
+      {!dlmmPick && (
         <>
           <div className="mt-[18px]">
             <KV k="Credit limit">
@@ -296,7 +332,7 @@ export function CollateralDialog({ live, open, onClose }: { live: Live; open: { 
             role="dialog"
             aria-modal="true"
             aria-label="Collateral"
-            className="panel w-[420px]"
+            className="panel max-h-[calc(100dvh-32px)] w-[420px] max-w-[calc(100vw-32px)] overflow-y-auto"
             initial={{ y: 12, scale: 0.98 }}
             animate={{ y: 0, scale: 1 }}
             exit={{ y: 8, scale: 0.98 }}

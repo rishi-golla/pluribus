@@ -78,6 +78,8 @@ export function explain(e: unknown): { title: string; detail: string } {
   if (known) return { title: known.msg, detail: NEXT_STEP[known.name] ?? "Check the details and try again" };
   // SPL Token uses code 1 for a balance that is too low
   if (code === 1) return { title: "Not enough tokens in your wallet", detail: "Lower the amount and try again" };
+  // web3.js throws while encoding a message past Solana's 1232-byte packet, before the wallet sees it
+  if (/overrun|too large|exceeds.*(size|limit)/i.test(text)) return { title: "Too much for one transaction", detail: "Pick fewer assets and move the rest after" };
   if (/reject|declin|denied|cancel/i.test(text)) return { title: "Request declined in the wallet", detail: "Approve it in your wallet to continue" };
   // Wallet adapter errors carry a class name and often no message, and they fail before the transaction reaches the chain
   const name = (e as { name?: string }).name ?? "";
