@@ -62,9 +62,11 @@ const validator = spawn(
     ...["--gossip-port", String(base), "--dynamic-port-range", `${base}-${base + 2000}`],
     ...["--upgradeable-program", WHIRLPOOL_PROGRAM_ID.toBase58(), path.join(orca, "whirlpool.so"), orcaAuthority],
     ...["--account", "-", path.join(orca, "config.json"), "--account", "-", path.join(orca, "fee_tier.json")],
-    // A pair can only be made from a preset Meteora published, and this is a 10 bps one from devnet
+    // A pair can only be made from a preset Meteora published: a 10 bps one from devnet and a 1% one from mainnet,
+    // which dlmm-market uses so a 70-bin position reaches 30% either side of the price
     ...["--upgradeable-program", DLMM_PROGRAM_ID.toBase58(), path.join(dlmm, "lb_clmm.so"), dlmmAuthority],
     ...["--account", "-", path.join(dlmm, "preset_bin_step_10.json")],
+    ...["--account", "-", path.join(dlmm, "preset_bin_step_100.json")],
     ...["--upgradeable-program", PROGRAM_ID.toBase58(), path.join(root, "target/deploy/pluribus.so"), me.toBase58()],
   ],
   { env, stdio: "inherit" },
