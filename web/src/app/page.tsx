@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CreditLimit } from "@/components/landing/CreditLimit";
+import { BorrowLimit } from "@/components/landing/BorrowLimit";
 import { Features } from "@/components/landing/Features";
 import { MARKS, type MarkName } from "@/components/landing/marks";
 import { EarnUpTo, PoolStats } from "@/components/landing/PoolFacts";
@@ -115,9 +115,7 @@ export default function Home() {
             Pluribus values everything you hold together, as it would stand after a sharp price drop, and lends you USDC against what is left.
           </ScrollReveal>
 
-          <div className="mt-24 sm:mt-[128px]">
-            <CreditLimit />
-          </div>
+          <BorrowLimit />
 
           <div className="mt-24 sm:mt-[144px]">
             <ProductTour />
