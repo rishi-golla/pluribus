@@ -1030,7 +1030,7 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
   };
 
   return (
-    <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+    <main className="rise mx-auto max-w-[1280px] px-10 pb-16 pt-9">
       <div className="mb-7 flex items-end justify-between">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Credit Line</h1>
