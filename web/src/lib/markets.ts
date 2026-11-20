@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { series } from "./chart";
+import { deployment } from "./cluster";
+import { DLMM_PROGRAM_ID, RAYDIUM_CLMM_PROGRAM_IDS } from "./pluribus/sdk";
 import { tokenIcon } from "./tokens";
 
 /** Share of the pool the example figures put in the junior tranche. At the rate kink it pays juniors 17.2% a year */
@@ -56,6 +58,17 @@ export const useFocusedMarket = () =>
     () => focused,
     () => null,
   );
+
+/** Whether the deployment lists the market, whether or not the app reads its totals */
+export function listed(m: Market) {
+  const d = deployment;
+  if (!d) return false;
+  // A token market is named for its symbol
+  if (!m.dex) return Object.values(d.assets).some((a) => a.symbol === m.name);
+  if (m.dex === "orca") return !!d.whirlpool;
+  const programs = m.dex === "meteora" ? [DLMM_PROGRAM_ID.toBase58()] : RAYDIUM_CLMM_PROGRAM_IDS.map((k) => k.toBase58());
+  return !!d.lpMarkets?.some((l) => programs.includes(l.dexProgram));
+}
 
 /** Interest paid by borrowers against each market over 30 days. */
 export const fees30d = (m: Market) => (m.borrowed * m.borrowApr) / 12;

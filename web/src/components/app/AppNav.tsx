@@ -9,7 +9,7 @@ import { useAccount } from "@/components/app/providers";
 import { WalletButton } from "@/components/app/WalletButton";
 import { usd } from "@/lib/account";
 import { CLUSTER, deployment } from "@/lib/cluster";
-import { MARKETS, focusMarket, type Market } from "@/lib/markets";
+import { MARKETS, focusMarket, listed, type Market } from "@/lib/markets";
 import { iconSrc } from "@/lib/tokens";
 
 const ic = { size: 16, strokeWidth: 1.75 };
@@ -23,7 +23,8 @@ function MarketSearch() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const term = query.trim().toLowerCase();
-  const hits = term ? MARKETS.filter((m) => `${m.name} ${m.sub} ${m.cls}`.toLowerCase().includes(term)) : [];
+  // only markets the overview table has a row for: the listed ones, or all of them when no deployment is loaded
+  const hits = term ? MARKETS.filter((m) => (!deployment || listed(m)) && `${m.name} ${m.sub} ${m.cls}`.toLowerCase().includes(term)) : [];
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
