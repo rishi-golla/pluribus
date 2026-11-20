@@ -58,9 +58,12 @@ export function Num({ value, decimals = 0, prefix = "", suffix = "", countUp = f
   const inView = useInView(ref, { once: true, amount: 0.5 });
   const mv = useSpring(countUp ? 0 : value, { stiffness: 90, damping: 22, mass: 0.9 });
 
+  // The text shows where the spring is, which is zero on a first count up. Next.js keeps a page it navigates away from and
+  // runs its effects again when it comes back, with the spring already at its value: writing zero then would leave the
+  // number stuck there, since a spring set to the value it holds never moves again
   useLayoutEffect(() => {
-    if (countUp && !reduce && ref.current) ref.current.textContent = format(0, decimals, prefix, suffix);
-  }, [countUp, reduce, decimals, prefix, suffix]);
+    if (ref.current) ref.current.textContent = format(reduce ? value : mv.get(), decimals, prefix, suffix);
+  }, [countUp, reduce, decimals, prefix, suffix, mv, value]);
 
   useEffect(() => {
     if (reduce) mv.jump(value);
