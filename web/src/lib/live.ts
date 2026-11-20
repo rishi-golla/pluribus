@@ -1,5 +1,6 @@
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
+import BN from "bn.js";
 import {
   type Deployment,
   type OrcaPosition,
@@ -104,6 +105,8 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
     // A deployment with no Meteora pair listed has nothing to read here
     loadDlmmListings(connection, program, d),
   ]);
+  // Every Meteora position deposited by anyone, which the pool owns while it backs a credit line, valued like one account's
+  const poolDlmm = dlmmListed.length ? await loadPoolDlmm(connection, program, d) : [];
   // Every token the deployment lists that the program has whitelisted, by mint
   const assets = new Map(assetAccounts.flatMap((a, i) => (a ? [[listed[i], a] as const] : [])));
   const [solAsset, stockAsset] = [assets.get(d.solMint), assets.get(d.stockMint)];
@@ -380,9 +383,10 @@ export async function loadLive(connection: Connection, d: Deployment, owner: Pub
       interest: params.reserveFactorBps ? (stats.reserves * 1e4) / params.reserveFactorBps : 0,
     },
     markets: {
-      sol: tokenMarket(d.solMint, solAsset),
-      nvdax: tokenMarket(d.stockMint, stockAsset),
-      "orca-lp": { collateral: lpTotals.collateralValue, crashLtv: lpTotals.collateralValue > 0 ? lpTotals.creditLimit / lpTotals.collateralValue : null, liqCostBps: lpMarket.liqCostBps },
+      // Each whitelisted token, under the overview's market id, which is its symbol in lower case
+      ...Object.fromEntries([...assets].filter(([mint]) => mint !== d.usdcMint).map(([mint, asset]) => [d.assets[mint].symbol.toLowerCase(), tokenMarket(mint, asset)])),
+      "orca-lp": lpTotalsMarket(lpTotals, lpMarket.liqCostBps),
+      ...(dlmmListed.length ? { "met-lp": lpTotalsMarket(math.limits(poolDlmm, shock, prices), dlmmListed[0].market.liqCostBps) } : {}),
     } as Record<string, LiveMarket>,
     wallet: {
       sol: lamports / 1e9,
@@ -437,6 +441,23 @@ async function indexed<T>(path: string): Promise<T[]> {
 
 export const fetchEvents = (owner: string) => indexed<AccountEvent>(`/accounts/${owner}/events`);
 /** Protocol volume per day for the 90 days ending today, oldest first */
+/** A pool's LP collateral as an overview market: its value now, and the share of it a crash test leaves as credit */
+const lpTotalsMarket = (t: { collateralValue: number; creditLimit: number }, liqCostBps: number): LiveMarket => ({
+  collateral: t.collateralValue,
+  crashLtv: t.collateralValue > 0 ? t.creditLimit / t.collateralValue : null,
+  liqCostBps,
+});
+
+// PositionV2 keeps its owner at byte 40, so the pool's own positions are found without reading anyone's credit account
+async function loadPoolDlmm(connection: Connection, program: ReturnType<typeof getProgram>, d: Deployment): Promise<Risk[]> {
+  const held = await connection.getProgramAccounts(DLMM_PROGRAM_ID, { dataSlice: { offset: 0, length: 0 }, filters: [{ memcmp: { offset: 40, bytes: pda.pool().toBase58() } }] });
+  if (!held.length) return [];
+  // The positions as one account's slots, so they are priced exactly as a borrower's own Meteora position is
+  const slots = held.map(({ pubkey }) => ({ kind: KIND_DLMM, mint: pubkey, amount: new BN(1), bump: 0 }));
+  const all = await fetchPositions(program, d, { positions: slots } as unknown as Parameters<typeof fetchPositions>[2]);
+  return all.map((p) => p.risk);
+}
+
 export const fetchStats = () => indexed<DayStats>("/stats");
 
 /** Groups indexed events into statement months, always ending with the current month */

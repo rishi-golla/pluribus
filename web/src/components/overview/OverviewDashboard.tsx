@@ -528,11 +528,17 @@ function MarketsTable({ markets }: { markets: Market[] }) {
 
 export function OverviewDashboard() {
   const { live } = useAccount();
-  const isLive = !!live;
   const [stats, setStats] = useState<DayStats[]>([]);
+  // Read again with every reading of the chain, which the app takes on a timer and right after each of its own transactions.
+  // The indexer hears of a transaction a couple of seconds after it lands, so a second read follows to catch it
+  const readAt = live?.samples.at(-1)?.at;
   useEffect(() => {
-    if (isLive) fetchStats().then(setStats, () => {});
-  }, [isLive]);
+    if (!readAt) return;
+    const read = () => fetchStats().then(setStats, () => {});
+    read();
+    const again = setTimeout(read, 4000);
+    return () => clearTimeout(again);
+  }, [readAt]);
   const markets = useMemo(() => (live ? liveMarkets(live) : MARKETS), [live]);
   return (
     <main className="rise mx-auto max-w-[1280px] px-10 pb-16 pt-9">
