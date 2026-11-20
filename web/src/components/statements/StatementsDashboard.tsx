@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDownLeft, ArrowUpRight, Award, Calendar, Check, ChevronDown, Download, FileSpreadsheet, Lock, Percent, Repeat, ShieldAlert, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { LendingHistory } from "@/components/earn/LendingHistory";
@@ -128,6 +128,8 @@ function Waterfall({ s, step = 6000 }: { s: MonthSummary; step?: number }) {
 
 function MonthPicker({ months, value, onChange }: { months: { key: string; label: string; inProgress?: boolean }[]; value: string; onChange: (k: string) => void }) {
   const [open, setOpen] = useState(false);
+  // Closed whenever the page is left, since Next.js keeps the page and would show it still open on coming back
+  useLayoutEffect(() => () => setOpen(false), []);
   const current = months.find((m) => m.key === value)!;
   return (
     <div className="relative">

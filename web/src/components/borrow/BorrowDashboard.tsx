@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Activity, ArrowRight, Award, ChevronDown, ChevronRight, Info, Plus, ShieldCheck, TrendingUp, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Chip, KV, Label, StatusDot, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Fold } from "@/components/Fold";
@@ -540,6 +540,14 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
   const [filter, setFilter] = useState<"All" | Kind>("All");
   const [dialog, setDialog] = useState<{ withdraw?: string; add?: string } | null>(null);
   const [fees, setFees] = useState<CompoundTarget | null>(null);
+  // Next.js keeps this page while another is shown, so a dialog left open would still be open on coming back
+  useLayoutEffect(
+    () => () => {
+      setDialog(null);
+      setFees(null);
+    },
+    [],
+  );
   const toast = useToast();
   const { live } = useAccount();
   const all = live ? live.collateral.map(toRow) : POSITIONS;
