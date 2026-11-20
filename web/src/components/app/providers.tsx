@@ -190,6 +190,7 @@ type Loaded = { owner: string; data: LiveData; events: AccountEvent[]; samples: 
 
 function AccountProvider({ wallet, children }: { wallet: WalletContextState | null; children: ReactNode }) {
   const toast = useToast();
+  const path = usePathname();
   const [session, setSession] = useState<AccountEvent[]>([]);
   const [positions, setPositions] = useState({ senior: 25000, junior: 0 });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -219,8 +220,14 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
     };
   }, [reader, current, failed]);
 
+  // Reads overlap when a tab switch or a transaction lands during a timed one, and only the newest may be shown,
+  // so a slow older answer never puts stale figures back over fresher ones
+  const latestRead = useRef(0);
+  const lastStart = useRef(0);
   const refresh = useCallback(async () => {
     if (!reader || !deployment) return;
+    const seq = ++latestRead.current;
+    lastStart.current = Date.now();
     const [data, events] = await Promise.all([
       loadLive(getConnection(), deployment, new PublicKey(reader)),
       owner ? fetchEvents(owner).catch(() => []) : Promise.resolve([] as AccountEvent[]),
@@ -235,6 +242,7 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
       apy: { senior: senior.apy ?? 0, junior: junior?.apy ?? 0 },
       supplied: { senior: senior.assets, junior: junior?.assets ?? 0 },
     };
+    if (seq !== latestRead.current) return;
     setLoaded((prev) => ({ owner: reader, data, events, samples: [...(prev?.owner === reader ? prev.samples : []), sample].slice(-MAX_SAMPLES) }));
   }, [owner, reader]);
 
@@ -251,10 +259,20 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
         warned = true;
         setFailed(reader);
       });
+    // Every tab the app opens reads the chain afresh, and the timer starts again from that read
     tick();
-    const id = setInterval(tick, POLL_MS);
-    return () => clearInterval(id);
-  }, [reader, refresh, toast]);
+    // A hidden browser tab skips the timed reads, which browsers throttle anyway
+    const id = setInterval(() => document.hidden || tick(), POLL_MS);
+    // Coming back to the browser tab or window reads at once. Focus and visibility often arrive together, so one read serves both
+    const wake = () => !document.hidden && Date.now() - lastStart.current > 2000 && tick();
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+    };
+  }, [reader, refresh, toast, path]);
 
   const retry = useCallback(() => {
     setFailed(undefined);

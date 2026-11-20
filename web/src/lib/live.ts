@@ -435,7 +435,8 @@ export type DayStats = { date: string; draws: number; repays: number; autopay: n
 async function indexed<T>(path: string): Promise<T[]> {
   if (!INDEXER_URL) return [];
   // A local indexer that is not running is the same as none
-  const res = await fetch(INDEXER_URL + path).catch(() => null);
+  // Never from the browser's cache, since a refresh is meant to show what the indexer holds now
+  const res = await fetch(INDEXER_URL + path, { cache: "no-store" }).catch(() => null);
   return res?.ok ? res.json() : [];
 }
 
