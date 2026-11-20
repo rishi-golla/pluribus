@@ -1,0 +1,21 @@
+web/package-lock.json
+  s_93c4df539bd568::t_9005276710d64a 18,9166-9171
+web/package.json
+  s_93c4df539bd568::t_3685231adb96b0 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f72724d80c830a647a9504729d907a960d1cee5",
+  "prompts": {},
+  "sessions": {
+    "s_93c4df539bd568": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_93c4df539bd568",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
