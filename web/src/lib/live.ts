@@ -16,6 +16,7 @@ import {
   math,
   pda, DLMM_PROGRAM_ID, KIND_DLMM, binPrice, decodeDlmmPair, decodeDlmmPosition } from "./pluribus/sdk";
 import type { AccountEvent, Month } from "./account";
+import { INDEXER_URL } from "./cluster";
 
 export type Risk = math.RiskPosition;
 // Columns per scenario in the on-chain shock tables
@@ -428,10 +429,10 @@ export type DayStats = { date: string; draws: number; repays: number; autopay: n
 
 // A local validator forgets transactions within minutes, so history comes from the indexer and never from the RPC
 async function indexed<T>(path: string): Promise<T[]> {
-  const url = process.env.NEXT_PUBLIC_INDEXER_URL;
-  if (!url) return [];
-  const res = await fetch(url + path);
-  return res.ok ? res.json() : [];
+  if (!INDEXER_URL) return [];
+  // A local indexer that is not running is the same as none
+  const res = await fetch(INDEXER_URL + path).catch(() => null);
+  return res?.ok ? res.json() : [];
 }
 
 export const fetchEvents = (owner: string) => indexed<AccountEvent>(`/accounts/${owner}/events`);

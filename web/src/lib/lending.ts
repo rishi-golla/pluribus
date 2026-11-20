@@ -1,4 +1,5 @@
 /** One lending event of a wallet, as the indexer serves it. `amount` is USDC and `shares` the tranche's share token */
+import { INDEXER_URL } from "./cluster";
 export type LenderEvent = {
   id: string;
   /** ISO date, yyyy-mm-dd */
@@ -15,10 +16,10 @@ export type LenderEvent = {
 
 /** The wallet's lending history, oldest first. Null when no indexer is configured or it did not answer */
 export async function fetchLending(owner: string): Promise<LenderEvent[] | null> {
-  const url = process.env.NEXT_PUBLIC_INDEXER_URL;
-  if (!url) return null;
-  const res = await fetch(`${url}/lenders/${owner}/events`);
-  return res.ok ? res.json() : null;
+  if (!INDEXER_URL) return null;
+  // A local indexer that is not running is the same as none
+  const res = await fetch(`${INDEXER_URL}/lenders/${owner}/events`).catch(() => null);
+  return res?.ok ? res.json() : null;
 }
 
 const demo = (date: string, kind: LenderEvent["kind"], amount: number, shares: number, detail: string, tx: string): LenderEvent => ({
