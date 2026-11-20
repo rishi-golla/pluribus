@@ -1,5 +1,5 @@
-// Bounty-paid compounding: anyone puts the fees of positions whose owners opted in back into those positions,
-// and is paid the pool's `compoundBountyBps` share of them
+// Bounty-paid fee collection: anyone collects the fees of deposited positions, compounding those whose owners opted in and
+// autopaying the rest, and is paid the pool's `compoundBountyBps` share of them either way
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -32,7 +32,7 @@ import {
   priceAccountFor,
 } from "./core";
 import { DLMM_PROGRAM_ID, MEMO_PROGRAM_ID, dlmmPda } from "./dlmm";
-import { binArrays, dlmmContext, raydiumHarvestAccounts } from "./ix";
+import { autopay, autopayRaydium, binArrays, dlmmAutopay, dlmmContext, raydiumHarvestAccounts } from "./ix";
 
 const key = (s: string) => new PublicKey(s);
 const ata = (mint: PublicKey, owner: PublicKey) => getAssociatedTokenAddressSync(mint, owner, true, TOKEN_PROGRAM_ID);
@@ -50,7 +50,7 @@ export async function setCompound(program: PluribusProgram, owner: PublicKey, po
   return [await program.methods.setCompound(position, slippageBps).accountsStrict({ owner, credit: pda.credit(owner) }).instruction()];
 }
 
-// Admin: the share of compounded fees the caller is paid
+// Admin: the share of collected fees the caller is paid, by a compound or an autopay
 export async function setCompoundBounty(program: PluribusProgram, admin: PublicKey, bountyBps: number) {
   return [await program.methods.setCompoundBounty(bountyBps).accountsStrict({ admin, pool: pda.pool() }).instruction()];
 }
@@ -178,9 +178,11 @@ export async function compoundDlmm(
   ];
 }
 
-export type Compoundable = {
+export type Harvestable = {
   owner: PublicKey;
   position: PublicKey;
+  // What collecting does with the fees: back into the position when its owner opted in, otherwise autopay
+  action: "compound" | "autopay";
   dex: "orca" | "raydium" | "meteora";
   baseMint: PublicKey;
   // The instructions without a compute limit, so several can share one transaction
@@ -192,55 +194,67 @@ export type Compoundable = {
   units: number;
 };
 
-type Builder = (owner: PublicKey, position: PublicKey, credit: CreditAccount, recipient: PublicKey) => Promise<{ dex: Compoundable["dex"]; baseMint: PublicKey; ixs: TransactionInstruction[] } | null>;
+type Candidate = { owner: PublicKey; position: PublicKey; credit: CreditAccount; action: Harvestable["action"] };
+type Builder = (c: Candidate) => Promise<{ dex: Harvestable["dex"]; baseMint: PublicKey; ixs: TransactionInstruction[] } | null>;
 
-// Every position whose owner opted in, with what compounding it would pay `recipient` now, the best first
+// The SDK's autopay builders ask for their own compute limit, which a packed transaction sets once for all of its instructions
+const withoutBudget = (ixs: TransactionInstruction[]) => ixs.filter((i) => !i.programId.equals(ComputeBudgetProgram.programId));
+
+// Every deposited position whose fees are worth collecting now, with what collecting them would pay `recipient`, the best
+// first: compounded when its owner opted in, autopaid otherwise
 // Each candidate is simulated on its own, `concurrency` at a time, so one that would fail (fees not worth it, pool price
-// outside its owner's tolerance) is simply left out
-export async function findCompoundable(
+// outside its owner's tolerance, no free slot for what autopay keeps) is simply left out
+export async function findHarvestable(
   program: PluribusProgram,
   d: Deployment,
   caller: PublicKey,
   recipient: PublicKey,
   opts: { concurrency?: number; minUsd?: number } = {},
-): Promise<Compoundable[]> {
+): Promise<Harvestable[]> {
   const connection = program.provider.connection;
   const [credits, prices] = await Promise.all([fetchAllCredits(program), fetchPrices(program, d)]);
-  const candidates: { owner: PublicKey; position: PublicKey; credit: CreditAccount }[] = [];
+  const candidates: Candidate[] = [];
   for (const { account } of credits) {
     account.positions.forEach((p, slot) => {
-      if ((p.kind === KIND_LP || p.kind === KIND_DLMM) && account.compoundSlippageBps[slot] > 0) {
-        candidates.push({ owner: account.owner, position: p.mint, credit: account });
+      if (p.kind === KIND_LP || p.kind === KIND_DLMM) {
+        const action = account.compoundSlippageBps[slot] > 0 ? "compound" : "autopay";
+        candidates.push({ owner: account.owner, position: p.mint, credit: account, action });
       }
     });
   }
   const usdc = key(d.usdcMint);
-  const orca: Builder = async (owner, position, credit) => {
+  const orca: Builder = async ({ owner, position, credit, action }) => {
     const at = (await locateLps(connection, d, credit)).get(position.toBase58());
     if (!at?.dexProgram.equals(WHIRLPOOL_PROGRAM_ID) || !at.pool.equals(key(d.whirlpool))) return null;
-    return { dex: "orca", baseMint: key(d.solMint), ixs: await compoundOrca(program, d, caller, owner, position, recipient) };
+    const ixs = action === "compound" ? await compoundOrca(program, d, caller, owner, position, recipient) : await autopay(program, d, caller, owner, position, recipient);
+    return { dex: "orca", baseMint: key(d.solMint), ixs: withoutBudget(ixs) };
   };
-  const raydium: Builder = async (owner, position, credit) => {
+  const raydium: Builder = async ({ owner, position, credit, action }) => {
     const at = (await locateLps(connection, d, credit)).get(position.toBase58());
     if (!at || at.dexProgram.equals(WHIRLPOOL_PROGRAM_ID) || at.dexProgram.equals(DLMM_PROGRAM_ID)) return null;
-    return { dex: "raydium", baseMint: at.baseMint, ixs: await compoundRaydium(program, d, caller, owner, position, at.pool, recipient) };
+    const ixs =
+      action === "compound"
+        ? await compoundRaydium(program, d, caller, owner, position, at.pool, recipient)
+        : await autopayRaydium(program, d, caller, owner, position, at.pool, recipient);
+    return { dex: "raydium", baseMint: at.baseMint, ixs: withoutBudget(ixs) };
   };
-  const meteora: Builder = async (owner, position, credit) => {
+  const meteora: Builder = async ({ owner, position, credit, action }) => {
     const at = (await locateLps(connection, d, credit)).get(position.toBase58());
     if (!at?.dexProgram.equals(DLMM_PROGRAM_ID)) return null;
-    return { dex: "meteora", baseMint: at.baseMint, ixs: await compoundDlmm(program, d, caller, owner, position, recipient) };
+    const ixs = action === "compound" ? await compoundDlmm(program, d, caller, owner, position, recipient) : await dlmmAutopay(program, d, caller, owner, position, recipient);
+    return { dex: "meteora", baseMint: at.baseMint, ixs: withoutBudget(ixs) };
   };
-  const build = async (c: (typeof candidates)[number]) => {
+  const build = async (c: Candidate) => {
     const kind = c.credit.positions.find((p) => p.mint.equals(c.position))?.kind;
     const builders = kind === KIND_DLMM ? [meteora] : [orca, raydium];
     for (const b of builders) {
-      const built = b && (await b(c.owner, c.position, c.credit, recipient).catch(() => null));
+      const built = await b(c).catch(() => null);
       if (built) return built;
     }
     return null;
   };
 
-  const found: Compoundable[] = [];
+  const found: Harvestable[] = [];
   const queue = [...candidates];
   const worker = async () => {
     for (let c = queue.shift(); c; c = queue.shift()) {
@@ -268,31 +282,31 @@ export async function findCompoundable(
       const decimals = d.assets[built.baseMint.toBase58()]?.decimals ?? 9;
       const usd = (Number(bountyBase) / 10 ** decimals) * (prices[built.baseMint.toBase58()] ?? 0) + Number(bountyUsdc) / 1e6;
       if (usd < (opts.minUsd ?? 0) || (bountyBase === BigInt(0) && bountyUsdc === BigInt(0))) continue;
-      found.push({ owner: c.owner, position: c.position, ...built, bountyBase, bountyUsdc, usd, units: run.value.unitsConsumed ?? 1_400_000 });
+      found.push({ owner: c.owner, position: c.position, action: c.action, ...built, bountyBase, bountyUsdc, usd, units: run.value.unitsConsumed ?? 1_400_000 });
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, opts.concurrency ?? 4) }, worker));
   return found.sort((a, b) => b.usd - a.usd);
 }
 
-// Packs compounds into as few transactions as fit: under the compute limit with some room, under the account-lock limit,
+// Packs harvests into as few transactions as fit: under the compute limit with some room, under the account-lock limit,
 // and under the size limit through the deployment's lookup table
-export async function packCompounds(
+export async function packHarvests(
   connection: Connection,
   d: Deployment,
   payer: PublicKey,
-  items: Compoundable[],
+  items: Harvestable[],
   opts: { maxUnits?: number; maxAccounts?: number } = {},
 ): Promise<Packed[]> {
   const maxUnits = opts.maxUnits ?? 1_300_000;
   const maxAccounts = opts.maxAccounts ?? 60;
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-  const make = (group: Compoundable[]) => {
+  const make = (group: Harvestable[]) => {
     const units = Math.min(1_400_000, Math.ceil(group.reduce((s, i) => s + i.units, 0) * 1.1));
     return buildTransaction(connection, d, payer, [ComputeBudgetProgram.setComputeUnitLimit({ units }), ...group.flatMap((i) => i.ixs)], blockhash);
   };
-  const accounts = (group: Compoundable[]) => new Set(group.flatMap((i) => i.ixs.flatMap((ix) => [ix.programId, ...ix.keys.map((k) => k.pubkey)])).map((k) => k.toBase58())).size;
-  const fits = async (group: Compoundable[]) => {
+  const accounts = (group: Harvestable[]) => new Set(group.flatMap((i) => i.ixs.flatMap((ix) => [ix.programId, ...ix.keys.map((k) => k.pubkey)])).map((k) => k.toBase58())).size;
+  const fits = async (group: Harvestable[]) => {
     if (group.reduce((s, i) => s + i.units, 0) * 1.1 > maxUnits || accounts(group) > maxAccounts) return false;
     try {
       return (await make(group)).serialize().length <= 1232;
@@ -301,7 +315,7 @@ export async function packCompounds(
     }
   };
   const out: Packed[] = [];
-  let group: Compoundable[] = [];
+  let group: Harvestable[] = [];
   for (const item of items) {
     if (group.length && !(await fits([...group, item]))) {
       out.push({ tx: await make(group), items: group, blockhash, lastValidBlockHeight });
@@ -314,26 +328,26 @@ export async function packCompounds(
 }
 
 // One packed transaction, with the blockhash it was built on so its confirmation waits exactly as long as it can land
-export type Packed = { tx: VersionedTransaction; items: Compoundable[]; blockhash: string; lastValidBlockHeight: number };
+export type Packed = { tx: VersionedTransaction; items: Harvestable[]; blockhash: string; lastValidBlockHeight: number };
 
-// The recipient's token accounts for the bounty, for every token the compounds pay in, made first when missing
-export async function bountyAccountSetup(connection: Connection, d: Deployment, payer: PublicKey, recipient: PublicKey, items: Compoundable[]) {
+// The recipient's token accounts for the bounty, for every token the harvests pay in, made first when missing
+export async function bountyAccountSetup(connection: Connection, d: Deployment, payer: PublicKey, recipient: PublicKey, items: Harvestable[]) {
   const mints = [...new Set([d.usdcMint, ...items.map((i) => i.baseMint.toBase58())])].map(key);
   const infos = await connection.getMultipleAccountsInfo(mints.map((m) => ata(m, recipient)));
   return mints.flatMap((m, i) => (infos[i] ? [] : [createAssociatedTokenAccountIdempotentInstruction(payer, ata(m, recipient), recipient, m, TOKEN_PROGRAM_ID)]));
 }
 
-// Signs and sends packed compounds, `concurrency` transactions at a time, with either a key the caller holds
-// (a throwaway browser key, the keeper's) or a wallet that signs a whole batch in one prompt
-export async function sendCompounds(
+// Signs and sends packed harvests, `concurrency` transactions at a time, with either a key the caller holds
+// (a throwaway browser key, a bot's) or a wallet that signs a whole batch in one prompt
+export async function sendHarvests(
   connection: Connection,
   packed: Packed[],
   signer: { keypair: Keypair } | { signAllTransactions: (txs: VersionedTransaction[]) => Promise<VersionedTransaction[]> },
   opts: { concurrency?: number } = {},
-): Promise<{ signature: string | null; items: Compoundable[]; error?: string }[]> {
+): Promise<{ signature: string | null; items: Harvestable[]; error?: string }[]> {
   const txs = packed.map((p) => p.tx);
   const signed = "keypair" in signer ? txs.map((tx) => (tx.sign([signer.keypair]), tx)) : await signer.signAllTransactions(txs);
-  const results: { signature: string | null; items: Compoundable[]; error?: string }[] = [];
+  const results: { signature: string | null; items: Harvestable[]; error?: string }[] = [];
   const queue = signed.map((tx, i) => ({ ...packed[i], tx }));
   const worker = async () => {
     for (let job = queue.shift(); job; job = queue.shift()) {
@@ -351,7 +365,7 @@ export async function sendCompounds(
   return results;
 }
 
-// The pool's current bounty in bps
+// The pool's current bounty in bps, paid by compounds and autopays alike
 export async function fetchCompoundBounty(program: PluribusProgram) {
   return (await fetchPool(program)).compoundBountyBps;
 }

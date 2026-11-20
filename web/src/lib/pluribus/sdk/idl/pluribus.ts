@@ -452,6 +452,9 @@ export type Pluribus = {
           }
         },
         {
+          "name": "baseMint"
+        },
+        {
           "name": "baseVault",
           "writable": true
         },
@@ -501,6 +504,20 @@ export type Pluribus = {
           "relations": [
             "pool"
           ]
+        },
+        {
+          "name": "bountyBase",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bountyUsdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
         },
         {
           "name": "tokenProgram"
@@ -697,6 +714,20 @@ export type Pluribus = {
           "relations": [
             "pool"
           ]
+        },
+        {
+          "name": "bountyBase",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bountyUsdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
         },
         {
           "name": "tokenProgram",
@@ -2686,6 +2717,20 @@ export type Pluribus = {
           "relations": [
             "pool"
           ]
+        },
+        {
+          "name": "bountyBase",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bountyUsdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
         },
         {
           "name": "reserveX",
@@ -6506,6 +6551,19 @@ export type Pluribus = {
       ]
     },
     {
+      "name": "autopaid",
+      "discriminator": [
+        75,
+        16,
+        113,
+        165,
+        187,
+        43,
+        174,
+        227
+      ]
+    },
+    {
       "name": "badDebt",
       "discriminator": [
         192,
@@ -7436,6 +7494,50 @@ export type Pluribus = {
               "longer than the issuer could lag the feed in applying a split"
             ],
             "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autopaid",
+      "docs": [
+        "A position's fees were collected for autopay: the caller's bounty to its recipient, `repaid` off the debt from the USDC",
+        "left, and everything else kept as collateral"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeBase",
+            "type": "u64"
+          },
+          {
+            "name": "feeUsdc",
+            "type": "u64"
+          },
+          {
+            "name": "bountyBase",
+            "type": "u64"
+          },
+          {
+            "name": "bountyUsdc",
+            "type": "u64"
+          },
+          {
+            "name": "repaid",
+            "type": "u64"
           }
         ]
       }
