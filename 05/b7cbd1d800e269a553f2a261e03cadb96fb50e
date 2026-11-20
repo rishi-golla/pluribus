@@ -1,0 +1,19 @@
+web/src/components/reactbits/WakeSlider.tsx
+  s_9b72075c1644ad::t_16319e30a28d5e 1-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05b7cbd1d800e269a553f2a261e03cadb96fb50e",
+  "prompts": {},
+  "sessions": {
+    "s_9b72075c1644ad": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_9b72075c1644ad",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
