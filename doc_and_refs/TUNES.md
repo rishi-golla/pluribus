@@ -54,6 +54,22 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `close_factor_bps` | 5000 | 1 to 5000 | Most of the debt one liquidation can repay. |
 | `warn_health_bps` | 11000 | ≥ 10000 | Health below this drops the account to the base rate tier. |
 
+### Proposed liquidation bonus per asset (not deployed)
+
+Devnet pays one bonus on every asset, `liq_bonus_bps` 500. These values are a proposal and Ted picks the final ones. They need a bonus setting on each asset, which the program does not have yet.
+
+| Asset | Deployed | Proposed | Elsewhere (read 19 Nov 2026) |
+|---|---|---|---|
+| SOL | 500 | 100 | Jupiter Lend 1% on its SOL vaults. Kamino from 0.1% (1% before its cut), rising while a loan stays unhealthy. marginfi 5%. |
+| NVDAx, AAPLx | 500 | 500 | Jupiter Lend 7% on NVDAx and TSLAx, 5% on SPYx and QQQx. |
+| Orca SOL-USDC position | 500 | 200 | Revert Lend 2% to 10% on Uniswap v3 positions. |
+
+- A stock's bonus pays the liquidator for a price that jumps at the open after a night or a weekend. Jupiter gives that as its reason for 7% on single stocks.
+- A position is sold whole and the liquidator has to unwind it, so it pays more than SOL.
+- `liq_cost_bps` has to cover the bonus: cost ≥ bonus / (1 + bonus), which is 99 at a 1% bonus, 196 at 2% and 476 at 5%. Lowering SOL's cost from 500 to 150 moves its credit limit from 66.5% to about 69% and its liquidation line from 76.0% to about 78.8%.
+- JitoSOL, JupSOL and BONK have no proposal: the hackathon scope leaves them out.
+- Sources: Jupiter Lend's xStocks risk report (15 Apr 2026), Ethena's governance proposal on Jupiter's SOL vaults, SolanaFloor on Kamino's cut, Revert Lend's docs, marginfi's docs.
+
 ## Dynamic shocks (d = max(table, z·σ·√T), capped)
 
 | Setting | Devnet | Allowed | Tuning notes |
