@@ -1,0 +1,21 @@
+web/src/app/page.tsx
+  s_529b2996ec38cd::t_07d025c2621af6 3,118
+web/src/components/landing/BorrowLimit.tsx
+  s_529b2996ec38cd::t_7b909e291c46e9 1-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f48f682bbe9d34e745cb1470da01ebb431ece840",
+  "prompts": {},
+  "sessions": {
+    "s_529b2996ec38cd": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_529b2996ec38cd",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
