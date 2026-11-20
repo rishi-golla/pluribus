@@ -112,7 +112,8 @@ The Statements page lists each month's draws, repayments, autopay, interest and 
 
 An account can be liquidated when its debt is above its liquidation limit. That limit is worked out like the credit limit, with smaller shocks.
 
-- A liquidator repays part of your debt, up to the close factor per transaction, and takes collateral worth that amount plus the bonus.
+- A liquidator repays part of your debt, up to the close factor per transaction, and takes collateral worth that amount plus the bonus. Each asset can have its own bonus, never above the pool's.
+- The program picks which position is taken first, not the liquidator. It is the position whose sale closes the most of the shortfall per dollar of debt repaid: the one worth least, per dollar of market value, in the crash scenario that sets your liquidation limit, with its bonus counted in. The collateral that holds up best in that scenario is taken last. Once the debt is more than 10% above the limit, any position can be taken.
 - An Orca or Raydium liquidity position is sold whole. The liquidator pays its value less the bonus, and what the close factor does not let through to your debt stays in your account as USDC. A Meteora position is sold in part, see [Meteora DLMM](#meteora-dlmm).
 - Anyone can pay your debt down with USDC that is in your account. No bonus is charged for that.
 - The account returns to the base rate tier.
@@ -217,7 +218,7 @@ Held in two separate accounts, the last row would have a credit limit of $6,250.
 | Risk premiums | BONK 15%, NVDAx and AAPLx 3%, others 0% |
 | Share of the premium charged per tier | 100%, 60%, 30% |
 | Warning health | 1.10 |
-| Liquidation bonus | 5% |
+| Liquidation bonus | 5%, or an asset's own lower one |
 | Close factor | 50% of the debt per transaction |
 | Oldest price for a draw | 1 day |
 | Oldest price for a liquidation | 1 day, 4 days for AAPLx |

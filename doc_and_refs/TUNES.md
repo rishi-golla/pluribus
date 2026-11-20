@@ -50,13 +50,23 @@ The pause length is chosen per pause (`pause_junior_exits(duration_secs)`), up t
 | `init_shock_bps` (SOL, stock, USDC, LST per scenario) | 3000/1500/300/3500, 1500/3500/300/2000, 2500/2500/300/3000 | ≤ `max_shock_bps` | Sets the credit limit. The biggest single lever on how much users can borrow. A group's dynamic shock rescales its column, so the table now sets the shape across scenarios and the floor. |
 | `maint_shock_bps` | 2000/1000/100/2300, 1000/2500/100/1300, 1700/1700/100/2000 | ≤ the init shock | Liquidation line. The gap to init is the buffer before liquidation. |
 | LST depeg add-on | +500 draw / +300 liquidation on the SOL shock | | The LST column is SOL's plus a depeg margin. Should follow observed LST/SOL discounts in past crashes (stETH reached about 7%). |
-| `liq_bonus_bps` | 500 | ≤ 2000, and each asset's cost must cover it | Liquidator reward. Too low and nobody liquidates; too high and borrowers lose more. |
+| `liq_bonus_bps` | 500 | ≤ 2000, and each asset's cost must cover it | Liquidator reward, and the most any asset pays: an asset's own bonus can only be lower. Too low and nobody liquidates; too high and borrowers lose more. |
 | `close_factor_bps` | 5000 | 1 to 5000 | Most of the debt one liquidation can repay. |
 | `warn_health_bps` | 11000 | ≥ 10000 | Health below this drops the account to the base rate tier. |
 
-### Proposed liquidation bonus per asset (not deployed)
+### Liquidation bonus per asset, and the order positions go in
 
-Devnet pays one bonus on every asset, `liq_bonus_bps` 500. These values are a proposal and Ted picks the final ones. They need a bonus setting on each asset, which the program does not have yet.
+| Setting | Devnet | Allowed | Tuning notes |
+|---|---|---|---|
+| `liq_bonus_bps` (asset) | 0 on every asset, which takes the pool's 500 | 0, or 1 to the pool's `liq_bonus_bps` | The liquidator's bonus on that token. Applies at once either way: the pool's bonus is the ceiling, and a change to that waits out the activation delay. If the pool's is later cut below it, the pool's applies. |
+| `lp_liq_bonus_bps` (asset) | 0 on every asset | same | The bonus on a liquidity position whose base token is this asset, on any dex. |
+| `ORDER_SLACK_BPS` | 1000 | constant in `constants.rs` | With debt more than this far above the liquidation limit the order stops binding, so a deep account never waits for a liquidator who can afford the first position. Lower = the order gives way sooner. |
+| `ORDER_TIE` | 100, in millionths of a dollar per dollar | constant in `constants.rs` | Keys closer than this count as level, so rounding never decides between two positions of a kind. |
+
+- The order: the position with the lowest key goes first, where key = its value in the scenario that sets the liquidation limit ÷ its market value × (1 + its bonus). That sale costs the limit least per dollar of debt repaid. USDC, a position worth nothing and one that can't be handed over (unclear price, halted mint, short or frozen vault) are outside it.
+- `scripts/setup.ts` sets the values in `LIQ_BONUS_BPS` (`scripts/lib.ts`) on a fresh deployment: SOL 100, positions in SOL 200. Devnet keeps the pool's 500 on everything until someone sets them there.
+
+Proposed values, which Ted picks from:
 
 | Asset | Deployed | Proposed | Elsewhere (read 19 Nov 2026) |
 |---|---|---|---|

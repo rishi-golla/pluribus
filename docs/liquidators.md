@@ -35,6 +35,18 @@ Amounts are USDC with 6 decimals. `fetchAllCredits(program)` lists every credit 
 | A Meteora DLMM position | `dlmm_liquidate(repay_amount)` | USDC, up to the close factor × debt | that share of every bin, worth your payment × (1 + bonus) |
 | USDC in the account | `repay_from_collateral(amount)` | nothing | nothing |
 
+The bonus is the collateral's own: `liq_bonus_bps` on a token's asset account, and `lp_liq_bonus_bps` on the base token's asset account for a liquidity position. Where that is 0, and wherever it is above the pool's `liq_bonus_bps`, the pool's applies.
+
+## The order
+
+The program takes an account's positions in its own order. An instruction for a position that is not first fails with `NotFirstInOrder`, so simulate, and try the account's other positions when you get it.
+
+- Each position has a key: its value in the scenario that sets the account's liquidation limit ÷ its market value × (1 + its bonus). The lowest key goes first, since that sale costs the limit least per dollar of debt repaid.
+- Keys within 0.0001 of each other count as level, and either position can go.
+- USDC is outside the order: `repay_from_collateral` works at any point.
+- A position that cannot be handed over is stepped over: a tokenized stock around a split, a paused mint, a frozen or short vault. So is one worth nothing.
+- With the debt more than 10% above the liquidation limit there is no order, and any position can be taken.
+
 ### liquidate
 
 - `repay_amount` is in USDC base units. Anything above the close factor × debt is cut down to it, so `u64::MAX` is valid.
@@ -90,6 +102,7 @@ A liquidation that breaks it fails with `HealthNotImproved`.
 | `StalePrice` | a price on any position of the account is older than that asset's `liq_price_age_secs`. One stale price blocks the whole account |
 | `PriceTooUncertain` | an oracle band is wider than the asset's `max_conf_bps` |
 | `PriceUnclear` | the position is a tokenized stock around a split. The account's other positions can still be taken |
+| `NotFirstInOrder` | another position of the account comes first, see [The order](#the-order) |
 | `HealthNotImproved` | the health rule above |
 | `ZeroAmount` | the repayment or the seized amount rounds to nothing |
 | `MissingAccount`, `AccountMismatch` | the health-check accounts are incomplete or out of order |
@@ -190,8 +203,7 @@ Run twice on a local chain on 18 Nov 2026, against a borrower holding 50 NVDAx w
 On each pass, for every account past its limit, it takes one step at a time:
 
 1. It nets the account's own USDC against the debt.
-2. It liquidates token positions, largest first.
-3. It buys Orca and Raydium positions whole, and takes part of a Meteora position.
+2. It tries the token positions, largest first, then Orca and Raydium positions whole and part of a Meteora position. When the program answers `NotFirstInOrder` it moves on to the next one.
 
 It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, harvests the fees of Orca, Raydium and Meteora positions, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. On a demo deployment it re-sends prices when it holds the admin key.
 
@@ -201,7 +213,7 @@ As deployed on 18 Nov 2026. `doc_and_refs/TUNES.md` lists every setting with its
 
 | Setting | Value |
 |---|---|
-| Liquidation bonus (`liq_bonus_bps`) | 5%, the same for every asset and liquidity position |
+| Liquidation bonus (`liq_bonus_bps`) | 5% for the pool, which an asset's own bonus can only lower |
 | Close factor (`close_factor_bps`) | 50% of the debt per transaction |
 | Liquidation cost (`liq_cost_bps`) | SOL 5%, staked SOL 6%, stocks 10%, BONK 15%, USDC 0%, liquidity positions 5% |
 | Oldest price for a liquidation (`liq_price_age_secs`) | 1 day, 4 days for AAPLx |
