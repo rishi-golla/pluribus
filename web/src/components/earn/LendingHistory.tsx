@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "motion/react";
 import { ArrowDownLeft, ArrowUpRight, Check, Clock, Repeat, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Tag } from "@/components/ui";
@@ -82,7 +83,7 @@ export function LendingHistory({ live }: { live: Live | null }) {
             const t = TRANCHES[r.tranche];
             const Icon = k.icon;
             return (
-              <tr key={r.id} className="border-t border-line transition-colors hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5">
+              <motion.tr key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="border-t border-line transition-colors hover:bg-white/[0.02] [&_td]:px-4 [&_td]:py-3.5">
                 <td className="pl-[22px]">
                   <div className="flex items-center gap-3">
                     <span className="grid size-8 place-items-center rounded-lg border border-line bg-s3" style={{ color: k.color }}>
@@ -112,7 +113,7 @@ export function LendingHistory({ live }: { live: Live | null }) {
                     <ArrowUpRight size={13} strokeWidth={1.75} />
                   </a>
                 </td>
-              </tr>
+              </motion.tr>
             );
           })}
         </tbody>
