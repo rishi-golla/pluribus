@@ -185,6 +185,35 @@
     opacity: 0.5;
   }
 
+  /* An app page arriving: its blocks rise into place one after another. The animation only fills backwards, so once a
+     block has landed it carries no transform and a menu opened inside it still stacks over the blocks below */
+  .rise > * {
+    animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .rise > :nth-child(2) {
+    animation-delay: 0.06s;
+  }
+  .rise > :nth-child(3) {
+    animation-delay: 0.12s;
+  }
+  .rise > :nth-child(4) {
+    animation-delay: 0.18s;
+  }
+  .rise > :nth-child(n + 5) {
+    animation-delay: 0.24s;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rise > * {
+      animation: none;
+    }
+  }
+
   .app-ambient {
     background: radial-gradient(900px 340px at 50% -120px, rgb(198 244 50 / 0.05), transparent 70%);
   }
