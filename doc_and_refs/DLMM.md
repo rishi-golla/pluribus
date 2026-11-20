@@ -127,7 +127,7 @@ Reading bin arrays to credit the real `L / supply` would add up to two 10 KB acc
 | `dlmm_remove(bps, bin_arrays)` | owner | CPI `remove_liquidity_by_range2` to the owner's token accounts, then the health check |
 | `dlmm_close(bin_arrays)` | owner | CPI `claim_fee2` and `close_position2`: fees and rent to the owner, slot freed, then the health check |
 | `dlmm_liquidate(repay_amount, bin_arrays)` | anyone | Below |
-| `dlmm_autopay` | anyone | CPI `claim_fee2` into the base and USDC collateral vaults; USDC repays debt, the rest is booked as collateral |
+| `dlmm_autopay` | anyone | CPI `claim_fee2` into the base and USDC collateral vaults; the caller's recipient takes the bounty, the USDC left repays debt and the rest is booked as collateral |
 
 Bin arrays come first in the remaining accounts, health accounts after. A health check takes five accounts per position: LP market, pair, position, base asset, base price.
 
@@ -173,12 +173,11 @@ Every DLMM instruction needs a raised compute limit, and so does any health chec
 
 ## Not implemented
 
-- `dlmm_autopay` repeats the fee split of `autopay.rs` instead of sharing it. Fold them together when the Raydium autopay refactor lands.
 - Positions wider than 70 bins, Token-2022 pairs, and collecting farming rewards.
 
 ## Off chain and devnet
 
 - **SDK:** `sdk/dlmm.ts` reads pairs and positions; `locateLps` and `healthAccounts` list a position's five health accounts; `fetchPositions` values it bin by bin, mirrored by `math.dlmmValue`, which matched the program's health view to the cent on devnet. `ix.dlmmOpen/Add/Remove/Close/Liquidate/Autopay` build the instructions with raised compute limits; `dlmmAdd` creates missing bin arrays and wraps SOL.
 - **Web:** on the Borrow page, **Deposit** lists each listed pair as a new Meteora position (SOL and USDC amounts, a width of 1 to 70 bins centred on the pair's active bin, shown as a price range) and each held position as an add-liquidity option. A position's row has **Add**, **Withdraw** (any percentage) and, once empty, **Close**. A paused, not yet active or Meteora-disabled pair is greyed out for new money and still lets liquidity out. Opening and funding a position is one transaction (`ix.dlmmOpenAndAdd`, which hands `dlmmAdd` the new position's pair and bins instead of reading them): 70 bins together with a first credit account came to 700 bytes and 432k compute units on devnet. The new position's keypair signs next to the wallet (`sendInstructions` takes extra signers).
-- **Keeper:** sells Meteora positions in part through `dlmm_liquidate` and harvests their fees when a simulated `dlmm_autopay` shows any.
+- **Keeper:** sells Meteora positions in part through `dlmm_liquidate`. Their fees are left to bounty callers, which `compound.findHarvestable` finds by simulating `dlmm_autopay` or `compound_dlmm`.
 - **Devnet:** DLMM has the same program id there but an older build (2,198,048 bytes, slot 466305525) and its own upgrade authority. All 13 tests pass against it (`DLMM_SO=lb_clmm_devnet.so`). `npm run dlmm:market` created the SOL/mock-USDC pair `Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi` from the 10 bps preset and listed it; open, add, draw, remove, autopay, repay and close were run there. Measured: `dlmm_add` over 30 bins 206k units, removal 213k–239k, close 119k, autopay 123k; every transaction fits through the lookup table.

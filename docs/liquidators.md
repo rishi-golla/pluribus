@@ -196,7 +196,6 @@ Run twice on a local chain on 18 Nov 2026, against a borrower holding 50 NVDAx w
 | `RPC_URL` | the deployment's `rpcUrl` | RPC endpoint |
 | `KEEPER_KEYPAIR` | `~/.config/solana/id.json` | signer, and the wallet whose USDC pays |
 | `INTERVAL_MS` | 5000 | time between passes |
-| `AUTOPAY_INTERVAL_MS` | 600000 | time between fee harvests per position |
 | `PREMIUM_INTERVAL_MS` | 600000 | time between refreshes of an account that pays a risk premium |
 | `DRY_RUN` | unset | `1` logs each action and sends nothing |
 
@@ -205,18 +204,18 @@ On each pass, for every account past its limit, it takes one step at a time:
 1. It nets the account's own USDC against the debt.
 2. It tries the token positions, largest first, then Orca and Raydium positions whole and part of a Meteora position. When the program answers `NotFirstInOrder` it moves on to the next one.
 
-It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, harvests the fees of Orca, Raydium and Meteora positions, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. On a demo deployment it re-sends prices when it holds the admin key.
+It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. It leaves LP fees to whoever collects them for the bounty. On a demo deployment it re-sends prices when it holds the admin key.
 
 ## Numbers on devnet
 
-As deployed on 18 Nov 2026. `doc_and_refs/TUNES.md` lists every setting with its allowed range. If this page and that file disagree, the file is right.
+As read from devnet on 20 Nov 2026. `doc_and_refs/TUNES.md` lists every setting with its allowed range. If this page and that file disagree, the file is right.
 
 | Setting | Value |
 |---|---|
 | Liquidation bonus (`liq_bonus_bps`) | 5% for the pool, which an asset's own bonus can only lower |
 | Close factor (`close_factor_bps`) | 50% of the debt per transaction |
 | Liquidation cost (`liq_cost_bps`) | SOL 5%, staked SOL 6%, stocks 10%, BONK 15%, USDC 0%, liquidity positions 5% |
-| Oldest price for a liquidation (`liq_price_age_secs`) | 1 day, 4 days for AAPLx |
+| Oldest price for a liquidation (`liq_price_age_secs`) | 1 day for JitoSOL and JupSOL; the demo prices of SOL, NVDAx, AAPLx and BONK do not expire |
 | Widest oracle band (`max_conf_bps`) | 2% |
 | Liquidation shocks | see the shock table in [users.md](users.md#shocks) |
 
