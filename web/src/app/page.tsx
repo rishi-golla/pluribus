@@ -121,7 +121,7 @@ export default function Home() {
             blurStrength={6}
             wordAnimationEnd="center center"
           >
-            Pluribus values everything you hold together, as it would stand after a sharp price drop, and lends you USDC against what is left.
+            Pluribus lends you USDC against everything you hold, in one loan. You keep your positions, and the trading fees your liquidity earns pay the loan down.
           </ScrollReveal>
 
           <BorrowLimit />
