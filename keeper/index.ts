@@ -1,15 +1,8 @@
-// One loop that liquidates, refreshes loyalty tiers and risk premiums, collects LP fees, pays the senior withdrawal queue and keeps the demo feed fresh
+// One loop that liquidates, refreshes loyalty tiers and risk premiums, pays the senior withdrawal queue and keeps the demo feed fresh
+// LP fees are not its job: anyone collects them for the bounty, through the SDK or the app
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import anchor from "@coral-xyz/anchor";
-import {
-  IGNORE_CACHE,
-  NO_TOKEN_EXTENSION_CONTEXT,
-  WhirlpoolContext,
-  buildWhirlpoolClient,
-  collectFeesQuote,
-} from "@orca-so/whirlpools-sdk";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import {
   Connection,
@@ -22,17 +15,13 @@ import BN from "bn.js";
 import {
   type CreditAccount,
   type Deployment,
-  DLMM_PROGRAM_ID,
   type HealthView,
-  type LpLocation,
   type Pool,
   KIND_DLMM,
   KIND_LP,
   KIND_TOKEN,
   MAX_U64,
-  RAYDIUM_CLMM_PROGRAM_IDS,
   buildTransaction,
-  compound,
   decodeError,
   fetchAllCredits,
   fetchCredit,
@@ -40,7 +29,6 @@ import {
   fetchPool,
   getProgram,
   ix,
-  locateLps,
   pda,
   type Asset,
 } from "../sdk/index.ts";
@@ -48,8 +36,6 @@ import { feedTimes, pushFeeds } from "./pyth.ts";
 
 const env = process.env;
 const BPS = new BN(10_000);
-// Borrow indexes are scaled by 1e18
-const INDEX_ONE = new BN(10).pow(new BN(18));
 
 function millis(name: string, fallback: number): number {
   const n = Number(env[name] ?? fallback);
@@ -77,15 +63,8 @@ if (!Array.isArray(secret) || secret.length !== 64) throw new Error(`${keypairFi
 const keeper = Keypair.fromSecretKey(Uint8Array.from(secret));
 const me = keeper.publicKey;
 const intervalMs = millis("INTERVAL_MS", 5000);
-const autopayMs = millis("AUTOPAY_INTERVAL_MS", 600_000);
 // How often an account paying a risk premium is refreshed, which books the premium and resets it to the collateral held
 const premiumMs = millis("PREMIUM_INTERVAL_MS", 600_000);
-// How often the keeper looks for positions set to compound and compounds those worth it for the bounty; COMPOUND=0 leaves
-// them to other callers
-const compoundMs = millis("COMPOUND_INTERVAL_MS", 600_000);
-const compounding = env.COMPOUND !== "0";
-// The least bounty, in dollars, worth a transaction
-const compoundMinUsd = Number(env.COMPOUND_MIN_USD ?? "0.01");
 // How often the push feeds of live assets are posted again; PYTH_PUSH=0 leaves them to someone else
 const pythMs = millis("PYTH_INTERVAL_MS", 30_000);
 const pythPush = env.PYTH_PUSH !== "0" && cluster !== "localnet";
@@ -93,7 +72,6 @@ const dryRun = env.DRY_RUN === "1";
 
 const connection = new Connection(env.RPC_URL ?? d.rpcUrl, "confirmed");
 const program = getProgram(connection);
-const orca = buildWhirlpoolClient(WhirlpoolContext.from(connection, new anchor.Wallet(keeper)));
 const usdcMint = new PublicKey(d.usdcMint);
 const keeperUsdc = getAssociatedTokenAddressSync(usdcMint, me);
 
@@ -217,78 +195,6 @@ async function watchDebt(pool: Pool, owner: PublicKey, now: number) {
 
 const lastPremiumRefresh = new Map<string, number>();
 
-const lastFeeCheck = new Map<string, number>();
-
-// Raydium and Meteora have no quote for what a position has earned, so the harvest is run without being sent
-// What it would add to the program's base and USDC vaults is what the fees are, and nothing is sent when that is nothing
-async function autopayBySimulation(account: CreditAccount, positionMint: PublicKey, where: LpLocation) {
-  const owner = account.owner;
-  const meteora = where.dexProgram.equals(DLMM_PROGRAM_ID);
-  const ixs = meteora
-    ? await ix.dlmmAutopay(program, d, me, owner, positionMint)
-    : await ix.autopayRaydium(program, d, me, owner, positionMint, where.pool);
-  const vaults = [pda.vault(where.baseMint), pda.vault(usdcMint)];
-  const latest = await connection.getLatestBlockhash();
-  const tx = await buildTransaction(connection, d, me, ixs, latest.blockhash);
-  const [before, run] = await Promise.all([
-    connection.getMultipleAccountsInfo(vaults),
-    connection.simulateTransaction(tx, {
-      sigVerify: false,
-      replaceRecentBlockhash: true,
-      accounts: { encoding: "base64", addresses: vaults.map((v) => v.toBase58()) },
-    }),
-  ]);
-  if (run.value.err) {
-    throw Object.assign(new Error(`The harvest failed in simulation: ${JSON.stringify(run.value.err)}`), { logs: run.value.logs });
-  }
-  // A token account holds its balance as eight bytes at offset 64
-  const balance = (data: Buffer) => data.readBigUInt64LE(64);
-  const fees = vaults.map((_, i) => {
-    const [was, now] = [before[i], run.value.accounts?.[i]];
-    return was && now ? balance(Buffer.from(now.data[0], "base64")) - balance(was.data) : 0n;
-  });
-  if (fees.every((f) => f === 0n)) return;
-  const [base, usdcFee] = [d.assets[where.baseMint.toBase58()], Number(fees[1]) / 1e6];
-  const owed = `${Number(fees[0]) / 10 ** (base?.decimals ?? 9)} ${symbol(where.baseMint)} and ${usdcFee.toFixed(2)} USDC`;
-  await send(`Autopay for ${owner}: ${owed} of fees from ${meteora ? "Meteora" : "Raydium LP"} position ${positionMint.toBase58()}`, ixs);
-}
-
-async function autopay(pool: Pool, account: CreditAccount, positionMint: PublicKey) {
-  const owner = account.owner;
-  const id = positionMint.toBase58();
-  if (Date.now() - (lastFeeCheck.get(id) ?? 0) < autopayMs) return;
-  lastFeeCheck.set(id, Date.now());
-  const where = (await locateLps(connection, d, account)).get(id);
-  if (where && (where.dexProgram.equals(DLMM_PROGRAM_ID) || RAYDIUM_CLMM_PROGRAM_IDS.some((k) => k.equals(where.dexProgram)))) {
-    return autopayBySimulation(account, positionMint, where);
-  }
-  // Orca positions are harvested only in the main whirlpool, where the fees can be quoted
-  const position = await orca.getPosition(pda.orcaPosition(positionMint), IGNORE_CACHE).catch(() => null);
-  if (!position?.getData().whirlpool.equals(new PublicKey(d.whirlpool))) return;
-  // The pool's tokens are classic SPL tokens, which the program requires of every asset, so no transfer fee applies
-  const fees = collectFeesQuote({
-    whirlpool: position.getWhirlpoolData(),
-    position: position.getData(),
-    tickLower: position.getLowerTickData(),
-    tickUpper: position.getUpperTickData(),
-    tokenExtensionCtx: NO_TOKEN_EXTENSION_CONTEXT,
-  });
-  if (fees.feeOwedA.isZero() && fees.feeOwedB.isZero()) return;
-  // The SOL fee, and USDC beyond what is owed, become collateral, which needs a free slot unless the account holds that token
-  const holds = (mint: PublicKey) => account.positions.some((p) => p.kind === KIND_TOKEN && p.mint.equals(mint));
-  const index = pool.borrowIndex[account.tier];
-  const debt = account.debtShares.mul(index).div(INDEX_ONE);
-  // USDC stays as collateral when it is more than the debt, or too little to retire a single debt share
-  const kept = !fees.feeOwedB.isZero() && (fees.feeOwedB.gt(debt) || fees.feeOwedB.mul(INDEX_ONE).div(index).isZero());
-  const slots = Number(!fees.feeOwedA.isZero() && !holds(new PublicKey(d.solMint))) + Number(kept && !holds(usdcMint));
-  if (slots > account.positions.filter((p) => p.kind === 0).length) return;
-  const owed = `${Number(fees.feeOwedA.toString()) / 1e9} SOL and ${usd(fees.feeOwedB)} USDC`;
-  await send(
-    `Autopay for ${owner}: ${owed} of fees from LP position ${id}`,
-    await ix.autopay(program, d, me, owner, positionMint),
-  );
-}
-
 // Re-sends each demo price before it is halfway to stale
 // An asset switched to its live feed reads Pyth instead, so its demo account is left alone
 async function heartbeat(pool: Pool, assets: (Asset | null)[], now: number) {
@@ -380,26 +286,6 @@ async function seniorQueue(start: Pool) {
   }
 }
 
-// Compounds every position whose owner opted in and whose bounty is worth a transaction, with the keeper as caller and recipient
-let lastCompound = 0;
-async function compoundForBounty() {
-  if (Date.now() - lastCompound < compoundMs) return;
-  lastCompound = Date.now();
-  const found = await compound.findCompoundable(program, d, me, me, { minUsd: compoundMinUsd });
-  if (!found.length) return;
-  const setup = await compound.bountyAccountSetup(connection, d, me, me, found);
-  if (setup.length) await send("Bounty token accounts created", setup);
-  if (dryRun) {
-    log(`Dry run, not sent: compound ${found.length} positions for $${found.reduce((s, f) => s + f.usd, 0).toFixed(4)} of bounty`);
-    return;
-  }
-  const packed = await compound.packCompounds(connection, d, me, found);
-  for (const r of await compound.sendCompounds(connection, packed, { keypair: keeper })) {
-    const what = `${r.items.length} positions for $${r.items.reduce((s, f) => s + f.usd, 0).toFixed(4)}`;
-    log(r.error ? `Compound of ${what} failed: ${r.error}` : `Compounded ${what}, tx ${r.signature}`);
-  }
-}
-
 let stopping = false;
 let wake = () => {};
 
@@ -420,19 +306,10 @@ async function pass() {
   await attempt("Volatility", () => volatility(pool, assets, now));
   for (const { account } of credits) {
     if (stopping) return;
-    const owner = account.owner;
-    // Fees first, since they pay debt down at no cost before a liquidation is considered
-    for (const [slot, p] of account.positions.entries()) {
-      // A position set to compound is left to the bounty, autopay would be refused
-        if ((p.kind === KIND_LP || p.kind === KIND_DLMM) && account.compoundSlippageBps[slot] === 0) {
-        await attempt(`Autopay for ${owner}`, () => autopay(pool, account, p.mint));
-      }
-    }
-    if (!account.debtShares.isZero()) await attempt(`Debt check of ${owner}`, () => watchDebt(pool, owner, now));
+    if (!account.debtShares.isZero()) await attempt(`Debt check of ${account.owner}`, () => watchDebt(pool, account.owner, now));
   }
   // Last, after repayments and liquidations this pass have brought cash back
   if (!stopping) await attempt("Senior queue", async () => seniorQueue(await fetchPool(program)));
-  if (!stopping && compounding) await attempt("Compound", compoundForBounty);
 }
 
 const stop = () => {
