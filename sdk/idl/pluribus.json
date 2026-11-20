@@ -446,6 +446,9 @@
           }
         },
         {
+          "name": "base_mint"
+        },
+        {
           "name": "base_vault",
           "writable": true
         },
@@ -495,6 +498,20 @@
           "relations": [
             "pool"
           ]
+        },
+        {
+          "name": "bounty_base",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bounty_usdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
         },
         {
           "name": "token_program"
@@ -691,6 +708,20 @@
           "relations": [
             "pool"
           ]
+        },
+        {
+          "name": "bounty_base",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bounty_usdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
         },
         {
           "name": "token_program",
@@ -2680,6 +2711,20 @@
           "relations": [
             "pool"
           ]
+        },
+        {
+          "name": "bounty_base",
+          "docs": [
+            "The caller's bounty in the base token, to any account it names, never one of the protocol's vaults"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bounty_usdc",
+          "docs": [
+            "The caller's bounty in USDC"
+          ],
+          "writable": true
         },
         {
           "name": "reserve_x",
@@ -6500,6 +6545,19 @@
       ]
     },
     {
+      "name": "Autopaid",
+      "discriminator": [
+        75,
+        16,
+        113,
+        165,
+        187,
+        43,
+        174,
+        227
+      ]
+    },
+    {
       "name": "BadDebt",
       "discriminator": [
         192,
@@ -7430,6 +7488,50 @@
               "longer than the issuer could lag the feed in applying a split"
             ],
             "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Autopaid",
+      "docs": [
+        "A position's fees were collected for autopay: the caller's bounty to its recipient, `repaid` off the debt from the USDC",
+        "left, and everything else kept as collateral"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_base",
+            "type": "u64"
+          },
+          {
+            "name": "fee_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "bounty_base",
+            "type": "u64"
+          },
+          {
+            "name": "bounty_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "repaid",
+            "type": "u64"
           }
         ]
       }
