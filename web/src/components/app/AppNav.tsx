@@ -103,12 +103,11 @@ export function AppNav({ active }: { active?: string }) {
     <SiteNav
       active={active}
       below={
-        // always in view on the app pages: nothing here is worth money and nobody has audited the program
+        // always in view on the app pages: nothing here is worth money
         !active && (
           <div className="bg-bg">
             <div role="note" className="flex h-7 items-center justify-center border-b border-line bg-orange-dim px-7 text-[12px] font-medium text-orange">
-              {CLUSTER === "localnet" ? "Local chain" : "Devnet"} demo. Tokens are mocks with no value
-              {deployment?.demoMode ? ", prices are set by hand" : ""}, and the program is unaudited.
+              You are currently on {CLUSTER === "localnet" ? "Localnet" : "Devnet"} mode. Tokens are mocks with no real value.
             </div>
           </div>
         )
