@@ -152,8 +152,8 @@ async function liquidateStep(pool: Pool, owner: PublicKey, credit: CreditAccount
   for (const p of held) {
     const lp = p.kind === KIND_LP;
     const dlmm = p.kind === KIND_DLMM;
-    // What the whole position sells for at the liquidation discount, rounded up like the program does
-    const price = p.value.mul(BPS).div(BPS.addn(pool.params.liqBonusBps)).addn(1);
+    // The most the whole position can cost: its bonus is its asset's own, so the discount is not known here
+    const price = p.value;
     // An NFT cannot be split, so an LP position is always paid for in full; a Meteora position is sold in part like a token
     const pay = lp ? price : BN.min(maxRepay, price);
     const name = lp ? `LP position ${p.mint.toBase58()}` : dlmm ? `Meteora position ${p.mint.toBase58()}` : `${symbol(p.mint)} collateral`;
@@ -162,14 +162,17 @@ async function liquidateStep(pool: Pool, owner: PublicKey, credit: CreditAccount
       log(`Skipped liquidating ${name} of ${owner}: keeper ${has} and needs ${usd(pay)}`);
       continue;
     }
-    return send(
-      `Liquidation of ${owner}: up to ${usd(pay)} USDC paid for ${name}`,
-      lp
-        ? await ix.liquidateLp(program, d, me, owner, p.mint)
-        : dlmm
-          ? await ix.dlmmLiquidate(program, d, me, owner, p.mint, maxRepay)
-          : await ix.liquidate(program, d, me, owner, p.mint, maxRepay),
-    );
+    const ixs = lp
+      ? await ix.liquidateLp(program, d, me, owner, p.mint)
+      : dlmm
+        ? await ix.dlmmLiquidate(program, d, me, owner, p.mint, maxRepay)
+        : await ix.liquidate(program, d, me, owner, p.mint, maxRepay);
+    try {
+      return await send(`Liquidation of ${owner}: up to ${usd(pay)} USDC paid for ${name}`, ixs);
+    } catch (e: any) {
+      // the program takes positions in its own order, so one that is not first yet waits for the ones ahead of it
+      if (decodeError(e?.logs ?? [])?.name !== "NotFirstInOrder") throw e;
+    }
   }
   return false;
 }
