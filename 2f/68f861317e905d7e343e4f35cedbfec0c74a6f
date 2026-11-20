@@ -1,0 +1,19 @@
+web/src/components/Segmented.tsx
+  s_614b14d493ba90::t_66008483f66024 3-5,15,27,29,31-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f68f861317e905d7e343e4f35cedbfec0c74a6f",
+  "prompts": {},
+  "sessions": {
+    "s_614b14d493ba90": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_614b14d493ba90",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
