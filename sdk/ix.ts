@@ -604,7 +604,8 @@ export async function refreshTier(program: PluribusProgram, d: Deployment, owner
   ];
 }
 
-// Collects a deposited position's Orca fees: the USDC part repays `owner`'s debt and the SOL part becomes collateral
+// Collects a deposited position's Orca fees and pays `recipient` the pool's bounty share of them, into its token accounts,
+// which must exist; the USDC left repays `owner`'s debt and the SOL left becomes collateral
 // Only for the main whirlpool: Raydium markets have `autopayRaydium`
 export async function autopay(
   program: PluribusProgram,
@@ -612,6 +613,7 @@ export async function autopay(
   caller: PublicKey,
   owner: PublicKey,
   positionMint: PublicKey,
+  recipient: PublicKey = caller,
 ): Ixs {
   const [whirlpool, usdc, sol, position] = [key(d.whirlpool), key(d.usdcMint), key(d.solMint), pda.orcaPosition(positionMint)];
   const [mint, account] = await program.provider.connection.getMultipleAccountsInfo([positionMint, position]);
@@ -633,11 +635,14 @@ export async function autopay(
         tickArrayLower: pda.tickArray(whirlpool, tickLower, d.tickSpacing),
         tickArrayUpper: pda.tickArray(whirlpool, tickUpper, d.tickSpacing),
         baseAsset: pda.asset(sol),
+        baseMint: sol,
         baseVault: pda.vault(sol),
         whirlpoolVaultA: key(d.whirlpoolVaultA),
         usdcAsset: pda.asset(usdc),
         usdcCollateralVault: pda.vault(usdc),
         whirlpoolVaultB: key(d.whirlpoolVaultB),
+        bountyBase: ata(sol, recipient),
+        bountyUsdc: ata(usdc, recipient),
         whirlpoolProgram: WHIRLPOOL_PROGRAM_ID,
       })
       .instruction(),
@@ -661,8 +666,8 @@ function decodeRaydiumPool(data: Buffer) {
   return { vault0: at(137), vault1: at(169), spacing: data.readUInt16LE(235), rewards };
 }
 
-// Collects a deposited Raydium position's fees like `autopay` does for Orca: the USDC part repays `owner`'s debt and the
-// base token part becomes collateral
+// Collects a deposited Raydium position's fees like `autopay` does for Orca: `recipient` is paid the bounty share, the USDC
+// left repays `owner`'s debt and the base token left becomes collateral
 // Raydium pays out a position's rewards in the same call, and the program only lets them go to `owner`,
 // so the owner's account for each reward token is created first when it is missing
 export async function autopayRaydium(
@@ -672,6 +677,7 @@ export async function autopayRaydium(
   owner: PublicKey,
   positionMint: PublicKey,
   pool: PublicKey,
+  recipient: PublicKey = caller,
 ): Ixs {
   const r = await raydiumHarvestAccounts(program, d, caller, owner, positionMint, pool);
   return [
@@ -679,7 +685,13 @@ export async function autopayRaydium(
     ...r.creates,
     await program.methods
       .autopayRaydium()
-      .accountsStrict({ ...usdcAccounts(d), ...r.accounts, memoProgram: MEMO_PROGRAM_ID })
+      .accountsStrict({
+        ...usdcAccounts(d),
+        ...r.accounts,
+        bountyBase: ata(r.market.baseMint, recipient),
+        bountyUsdc: ata(key(d.usdcMint), recipient),
+        memoProgram: MEMO_PROGRAM_ID,
+      })
       .remainingAccounts(r.remaining)
       .instruction(),
   ];
@@ -1270,8 +1282,16 @@ export async function dlmmLiquidate(
   ];
 }
 
-// Permissionless: collects a Meteora position's fees into the protocol's vaults; the USDC part repays debt
-export async function dlmmAutopay(program: PluribusProgram, d: Deployment, caller: PublicKey, owner: PublicKey, position: PublicKey): Ixs {
+// Permissionless: collects a Meteora position's fees into the protocol's vaults and pays `recipient` the bounty share, into
+// its token accounts, which must exist; the USDC left repays debt
+export async function dlmmAutopay(
+  program: PluribusProgram,
+  d: Deployment,
+  caller: PublicKey,
+  owner: PublicKey,
+  position: PublicKey,
+  recipient: PublicKey = caller,
+): Ixs {
   const c = await dlmmContext(program, d, position);
   const usdc = key(d.usdcMint);
   return [
@@ -1292,6 +1312,8 @@ export async function dlmmAutopay(program: PluribusProgram, d: Deployment, calle
         usdcCollateralVault: pda.vault(usdc),
         usdcMint: usdc,
         usdcVault: pda.usdcVault(),
+        bountyBase: ata(c.baseMint, recipient),
+        bountyUsdc: ata(usdc, recipient),
         reserveX: c.pair.reserveX,
         reserveY: c.pair.reserveY,
         tokenProgram,
