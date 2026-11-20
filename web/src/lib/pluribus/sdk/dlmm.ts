@@ -1,6 +1,8 @@
 // Meteora DLMM: the pair and position layouts the program reads, and the addresses its instructions need
 // Layouts follow programs/pluribus/src/dlmm.rs and doc_and_refs/DLMM.md
 import { PublicKey } from "@solana/web3.js";
+// The buffer package, not the global: the Buffer a browser bundle supplies has no BigInt methods, which the bin array addresses need
+import { Buffer } from "buffer";
 
 export const DLMM_PROGRAM_ID = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
 export const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
