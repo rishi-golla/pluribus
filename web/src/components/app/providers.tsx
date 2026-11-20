@@ -86,6 +86,8 @@ export type Live = LiveData & {
   harvest: () => Promise<Harvest | null>;
   /** Asks the server's faucet to fill the connected wallet, once per wallet */
   fund: () => Promise<boolean>;
+  /** Asks the server's faucet for 50,000 USDC, which it sends again whenever the wallet holds less than that */
+  fundUsdc: () => Promise<boolean>;
   /**
    * Deposits or withdraws several tokens and LP positions in one transaction, opening the credit account on the first deposit.
    * A token moves `amount` whole tokens, and an LP position, which has no amount, moves whole
@@ -411,6 +413,18 @@ function AccountProvider({ wallet, children }: { wallet: WalletContextState | nu
           }
           const extras = Object.entries((body.tokens ?? {}) as Record<string, number>).map(([symbol, whole]) => `, ${whole} ${symbol}`);
           toast({ title: "Test tokens are in your wallet", detail: `${body.sol} SOL, ${body.stock} NVDAx, ${body.usdc.toLocaleString("en-US")} USDC${extras.join("")}${body.lp ? " and an Orca position" : ""}`, tone: "success" });
+          await refresh().catch(() => {});
+          return true;
+        },
+        fundUsdc: async () => {
+          toast({ title: "Sending 50,000 USDC", detail: "This takes a few seconds", tone: "info" });
+          const res = await fetch("/api/faucet", { method: "POST", body: JSON.stringify({ address: owner, usdc: true }) });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast({ title: body.error ?? "No USDC sent", detail: "Try again in a moment", tone: "error" });
+            return false;
+          }
+          toast({ title: "50,000 USDC is in your wallet", detail: "Mock USDC for lending, repaying and testing", tone: "success" });
           await refresh().catch(() => {});
           return true;
         },

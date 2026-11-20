@@ -70,10 +70,16 @@ export function WalletButton() {
                     Copy address
                   </button>
                   {live?.canFund && (
-                    <button type="button" role="menuitem" onClick={() => live.fund()} className={item}>
-                      <Droplets {...ic} className="text-t3" />
-                      Get test tokens
-                    </button>
+                    <>
+                      <button type="button" role="menuitem" onClick={() => live.fund()} className={item}>
+                        <Droplets {...ic} className="text-t3" />
+                        Get test tokens
+                      </button>
+                      <button type="button" role="menuitem" onClick={() => live.fundUsdc()} className={item}>
+                        <Token src="/tokens/usdc.webp" size={16} />
+                        Get 50,000 USDC
+                      </button>
+                    </>
                   )}
                   <button type="button" role="menuitem" onClick={() => disconnect()} className={item}>
                     <LogOut {...ic} className="text-t3" />

@@ -6,6 +6,8 @@ import { listOrcaPositions } from "@/lib/pluribus/sdk";
 
 // Whole tokens per wallet, and devnet SOL is scarce, so a grant there only covers fees and a small deposit
 const GRANT = { sol: CLUSTER === "localnet" ? 10 : 0.05, stock: 50, usdc: 5_000 };
+// A USDC-only grant that can be asked for again, refused while the wallet still holds this much
+const USDC_TOP_UP = 50_000;
 // Whole tokens of the other listed mocks, by symbol, sent only while the faucet wallet holds enough of them
 const EXTRAS: Record<string, number> = { JitoSOL: 10, JupSOL: 10, AAPLx: 20, BONK: 100_000_000 };
 
@@ -30,7 +32,7 @@ export async function POST(request: Request) {
   if (!signer || !deployment) return notFound();
   const d = deployment;
 
-  const { address } = await request.json().catch(() => ({}));
+  const { address, usdc } = await request.json().catch(() => ({}));
   let to: PublicKey;
   let stockAccount: PublicKey;
   try {
@@ -42,6 +44,7 @@ export async function POST(request: Request) {
 
   const connection = getConnection();
   const from = signer.publicKey;
+  if (usdc) return topUpUsdc(signer, to);
   // One grant per wallet: this token account is created below and stays behind after its balance is deposited
   if (await connection.getAccountInfo(stockAccount)) return refuse("This wallet already has test tokens", 409);
 
@@ -86,5 +89,29 @@ export async function POST(request: Request) {
     return Response.json({ signature, ...GRANT, tokens, lp: !!position });
   } catch {
     return refuse("The faucet is out of tokens or the chain rejected the transfer", 502);
+  }
+}
+
+/** Sends 50,000 mock USDC, for lending or repaying, unless the wallet already holds that much */
+async function topUpUsdc(signer: Keypair, to: PublicKey) {
+  const d = deployment!;
+  const connection = getConnection();
+  const mint = new PublicKey(d.usdcMint);
+  const { decimals } = d.assets[d.usdcMint];
+  const account = getAssociatedTokenAddressSync(mint, to);
+  const held = await connection.getTokenAccountBalance(account).then(
+    (b) => Number(b.value.amount) / 10 ** b.value.decimals,
+    () => 0,
+  );
+  if (held >= USDC_TOP_UP) return refuse(`This wallet already holds ${USDC_TOP_UP.toLocaleString("en-US")} USDC or more`, 409);
+  const ixs = [
+    createAssociatedTokenAccountIdempotentInstruction(signer.publicKey, account, to, mint),
+    createTransferCheckedInstruction(getAssociatedTokenAddressSync(mint, signer.publicKey), mint, account, signer.publicKey, BigInt(USDC_TOP_UP * 10 ** decimals), decimals),
+  ];
+  try {
+    const signature = await sendAndConfirmTransaction(connection, new Transaction().add(...ixs), [signer], { commitment: "confirmed" });
+    return Response.json({ signature, usdc: USDC_TOP_UP });
+  } catch {
+    return refuse("The faucet is out of USDC or the chain rejected the transfer", 502);
   }
 }
