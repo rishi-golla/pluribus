@@ -77,7 +77,7 @@ Proposed values, which Ted picks from:
 - A stock's bonus pays the liquidator for a price that jumps at the open after a night or a weekend. Jupiter gives that as its reason for 7% on single stocks.
 - A position is sold whole and the liquidator has to unwind it, so it pays more than SOL.
 - `liq_cost_bps` has to cover the bonus: cost ≥ bonus / (1 + bonus), which is 99 at a 1% bonus, 196 at 2% and 476 at 5%. Lowering SOL's cost from 500 to 150 moves its credit limit from 66.5% to about 69% and its liquidation line from 76.0% to about 78.8%.
-- JitoSOL, JupSOL and BONK have no proposal: the hackathon scope leaves them out.
+- JitoSOL, JupSOL and BONK have no proposal yet.
 - Sources: Jupiter Lend's xStocks risk report (15 Apr 2026), Ethena's governance proposal on Jupiter's SOL vaults, SolanaFloor on Kamino's cut, Revert Lend's docs, marginfi's docs.
 
 ## Dynamic shocks (d = max(table, z·σ·√T), capped)
@@ -92,7 +92,7 @@ Proposed values, which Ted picks from:
 | `vol_max_age_secs` | 60 | > 0 | Oldest price a sample accepts. |
 | `vol_conf_cap_bps` | 200 | 1 to 2000 | Widest Pyth band a sample accepts. The band itself is subtracted from each move, so noise doesn't count as volatility. |
 | `max_shock_bps` | 9500 | < 10000 | Ceiling on any shock, table or dynamic. |
-| Asset `vol_horizon_secs` (T) | SOL and LSTs 1d, stock and xStock 3d, USDC 0 | ≤ 30d, 0 = off; non-zero needs non-zero draw and liquidation shocks in its group, and multiplier tokens must have one | Time to liquidate. Stocks need a weekend. Memecoins should be longer than SOL, since selling takes more time. |
+| Asset `vol_horizon_secs` (T) | SOL and LSTs 1d, BONK 2d, stock and xStock 3d, USDC 0 | ≤ 30d, 0 = off; non-zero needs non-zero draw and liquidation shocks in its group, and multiplier tokens must have one | Time to liquidate. Stocks need a weekend. Memecoins should be longer than SOL, since selling takes more time. |
 | `sigma_seed_bps` at listing | SOL 8000, LSTs 8000, stock 5000, xStock 4000 | ≤ 100000 | Starting annual volatility until the crank has history. Seed high; it only fades as fast as `vol_tau_slow_secs`. |
 | Keeper vol crank interval | `keeper/index.ts` | | One sample per asset per minimum interval. A crank that stops leaves the last shock in place, so watch for a stalled keeper. |
 
@@ -110,7 +110,7 @@ Proposed values, which Ted picks from:
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
-| `liq_price_age_secs` | 4d for the xStock, 1d for others | ≥ `max_price_age_secs` | Oldest price that still counts for liquidations and the liquidation line. Draws keep the short age. Four days covers a long weekend. Longer = bad debt can still be cleared after a long close, but on an older price. |
+| `liq_price_age_secs` | 10 years for SOL, NVDAx, AAPLx and BONK (see `max_price_age_secs`), 1d for JitoSOL, JupSOL and USDC | ≥ `max_price_age_secs` | Oldest price that still counts for liquidations and the liquidation line. Draws keep the short age. Four days, the xStock's value before 20 Nov 2026, covers a long weekend. Longer = bad debt can still be cleared after a long close, but on an older price. |
 | `ui_multiplier` | on for the xStock | | Multiply a per-share price by the mint's corporate-action multiplier. Turn off if the feed already quotes per token. |
 | `MULTIPLIER_GUARD_SECS` | 1h | constant in `token2022.rs` | The shortest window around a multiplier change; the window actually used is the larger of this and the asset's `jump_hold_secs` (a day for the devnet xStock). Inside it the price is unclear (no new debt, line at the lower of the price and the last sample, not seized), and of the two bases the one that keeps the token's price nearest the last volatility sample is used, or the lower one before any sample. A change the issuer applies at once is dated when `sync_mint` (or the volatility crank) first sees it, so the window runs from then. A price older than the last two multipliers is valued at the lowest basis it could be on. |
 | Multiplier bounds | 0.0001 to 10000 | constant in `token2022.rs` | A multiplier in effect outside this makes only that token unclear (no new debt, valued at the last synced multiplier, not seized). One scheduled outside it changes nothing until it applies. |
@@ -148,16 +148,17 @@ Risky collateral pays an extra rate that goes to junior lenders, who take the fi
 
 ## Compounding
 
-A borrower can have an LP or Meteora position's fees put back into it instead of repaying debt. Anyone may do it and is paid a share of the fees, so no keeper is needed.
+Anyone may collect a deposited LP or Meteora position's fees: put back into the position when its owner opted in to compounding, autopaid otherwise. The caller is paid the same share of the fees either way, so the keeper leaves both to bounty callers, who use the SDK (`sdk/compound.ts` `findHarvestable`) or the Collect fees button on the app's Overview.
 
 | Setting | Devnet | Allowed | Tuning notes |
 |---|---|---|---|
 | `compound_slippage_bps` (per position, set by its owner) | 0 for every position (fees repay debt) | 0, or 1 to `MAX_COMPOUND_SLIPPAGE_BPS` (1000) | 0 keeps autopay. Anything else lets anyone compound while the pool's price is within that many bps of the oracle's, and autopay then leaves the position alone. A looser tolerance compounds more often but lets a caller who moves the pool first take more of the fees; it can never touch the position's existing value or lower health, since fees never counted as collateral. Cleared whenever the slot is withdrawn, liquidated or reused. |
-| `compound_bounty_bps` (pool) | 200 (2%) | ≤ `MAX_COMPOUND_BOUNTY_BPS` (500) | Share of each fee paid to the caller's recipient. Too low and nobody bothers, too high and borrowers lose more of their yield. Set with `set_compound_bounty`, which applies at once inside the cap. |
-| `COMPOUND`, `COMPOUND_INTERVAL_MS`, `COMPOUND_MIN_USD` | keeper env, on / 600000 / 0.01 | | The keeper compounds for the bounty too, as a fallback for callers. `COMPOUND=0` leaves it to others. |
+| `compound_bounty_bps` (pool) | 200 (2%) | ≤ `MAX_COMPOUND_BOUNTY_BPS` (500) | Share of each fee paid to the caller's recipient, by a compound and an autopay alike. Too low and nobody bothers, too high and borrowers lose more of their yield. Set with `set_compound_bounty`, which applies at once inside the cap. `scripts/setup.ts` sets `COMPOUND_BOUNTY_BPS` (`scripts/lib.ts`) on a fresh deployment. |
+| Autopay bounty | 200 (2%), live since the upgrade of 20 Nov 2026 (slot 524258907) | the pool's `compound_bounty_bps` | Autopay pays the caller the same share a compound does, taken from both tokens before the USDC left repays debt, so a borrower's choice between the two costs the same and nobody has to be paid to run autopay. At 2% a caller covering twice its fee collects a $1,000 position about every 38 minutes, a $100 one about every 6 hours (backtest, Nov 2025 to Nov 2026). |
 
-- The caller picks the recipient of the bounty, so a throwaway key can pay the transaction fees while the bounty goes to a wallet. The web app's auto-compound uses that.
-- A compound needs no health check, so several fit in one transaction: about 5 to 7 Orca or Raydium positions, 2 to 4 Meteora ones (`sdk/compound.ts` `packCompounds`).
+
+- The caller picks the recipient of the bounty, so a throwaway key can pay the transaction fees while the bounty goes to a wallet.
+- A compound or an autopay needs no health check, so several fit in one transaction: about 5 to 7 Orca or Raydium positions, 2 to 4 Meteora ones (`sdk/compound.ts` `packHarvests`).
 - What a position's range cannot take, for example the second token of an out-of-range position, is booked as collateral as autopay does.
 
 ## Senior withdrawals and accounts
@@ -176,13 +177,13 @@ No settings, only rules worth knowing before mainnet.
 |---|---|---|---|
 | `group` | SOL 0, stock and xStock 1, USDC 2, LSTs 3, BONK 4 | column in the shock tables | Which crash column the asset falls with. Column 4 is the memecoin column: draws 60% / 30% / 50% and liquidations 45% / 20% / 38% for the crypto, equity and broad scenarios, which `list:meme` fills (an empty column is an instant tightening). |
 | `liq_cost_bps` | SOL 500, LSTs 600, stock and xStock 1000, BONK 1500, USDC 0 | < 10000; ≥ about 476 at a 5% bonus | Haircut for the cost of liquidating. Should grow with position size and thin liquidity (memecoins). |
-| `max_price_age_secs` | 1 day | > 0 | Oldest accepted price. A day is demo-only; mainnet Pyth needs seconds to minutes. |
+| `max_price_age_secs` | 10 years (315360000) for SOL, NVDAx, AAPLx and BONK since 20 Nov 2026; 1 day for JitoSOL, JupSOL and USDC | > 0 | Oldest accepted price. The four assets on admin-written demo prices were set to 10 years so those prices never go stale between demos. The keeper's heartbeat re-sends a demo price only past half its age, so it no longer touches them, and their volatility is sampled only when someone moves a price. A day is demo-only too; mainnet Pyth needs seconds to minutes. Undo with `set_asset` back to 86400 (345600 for AAPLx's liquidation age), then `demo_activate`. |
 | `max_conf_bps` | 200 | 1 to 2000 | Widest accepted Pyth confidence band. |
 | `deposit_cap` | 0 (no cap) | 0 = uncapped | Cap per asset. Should follow on-chain depth for risky assets. |
 | `oracle`, `pyth_feed_id` | the real Pyth feed of each asset: SOL/USD, NVDA/USD, AAPL/USD, JITOSOL/USD, BONK/USD | | JupSOL reads JITOSOL/USD because Pyth has no JUPSOL/USD feed, and its fixed backing (1.22 x SOL) caps it. The LSTs' backing feed is SOL/USD. `list:meme` and `setup` point each asset at its feed, and the push-feed account the program reads is the PDA of the push oracle `pythWSnsw…` for shard 0 and the feed id (`deployments/<cluster>.json` `pythAccount`). |
 | `live_price` | JitoSOL, JupSOL on; AAPLx, BONK off until their feeds are fresh; SOL, NVDAx off | demo mode only | With demo mode on an asset reads its admin-written demo price until `demo_set_live_price(true)` switches it to its Pyth feed. SOL and NVDAx stay on demo prices so the crash demo can move them. An LST's SOL backing follows the LST's own flag. `list:meme` flips an asset only while its feed is fresh within `max_price_age_secs` and its band fits `max_conf_bps` on the asset's priced unit. BONK's devnet push feed is days old, so it stays on its demo price until a Hermes token lets the keeper post it. JitoSOL and JupSOL read the feeds Pyth itself pushes on devnet, about every half hour; if those stop, accounts holding them fail health checks after a day, and the admin can switch them back to demo prices at once. |
 | `price_exponent` | BONK 6, others 0 | 0 to 12; only with nothing deposited and before the listing is live, or in demo mode; never for staking or multiplier tokens | The asset is priced per 10^k whole tokens. At six decimals per token BONK's price would round to a couple of units, which wrecks valuation and fails the band check, so it is priced per million. Pyth prices are scaled up to the unit, band included, and demo prices are written in it. Setting it resets the volatility sample. |
-| LP market `liq_cost_bps` | 500 | same rule as assets | Haircut on Orca and Raydium positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. Devnet lists the Orca SOL/USDC whirlpool and the Raydium SOL/USDC pool `5ZnKVi…` (`lpMarkets`). |
+| LP market `liq_cost_bps` | 500 on every market | same rule as assets | Haircut on Orca, Raydium and Meteora positions. A Raydium pool for the same pair can be thinner than Orca's, so give each market its own cost from its depth. Devnet lists the Orca SOL/USDC whirlpool, the Raydium SOL/USDC pool `5ZnKVi…` and the Meteora SOL/USDC pair `Em4nQA…` (`lpMarkets`). |
 | `RAYDIUM_CLMM_PROGRAMS` | mainnet `CAMMCzo5…`, devnet `DRayAUg…` | constant in `constants.rs` | The only programs besides Orca whose pools can list. Raydium can upgrade its program, so recheck the position and pool layouts (offsets in `clmm.rs`) after each Raydium upgrade. `autopay_raydium` collects fees with `decrease_liquidity_v2` at zero liquidity; Raydium pays any pool rewards in the same call, so the program only lets them go to the account owner's own token accounts. |
 | `METEORA_DLMM_PROGRAM_ID` | `LBUZKhRx…`; devnet lists the SOL/USDC pair `Em4nQA…` (10 bps bins, `npm run dlmm:market`) | constant in `constants.rs` | A DLMM pair lists as an LP market with its own `liq_cost_bps`. Its positions are owned by the pool PDA and valued from their shares alone, about 0.4% under what they pay out, so the cost need not cover pool manipulation. Meteora can upgrade its program: recheck the offsets in `dlmm.rs` and rerun `tests/dlmm.rs` on a fresh `npm run dlmm:snapshot` after each upgrade. A health check with five 70-bin positions needs more than the default compute limit. |
 | Demo prices (setup.ts) | SOL at the pool price, stock $180, xStock $230, LSTs 0.1% under their backing, BONK $2.40 per million | | Starting demo feed. `scripts/price.ts` moves only SOL and the stock. |
@@ -211,7 +212,6 @@ These need a program upgrade to change.
 | Setting | Where | Default | Notes |
 |---|---|---|---|
 | `INTERVAL_MS` | keeper env | 5000 | How often the keeper checks for liquidations and tiers. |
-| `AUTOPAY_INTERVAL_MS` | keeper env | 600000 | How often each LP position's fees are harvested, Orca by quote and Raydium by simulating the harvest. |
 | `PREMIUM_INTERVAL_MS` | keeper env | 600000 | How often an account paying a risk premium is refreshed (see Risk premium). |
 | `PYTH_INTERVAL_MS` | keeper env | 30000 | How often the feeds of live assets are posted again, and the keeper posts them again right before a volatility sample, which needs a price under `vol_max_age_secs` old. |
 | `HERMES_ACCESS_TOKEN`, `HERMES_URL`, `PYTH_PUSH` | keeper env | none, `https://hermes.pyth.network`, on | The public Hermes serves price updates only with an access token, so without one the keeper posts nothing and logs it once. `PYTH_PUSH=0` leaves the feeds to someone else, and localnet never posts. |
