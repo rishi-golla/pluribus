@@ -24,6 +24,7 @@
     "faucet:stock": "tsx scripts/faucet-stock.ts",
     "price": "tsx scripts/price.ts",
     "lending": "tsx scripts/lending.ts",
+    "vol:reset": "tsx scripts/vol-reset.ts",
     "e2e": "tsx scripts/e2e.ts",
     "smoke": "tsx scripts/smoke.ts",
     "keeper": "tsx keeper/index.ts",

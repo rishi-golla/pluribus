@@ -23,6 +23,7 @@ import {
   FEED_OF,
   LIVE_SYMBOLS,
   MEME,
+  SIGMA_BPS,
   addFeeds,
   demoActivateNow,
   deploymentFile,
@@ -191,16 +192,16 @@ function staked(rate: number, symbol: string): AssetParams {
   };
 }
 // Every feed id is the asset's real Pyth feed, which is only read while the asset is priced from Pyth
-// The last column is the annual volatility each dynamic shock starts from: 80% for SOL, 50% for the stock
+// The last column is the annual volatility each dynamic shock starts from, measured from real prices, see SIGMA_BPS
 for (const [mint, assetParams, sigma] of [
   [usdc, asset(2, 0, "", 0), 0],
-  [NATIVE_MINT, asset(0, 1, FEED_OF.SOL, 500, DAY), 8_000],
-  [stock, asset(1, 1, FEED_OF.NVDAx, 1000, 3 * DAY), 5_000],
+  [NATIVE_MINT, asset(0, 1, FEED_OF.SOL, 500, DAY), SIGMA_BPS.SOL],
+  [stock, asset(1, 1, FEED_OF.NVDAx, 1000, 3 * DAY), SIGMA_BPS.NVDAx],
   // Staking tokens in the LST group, priced at the lower of their own price and their SOL backing, a point more to sell than SOL
-  ...LSTS.map((l) => [l.mint, staked(l.rate, l.symbol), 8_000] as const),
+  ...LSTS.map((l) => [l.mint, staked(l.rate, l.symbol), SIGMA_BPS[l.symbol]] as const),
   // The xStock in the stock group: per-share price times the mint's multiplier, and four days of last price for liquidations
   // A price jump has to hold a day before it counts, longer than an issuer could lag the feed on a split
-  [xstock, { ...asset(1, 1, FEED_OF.AAPLx, 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true, jumpHoldSecs: DAY }, 4_000],
+  [xstock, { ...asset(1, 1, FEED_OF.AAPLx, 1000, 3 * DAY), liqPriceAgeSecs: 4 * DAY, uiMultiplier: true, jumpHoldSecs: DAY }, SIGMA_BPS.AAPLx],
 ] as const) {
   if (!(await exists(pda.asset(mint)))) {
     const tokenProgram = mint.equals(xstock) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;

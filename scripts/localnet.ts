@@ -106,6 +106,10 @@ try {
     await import("./setup.ts");
     await import("./faucet-stock.ts");
     await import("./dlmm-market.ts");
+    // Setup's prices are placeholders: put the real ones in, then set volatility back to its measured seeds, so the
+    // jump from one to the other never counts as a crash in the dynamic shocks
+    execFileSync("npx", ["tsx", "pricefeed/index.ts"], { cwd: root, env: { ...env, PRICEFEED_ONCE: "1", PRICEFEED_ARB: "0" }, stdio: "inherit" });
+    await import("./vol-reset.ts");
   }
   execFileSync("npm", ["run", "--silent", "sdk:sync"], { cwd: root, stdio: "inherit" });
   fs.writeFileSync(ready, `${new Date().toISOString()}\n`);
