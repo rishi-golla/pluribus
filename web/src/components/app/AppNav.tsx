@@ -1,14 +1,100 @@
 "use client";
 
 import { Bell, ChevronDown, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { SiteNav } from "@/components/SiteNav";
 import { Tag, Token } from "@/components/ui";
 import { useAccount } from "@/components/app/providers";
 import { WalletButton } from "@/components/app/WalletButton";
 import { usd } from "@/lib/account";
 import { CLUSTER, deployment } from "@/lib/cluster";
+import { MARKETS, focusMarket, type Market } from "@/lib/markets";
+import { iconSrc } from "@/lib/tokens";
 
 const ic = { size: 16, strokeWidth: 1.75 };
+const bar = "flex h-9 w-[220px] items-center gap-2 rounded-lg border border-line bg-s1 pl-3 pr-2.5 text-[13px] text-t3";
+const slash = <kbd className="ml-auto rounded border border-line-2 px-1.5 py-px font-mono text-[11px] text-t3">/</kbd>;
+
+/** Finds a market by name, protocol or asset class and opens it in the Overview table */
+function MarketSearch() {
+  const router = useRouter();
+  const input = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const term = query.trim().toLowerCase();
+  const hits = term ? MARKETS.filter((m) => `${m.name} ${m.sub} ${m.cls}`.toLowerCase().includes(term)) : [];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      // a slash typed into another field is text, not the shortcut
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      e.preventDefault();
+      input.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const go = (m: Market) => {
+    focusMarket(m.id);
+    setQuery("");
+    input.current?.blur();
+    router.push("/overview");
+  };
+
+  return (
+    <div className="relative">
+      <label className={`${bar} cursor-text transition-colors focus-within:border-line-2`}>
+        <Search {...ic} className="shrink-0" />
+        <input
+          ref={input}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && hits[0]) go(hits[0]);
+            if (e.key === "Escape") {
+              setQuery("");
+              input.current?.blur();
+            }
+          }}
+          placeholder="Search markets"
+          aria-label="Search markets"
+          role="combobox"
+          aria-expanded={open && !!term}
+          aria-controls="market-results"
+          autoComplete="off"
+          className="w-full min-w-0 bg-transparent text-t1 outline-none placeholder:text-t3"
+        />
+        {slash}
+      </label>
+      {open && term && (
+        <div id="market-results" role="listbox" aria-label="Markets" className="glass-tip absolute left-0 z-30 mt-2 w-[280px] rounded-[10px] border border-line-2 p-1.5">
+          {hits.map((m, i) => (
+            <button
+              key={m.id}
+              type="button"
+              role="option"
+              aria-selected={i === 0}
+              // the input would blur and close the list before a click lands
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => go(m)}
+              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13.5px] text-t1 transition-colors hover:bg-white/[0.05] ${i === 0 ? "bg-white/[0.03]" : ""}`}
+            >
+              <Token src={iconSrc(m.icon)} size={18} />
+              <span className="font-medium">{m.name}</span>
+              <span className="truncate text-[12.5px] text-t3">{m.sub}</span>
+            </button>
+          ))}
+          {!hits.length && <div className="px-3 py-2 text-[12.5px] text-t3">No markets match</div>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** App header. Pass `active` to pin a tab (landing preview); otherwise it follows the current route. */
 export function AppNav({ active }: { active?: string }) {
@@ -31,19 +117,17 @@ export function AppNav({ active }: { active?: string }) {
       {!active && mode === "preview" && !loading && !error && <Tag>Preview data</Tag>}
       <div className="flex items-center gap-1.5 px-2 text-[13px] text-t2">
         <Token src="/tokens/sol.webp" size={16} />
-        {live && deployment ? (
-          usd(live.prices[deployment.solMint])
-        ) : (
-          <>
-            $150.12 <span className="text-green">+2.41%</span>
-          </>
-        )}
+        {live && deployment ? usd(live.prices[deployment.solMint]) : "$150.12"}
       </div>
-      <div className="flex h-9 w-[220px] items-center gap-2 rounded-lg border border-line bg-s1 pl-3 pr-2.5 text-[13px] text-t3">
-        <Search {...ic} />
-        Search markets
-        <kbd className="ml-auto rounded border border-line-2 px-1.5 py-px font-mono text-[11px] text-t3">/</kbd>
-      </div>
+      {active ? (
+        <div className={bar}>
+          <Search {...ic} />
+          Search markets
+          {slash}
+        </div>
+      ) : (
+        <MarketSearch />
+      )}
       <div className="grid size-9 place-items-center rounded-lg border border-line bg-s1 text-t2">
         <Bell {...ic} />
       </div>
