@@ -36,3 +36,7 @@ programs/pluribus/tests/fixtures/dlmm/lb_clmm*.so
 # Local chain addresses differ per machine
 deployments/localnet.json
 web/src/lib/pluribus/deployments/localnet.json
+
+# Mac mini runtime state
+deploy/macmini/logs/
+deploy/macmini/.streams-token
