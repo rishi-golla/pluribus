@@ -7,6 +7,7 @@ use anchor_lang::{
 };
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
+use super::compound::Compounder;
 use crate::{constants::*, error::PluribusError, events::*, math::to_u64, orca::read_position, risk::book_premium, state::*, token::push};
 
 /// First 8 bytes of sha256("global:update_fees_and_rewards")
@@ -38,6 +39,8 @@ pub struct Autopay<'info> {
     pub tick_array_upper: UncheckedAccount<'info>,
     #[account(mut, seeds = [ASSET_SEED, lp_market.base_mint.as_ref()], bump = base_asset.bump)]
     pub base_asset: Box<Account<'info, Asset>>,
+    #[account(address = base_asset.mint)]
+    pub base_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut, address = base_asset.vault)]
     pub base_vault: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: The Whirlpool program checks this is the pool's own token A vault
@@ -53,14 +56,24 @@ pub struct Autopay<'info> {
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in the base token, to any account it names, never one of the protocol's vaults
+    #[account(mut, token::mint = base_mint, constraint = bounty_base.key() != base_vault.key() @ PluribusError::AccountMismatch)]
+    pub bounty_base: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in USDC
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        constraint = bounty_usdc.key() != usdc_collateral_vault.key() && bounty_usdc.key() != usdc_vault.key() @ PluribusError::AccountMismatch,
+    )]
+    pub bounty_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
     /// CHECK: Pinned to the Whirlpool program id
     #[account(address = WHIRLPOOL_PROGRAM_ID)]
     pub whirlpool_program: UncheckedAccount<'info>,
 }
 
-/// Permissionless: collects a deposited position's trading fees from Orca
-/// The USDC part repays debt and the rest stays in the account as collateral
+/// Permissionless: collects a deposited position's trading fees from Orca and pays the caller's recipient the pool's bounty
+/// share of them; the USDC left repays debt and the rest stays in the account as collateral
 pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
     let a = ctx.accounts;
     let now = Clock::get()?.unix_timestamp;
@@ -92,15 +105,21 @@ pub fn handle_autopay(ctx: Context<Autopay>) -> Result<()> {
 
     Harvest {
         caller: a.caller.key(),
+        position: mint,
         pool: &mut a.pool,
         credit: &mut a.credit,
         base_asset: &mut a.base_asset,
+        base_mint: &a.base_mint,
         base_vault: &mut a.base_vault,
         usdc_asset: &mut a.usdc_asset,
         usdc_collateral_vault: &mut a.usdc_collateral_vault,
         usdc_mint: &a.usdc_mint,
         usdc_vault: &a.usdc_vault,
+        bounty_base: &a.bounty_base,
+        bounty_usdc: &a.bounty_usdc,
         token_program: &a.token_program,
+        // Orca collects both of a listed pool's tokens through the one program
+        base_token_program: &a.token_program,
     }
     .book(before)
 }
@@ -158,29 +177,50 @@ pub(crate) fn collect_orca_fees<'info>(c: OrcaCollect<'info>, pool: &Account<'in
     Ok(())
 }
 
-/// The accounts a harvest pays into, the same whichever dex the fees came from
+/// The accounts a harvest pays out of and into, the same whichever dex the fees came from
 pub(crate) struct Harvest<'a, 'info> {
     pub caller: Pubkey,
+    /// The position's NFT mint, or the Meteora position's own address
+    pub position: Pubkey,
     pub pool: &'a mut Account<'info, Pool>,
     pub credit: &'a mut Account<'info, CreditAccount>,
     pub base_asset: &'a mut Account<'info, Asset>,
+    pub base_mint: &'a InterfaceAccount<'info, Mint>,
     pub base_vault: &'a mut InterfaceAccount<'info, TokenAccount>,
     pub usdc_asset: &'a mut Account<'info, Asset>,
     pub usdc_collateral_vault: &'a mut InterfaceAccount<'info, TokenAccount>,
     pub usdc_mint: &'a InterfaceAccount<'info, Mint>,
     pub usdc_vault: &'a InterfaceAccount<'info, TokenAccount>,
+    pub bounty_base: &'a InterfaceAccount<'info, TokenAccount>,
+    pub bounty_usdc: &'a InterfaceAccount<'info, TokenAccount>,
+    /// USDC's token program
     pub token_program: &'a Interface<'info, TokenInterface>,
+    /// The base token's, which differs from USDC's for a token the dex trades through Token-2022
+    pub base_token_program: &'a Interface<'info, TokenInterface>,
 }
 
 impl Harvest<'_, '_> {
     /// Books the fees a collect delivered into the collateral vaults, given their balances (base, USDC) before it
-    /// The USDC part repays debt and the rest stays in the account as collateral
+    /// The caller's recipient is paid the same bounty share a compound pays, so nobody has to be paid to run autopay;
+    /// the USDC left repays debt and the rest stays in the account as collateral
     pub fn book(self, before: (u64, u64)) -> Result<()> {
         // What arrived is measured from the vault balances, not taken from the dex's word
-        self.base_vault.reload()?;
-        self.usdc_collateral_vault.reload()?;
-        let base_fee = self.base_vault.amount.saturating_sub(before.0);
-        let usdc_fee = self.usdc_collateral_vault.amount.saturating_sub(before.1);
+        let fees = Compounder {
+            pool: &*self.pool,
+            credit: &mut *self.credit,
+            base_asset: &mut *self.base_asset,
+            base_mint: self.base_mint,
+            base_vault: &mut *self.base_vault,
+            usdc_asset: &mut *self.usdc_asset,
+            usdc_mint: self.usdc_mint,
+            usdc_collateral_vault: &mut *self.usdc_collateral_vault,
+            bounty_base: self.bounty_base,
+            bounty_usdc: self.bounty_usdc,
+            token_program: self.token_program,
+            base_token_program: self.base_token_program,
+        }
+        .take_bounty(before)?;
+        let (base_fee, usdc_fee) = fees.left();
 
         if base_fee > 0 {
             let base_mint = self.base_asset.mint;
@@ -209,6 +249,16 @@ impl Harvest<'_, '_> {
             self.usdc_asset.total_deposited = self.usdc_asset.total_deposited.saturating_add(kept);
             emit!(CollateralChanged { account: self.credit.key(), mint: usdc, kind: KIND_TOKEN, amount: kept, deposit: true });
         }
+        emit!(Autopaid {
+            account: self.credit.key(),
+            position: self.position,
+            recipient: self.bounty_usdc.owner,
+            fee_base: fees.base,
+            fee_usdc: fees.usdc,
+            bounty_base: fees.bounty_base,
+            bounty_usdc: fees.bounty_usdc,
+            repaid: paid,
+        });
         Ok(())
     }
 }

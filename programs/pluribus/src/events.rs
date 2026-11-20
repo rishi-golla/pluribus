@@ -230,6 +230,20 @@ pub struct Compounded {
     pub added_usdc: u64,
 }
 
+/// A position's fees were collected for autopay: the caller's bounty to its recipient, `repaid` off the debt from the USDC
+/// left, and everything else kept as collateral
+#[event]
+pub struct Autopaid {
+    pub account: Pubkey,
+    pub position: Pubkey,
+    pub recipient: Pubkey,
+    pub fee_base: u64,
+    pub fee_usdc: u64,
+    pub bounty_base: u64,
+    pub bounty_usdc: u64,
+    pub repaid: u64,
+}
+
 /// How far the pool's price may sit from the oracle's for the position to compound, 0 when its fees repay debt instead
 #[event]
 pub struct CompoundSet {

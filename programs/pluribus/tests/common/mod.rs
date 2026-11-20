@@ -381,6 +381,15 @@ impl Env {
         wallet
     }
 
+    /// A wallet with empty SOL and USDC token accounts, which a harvest pays its bounty into
+    pub fn harvester(&mut self) -> Keypair {
+        let wallet = self.wallet();
+        let (sol, usdc) = (self.sol, self.usdc);
+        self.fund(&sol, &wallet.pubkey(), 0);
+        self.fund(&usdc, &wallet.pubkey(), 0);
+        wallet
+    }
+
     // Oracle and Orca stand-ins
 
     pub fn set_price(&mut self, mint: &Pubkey, price: u64) {
@@ -1322,6 +1331,7 @@ impl Env {
                 tick_array_lower: orca[0],
                 tick_array_upper: orca[1],
                 base_asset: self.asset_pda(&market.base_mint),
+                base_mint: market.base_mint,
                 base_vault: self.vault_pda(&market.base_mint),
                 whirlpool_vault_a: orca[2],
                 usdc_asset: self.asset_pda(&self.usdc),
@@ -1329,6 +1339,9 @@ impl Env {
                 whirlpool_vault_b: orca[3],
                 usdc_mint: self.usdc,
                 usdc_vault: self.usdc_vault,
+                // the bounty goes to the caller's associated token accounts
+                bounty_base: ata(caller, &market.base_mint, &TOKEN),
+                bounty_usdc: ata(caller, &self.usdc, &TOKEN),
                 token_program: TOKEN,
                 whirlpool_program: WHIRLPOOL_PROGRAM_ID,
             }
@@ -1364,6 +1377,9 @@ impl Env {
             usdc_collateral_vault: self.vault_pda(&self.usdc),
             usdc_mint: self.usdc,
             usdc_vault: self.usdc_vault,
+            // the bounty goes to the caller's associated token accounts
+            bounty_base: ata(caller, &market.base_mint, &TOKEN),
+            bounty_usdc: ata(caller, &self.usdc, &TOKEN),
             token_program: TOKEN,
             token_program_2022: TOKEN_2022,
             memo_program: MEMO_PROGRAM_ID,

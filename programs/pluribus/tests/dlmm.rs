@@ -273,6 +273,9 @@ fn autopay_ix(env: &Env, pair: &Pair, caller: &Pubkey, owner: &Pubkey, position:
         usdc_collateral_vault: env.vault_pda(&env.usdc),
         usdc_mint: env.usdc,
         usdc_vault: env.usdc_vault,
+        // the bounty goes to the caller's associated token accounts
+        bounty_base: ata(caller, &env.sol, &TOKEN),
+        bounty_usdc: ata(caller, &env.usdc, &TOKEN),
         reserve_x: pair.reserve_x,
         reserve_y: pair.reserve_y,
         token_program: TOKEN,
@@ -335,6 +338,15 @@ fn fund_sol(env: &mut Env, owner: &Pubkey, amount: u64) {
     TokenState::pack(state, &mut data).unwrap();
     let account = Account { lamports: rent + amount, data, owner: TOKEN, executable: false, rent_epoch: 0 };
     env.svm.set_account(ata(owner, &env.sol, &TOKEN), account).unwrap();
+}
+
+/// A wallet with empty wrapped SOL and USDC accounts, which a harvest pays its bounty into
+fn harvester(env: &mut Env) -> Keypair {
+    let wallet = env.wallet();
+    let usdc = env.usdc;
+    fund_sol(env, &wallet.pubkey(), 0);
+    env.fund(&usdc, &wallet.pubkey(), 0);
+    wallet
 }
 
 /// Deposits `amount` lamports of wrapped SOL as plain token collateral
@@ -688,7 +700,7 @@ fn assert_books_match_vaults(env: &Env) {
 fn autopay_collects_real_fees_and_repays_debt() {
     let Some((mut env, pair)) = real_pair() else { return };
     env.lender(1_000_000 * USDC);
-    let (user, other, keeper) = (env.user(), env.user(), env.wallet());
+    let (user, other, keeper) = (env.user(), env.user(), harvester(&mut env));
     let me = user.pubkey();
     let (sol, usdc) = (env.sol, env.usdc);
     let position = open_position(&mut env, &pair, &user, 700 * SOL, 50_000 * USDC);
@@ -719,9 +731,38 @@ fn autopay_collects_real_fees_and_repays_debt() {
 }
 
 #[test]
+fn autopay_pays_the_caller_the_compounding_bounty() {
+    let Some((mut env, pair)) = real_pair() else { return };
+    env.lender(1_000_000 * USDC);
+    let admin = env.admin.insecure_clone();
+    let (user, keeper) = (env.user(), harvester(&mut env));
+    let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+    let position = open_position(&mut env, &pair, &user, 700 * SOL, 50_000 * USDC);
+    expect_ok(env.draw(&user, 1_000 * USDC));
+    trade_through(&mut env, &pair);
+    expect_ok(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), 200)], &[&admin]));
+
+    let meta = expect_ok(env.send(&[budget(), autopay_ix(&env, &pair, &keeper.pubkey(), &me, &position)], &[&keeper]));
+
+    // The caller got the same 2% of each fee a compound pays, which is what the event says too
+    let event = autopaid(&meta);
+    assert!(event.fee_base > 0 && event.fee_usdc > 0, "{} lamports and {} USDC of fees", event.fee_base, event.fee_usdc);
+    let bounty = (event.fee_base * 200 / 10_000, event.fee_usdc * 200 / 10_000);
+    assert_eq!((event.bounty_base, event.bounty_usdc), bounty);
+    assert_eq!((env.balance(&sol, &keeper.pubkey()), env.balance(&usdc, &keeper.pubkey())), bounty);
+    assert_eq!(event.recipient, keeper.pubkey());
+    // The USDC left paid debt down and the SOL left became collateral
+    assert_eq!(event.repaid, event.fee_usdc - bounty.1);
+    assert_eq!(env.debt(&me), 1_000 * USDC - event.repaid);
+    assert_eq!(kept(&env, &me, &sol), event.fee_base - bounty.0);
+    assert_eq!(kept(&env, &me, &usdc), 0);
+    assert_books_match_vaults(&env);
+}
+
+#[test]
 fn autopay_keeps_fees_as_collateral_when_nothing_is_owed() {
     let Some((mut env, pair)) = real_pair() else { return };
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), harvester(&mut env));
     let me = user.pubkey();
     let (sol, usdc) = (env.sol, env.usdc);
     let position = open_position(&mut env, &pair, &user, 700 * SOL, 50_000 * USDC);
@@ -865,16 +906,30 @@ fn active_price(env: &Env, pair: &Pair) -> u64 {
 
 /// The fees `position` has earned in SOL and USDC, as autopay would collect them, found by simulating it
 /// Only a position that is not compounding can be asked, and nothing is collected for real
+/// What the simulation pays the caller as a bounty counts too, since it came out of the same fees
 fn pending_fees(env: &mut Env, pair: &Pair, owner: &Pubkey, position: &Pubkey) -> (u64, u64) {
-    let keeper = env.wallet();
+    let keeper = harvester(env);
     let sim = env.simulate(&[budget(), autopay_ix(env, pair, &keeper.pubkey(), owner, position)], &keeper);
+    let after = |account: Pubkey| {
+        let (_, after) = sim.post_accounts.iter().find(|(key, _)| *key == account).expect("the account in the simulation");
+        let after: Account = after.clone().into();
+        TokenState::unpack(&after.data[..TokenState::LEN]).unwrap().amount
+    };
     let gained = |mint: &Pubkey| {
         let vault = env.vault_pda(mint);
-        let (_, after) = sim.post_accounts.iter().find(|(key, _)| *key == vault).expect("the vault in the simulation");
-        let after: Account = after.clone().into();
-        TokenState::unpack(&after.data[..TokenState::LEN]).unwrap().amount - env.token_amount(&vault)
+        after(vault) - env.token_amount(&vault) + after(ata(&keeper.pubkey(), mint, &TOKEN))
     };
     (gained(&env.sol), gained(&env.usdc))
+}
+
+/// The `Autopaid` event a transaction emitted
+fn autopaid(meta: &litesvm::types::TransactionMetadata) -> pluribus::events::Autopaid {
+    meta.logs
+        .iter()
+        .filter_map(|line| STANDARD.decode(line.strip_prefix("Program data: ")?).ok())
+        .find(|data| data.starts_with(pluribus::events::Autopaid::DISCRIMINATOR))
+        .map(|data| pluribus::events::Autopaid::deserialize(&mut &data[8..]).unwrap())
+        .expect("an Autopaid event")
 }
 
 /// The `Compounded` event a transaction emitted

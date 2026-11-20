@@ -172,7 +172,7 @@ fn the_orca_autopay_does_not_take_a_raydium_market() {
     let me = user.pubkey();
     let nft = env.raydium_lp(&me, &pool, lower, upper, liquidity_for(1_000, 120.0, 180.0, 150), &TOKEN);
     expect_ok(env.send(&[env.deposit_lp_ix(&me, &pool, &nft)], &[&user]));
-    let keeper = env.wallet();
+    let keeper = env.harvester();
     let dummies = [Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_unique()];
     expect_err(env.send(&[env.autopay_ix(&keeper.pubkey(), &me, &pool, &nft, dummies)], &[&keeper]), PluribusError::UnsupportedDex);
 }
@@ -181,7 +181,7 @@ fn the_orca_autopay_does_not_take_a_raydium_market() {
 fn the_raydium_autopay_does_not_take_an_orca_market() {
     let mut env = Env::new();
     let whirlpool = env.whirlpool;
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), env.harvester());
     let me = user.pubkey();
     let nft = env.lp(&me, &whirlpool, 120.0, 180.0, liquidity_for(1_000, 120.0, 180.0, 150), &TOKEN);
     expect_ok(env.send(&[env.deposit_lp_ix(&me, &whirlpool, &nft)], &[&user]));
@@ -496,7 +496,7 @@ fn swap_account(ix: &mut Instruction, old: &Pubkey, new: Pubkey) {
 fn autopay_collects_real_raydium_fees_and_repays_debt() {
     for (mut env, clmm) in chains() {
         env.lender(1_000_000 * USDC);
-        let (user, keeper) = (env.user(), env.wallet());
+        let (user, keeper) = (env.user(), env.harvester());
         let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
         let lp = clmm.deposited(&mut env, &user);
         expect_ok(env.draw(&user, 100 * USDC));
@@ -525,9 +525,35 @@ fn autopay_collects_real_raydium_fees_and_repays_debt() {
 }
 
 #[test]
+fn autopay_raydium_pays_the_caller_the_compounding_bounty() {
+    for (mut env, clmm) in chains() {
+        env.lender(1_000_000 * USDC);
+        let admin = env.admin.insecure_clone();
+        expect_ok(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), 200)], &[&admin]));
+        let (user, keeper) = (env.user(), env.harvester());
+        let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
+        let lp = clmm.deposited(&mut env, &user);
+        expect_ok(env.draw(&user, 100 * USDC));
+
+        let before = clmm.held(&env);
+        expect_ok(env.send(&[env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[])], &[&keeper]));
+        let (fee_sol, fee_usdc) = clmm.collected(&env, before);
+        let bounty = (fee_sol * 200 / 10_000, fee_usdc * 200 / 10_000);
+        assert!(bounty.0 > 0 && bounty.1 > 0, "bounty {} SOL and {} USDC", bounty.0, bounty.1);
+
+        // The caller got the same 2% of each fee a compound pays, and the rest went to the account as before
+        assert_eq!((env.balance(&sol, &keeper.pubkey()), env.balance(&usdc, &keeper.pubkey())), bounty);
+        assert_eq!(env.debt(&me), 100 * USDC - (fee_usdc - bounty.1));
+        let credit = env.credit(&me);
+        assert_eq!(credit.positions[credit.find(KIND_TOKEN, &sol).unwrap()].amount, fee_sol - bounty.0);
+        assert_books_match_vaults(&env);
+    }
+}
+
+#[test]
 fn autopay_raydium_keeps_fees_as_collateral_when_nothing_is_owed() {
     for (mut env, clmm) in chains() {
-        let (user, keeper) = (env.user(), env.wallet());
+        let (user, keeper) = (env.user(), env.harvester());
         let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
         let lp = clmm.deposited(&mut env, &user);
 
@@ -546,7 +572,7 @@ fn autopay_raydium_keeps_fees_as_collateral_when_nothing_is_owed() {
 fn autopay_raydium_repays_what_is_owed_and_keeps_the_rest() {
     for (mut env, clmm) in chains() {
         env.lender(1_000_000 * USDC);
-        let (user, keeper) = (env.user(), env.wallet());
+        let (user, keeper) = (env.user(), env.harvester());
         let (me, usdc) = (user.pubkey(), env.usdc);
         let lp = clmm.deposited(&mut env, &user);
         // Less debt than the USDC fees
@@ -566,7 +592,7 @@ fn autopay_raydium_repays_what_is_owed_and_keeps_the_rest() {
 #[test]
 fn autopay_raydium_rejects_a_position_the_account_does_not_hold() {
     for (mut env, clmm) in chains() {
-        let (user, other, keeper) = (env.user(), env.user(), env.wallet());
+        let (user, other, keeper) = (env.user(), env.user(), env.harvester());
         let lp = clmm.deposited(&mut env, &user);
         let steal = env.autopay_raydium_ix(&keeper.pubkey(), &other.pubkey(), &clmm.pool, &lp.nft, clmm.accounts(&lp), &[]);
         expect_err(env.send(&[steal], &[&keeper]), PluribusError::PositionNotFound);
@@ -582,12 +608,13 @@ fn autopay_raydium_pays_only_into_the_programs_own_vaults() {
 
 fn wrong_recipients_are_refused(env: &mut Env, clmm: &Clmm) {
     env.lender(1_000_000 * USDC);
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), env.harvester());
     let (me, sol, usdc) = (user.pubkey(), env.sol, env.usdc);
     let lp = clmm.deposited(env, &user);
     expect_ok(env.draw(&user, 100 * USDC));
-    // The keeper's own accounts, where a harvest could be sent to skim the fees
-    let (mine_sol, mine_usdc) = (env.fund(&sol, &keeper.pubkey(), 0), env.fund(&usdc, &keeper.pubkey(), 0));
+    // Accounts the keeper controls besides the ones its bounty goes to, where a harvest could be sent to skim the fees
+    let accomplice = Pubkey::new_unique();
+    let (mine_sol, mine_usdc) = (env.fund(&sol, &accomplice, 0), env.fund(&usdc, &accomplice, 0));
     let (base_vault, usdc_vault) = (env.vault_pda(&sol), env.vault_pda(&usdc));
     let ix = env.autopay_raydium_ix(&keeper.pubkey(), &me, &clmm.pool, &lp.nft, clmm.accounts(&lp), &[]);
     let address: u32 = anchor_lang::error::ErrorCode::ConstraintAddress.into();
@@ -629,7 +656,7 @@ fn autopay_raydium_pays_a_pools_rewards_only_to_the_accounts_owner() {
 
 fn rewards_go_to_the_owner(env: &mut Env, clmm: &Clmm) {
     env.lender(1_000_000 * USDC);
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), env.harvester());
     let me = user.pubkey();
     let lp = clmm.deposited(env, &user);
     expect_ok(env.draw(&user, 100 * USDC));
@@ -701,7 +728,7 @@ fn compounding(env: &mut Env, clmm: &Clmm, tolerance_bps: u16) -> (Keypair, Keyp
 /// same fees to the unit and leaves the chain under test untouched
 fn fees_on_a_twin(clmm: &Clmm) -> (u64, u64) {
     let (mut env, twin) = chain(clmm.program, clmm.usdc_first).unwrap();
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), env.harvester());
     let lp = twin.deposited(&mut env, &user);
     let before = twin.held(&env);
     expect_ok(env.send(&[env.autopay_raydium_ix(&keeper.pubkey(), &user.pubkey(), &twin.pool, &lp.nft, twin.accounts(&lp), &[])], &[&keeper]));

@@ -13,13 +13,14 @@ use crate::{
     error::PluribusError,
     events::*,
     instructions::{
+        autopay::Harvest,
         compound::{require_fair_bin, Compounder},
         liquidate::{require_not_worse, settle},
     },
     math::*,
     risk::*,
     state::*,
-    token::{pull, push},
+    token::pull,
 };
 
 /// First 8 bytes of sha256("global:initialize_position2")
@@ -643,6 +644,16 @@ pub struct DlmmAutopay<'info> {
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in the base token, to any account it names, never one of the protocol's vaults
+    #[account(mut, token::mint = base_mint, constraint = bounty_base.key() != base_vault.key() @ PluribusError::AccountMismatch)]
+    pub bounty_base: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in USDC
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        constraint = bounty_usdc.key() != usdc_collateral_vault.key() && bounty_usdc.key() != usdc_vault.key() @ PluribusError::AccountMismatch,
+    )]
+    pub bounty_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: The DLMM program checks this is the pair's own token X reserve
     #[account(mut)]
     pub reserve_x: UncheckedAccount<'info>,
@@ -661,8 +672,9 @@ pub struct DlmmAutopay<'info> {
     pub dlmm_program: UncheckedAccount<'info>,
 }
 
-/// Permissionless: collects a held position's trading fees from Meteora into the protocol's own vaults
-/// The USDC part repays debt and the rest stays in the account as collateral, as with Orca fees
+/// Permissionless: collects a held position's trading fees from Meteora into the protocol's own vaults and pays the caller's
+/// recipient the pool's bounty share of them; the USDC left repays debt and the rest stays in the account as collateral,
+/// as with Orca fees
 /// The bin arrays of the position's range are the remaining accounts
 pub fn handle_dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Result<()> {
     let a = ctx.accounts;
@@ -680,44 +692,30 @@ pub fn handle_dlmm_autopay<'info>(ctx: Context<'info, DlmmAutopay<'info>>) -> Re
     // The pool PDA owns the position, so it signs for the fees and they land in our own vaults,
     // the base token on whichever side the pair keeps it
     // Collecting fees never reads the bitmap extension
+    // The balances before the claim, since what arrived is measured from the vaults, not taken from Meteora's word
+    let before = (a.base_vault.amount, a.usdc_collateral_vault.amount);
     let v = vault_venue!(a, a.dlmm_program);
     v.claim(&a.pool, a.memo_program.as_ref(), (held.lower, held.upper), ctx.remaining_accounts)?;
 
-    // What arrived is measured from the vault balances, not taken from Meteora's word
-    let (base_before, usdc_before) = (a.base_vault.amount, a.usdc_collateral_vault.amount);
-    a.base_vault.reload()?;
-    a.usdc_collateral_vault.reload()?;
-    let base_fee = a.base_vault.amount.saturating_sub(base_before);
-    let usdc_fee = a.usdc_collateral_vault.amount.saturating_sub(usdc_before);
-
-    if base_fee > 0 {
-        let base_mint = a.base_asset.mint;
-        a.credit.add_token(&base_mint, base_fee)?;
-        a.base_asset.total_deposited = a.base_asset.total_deposited.saturating_add(base_fee);
-        emit!(CollateralChanged { account: a.credit.key(), mint: base_mint, kind: KIND_TOKEN, amount: base_fee, deposit: true });
+    Harvest {
+        caller: a.caller.key(),
+        position,
+        pool: &mut a.pool,
+        credit: &mut a.credit,
+        base_asset: &mut a.base_asset,
+        base_mint: &a.base_mint,
+        base_vault: &mut a.base_vault,
+        usdc_asset: &mut a.usdc_asset,
+        usdc_collateral_vault: &mut a.usdc_collateral_vault,
+        usdc_mint: &a.usdc_mint,
+        usdc_vault: &a.usdc_vault,
+        bounty_base: &a.bounty_base,
+        bounty_usdc: &a.bounty_usdc,
+        token_program: &a.token_program,
+        // both of a listed pair's tokens are classic tokens
+        base_token_program: &a.token_program,
     }
-
-    let owed = to_u64((usdc_fee as u128).min(a.pool.debt_of(&a.credit)?))?;
-    // An amount too small to retire a debt share is kept as collateral instead
-    let paid = if owed > 0 && a.pool.retires_debt(&a.credit, owed)? { a.pool.repay(&mut a.credit, owed)? } else { 0 };
-    if paid > 0 {
-        push(&a.token_program, &a.usdc_mint, &a.usdc_collateral_vault, &a.usdc_vault, &a.pool, paid)?;
-        emit!(Repaid {
-            account: a.credit.key(),
-            payer: a.caller.key(),
-            amount: paid,
-            debt: to_u64(a.pool.debt_of(&a.credit)?)?,
-            source: 1,
-        });
-    }
-    let kept = usdc_fee - paid;
-    if kept > 0 {
-        let usdc = a.usdc_mint.key();
-        a.credit.add_token(&usdc, kept)?;
-        a.usdc_asset.total_deposited = a.usdc_asset.total_deposited.saturating_add(kept);
-        emit!(CollateralChanged { account: a.credit.key(), mint: usdc, kind: KIND_TOKEN, amount: kept, deposit: true });
-    }
-    Ok(())
+    .book(before)
 }
 
 #[derive(Accounts)]

@@ -110,7 +110,7 @@ fn real_positions_are_valued_like_the_orca_sdk() {
 fn autopay_collects_real_fees_and_repays_debt() {
     let Some((mut env, manifest)) = real_pool() else { return };
     env.lender(1_000_000 * USDC);
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), env.harvester());
     let (me, whirlpool, sol, usdc) = (user.pubkey(), env.whirlpool, env.sol, env.usdc);
     // The second snapshotted position is the Token-2022 flavour and has earned the most fees
     let nft = deposit(&mut env, &manifest, 1, &user);
@@ -138,7 +138,7 @@ fn autopay_collects_real_fees_and_repays_debt() {
 #[test]
 fn autopay_keeps_fees_as_collateral_when_nothing_is_owed() {
     let Some((mut env, manifest)) = real_pool() else { return };
-    let (user, keeper) = (env.user(), env.wallet());
+    let (user, keeper) = (env.user(), env.harvester());
     let (me, whirlpool, sol, usdc) = (user.pubkey(), env.whirlpool, env.sol, env.usdc);
     let nft = deposit(&mut env, &manifest, 0, &user);
     let (fee_sol, fee_usdc) = (num(&manifest["positions"][0]["uncollectedFeeA"]), num(&manifest["positions"][0]["uncollectedFeeB"]));
@@ -153,11 +153,57 @@ fn autopay_keeps_fees_as_collateral_when_nothing_is_owed() {
 #[test]
 fn autopay_rejects_a_position_the_account_does_not_hold() {
     let Some((mut env, manifest)) = real_pool() else { return };
-    let (user, other, keeper) = (env.user(), env.user(), env.wallet());
+    let (user, other, keeper) = (env.user(), env.user(), env.harvester());
     let whirlpool = env.whirlpool;
     let nft = deposit(&mut env, &manifest, 0, &user);
     let steal = env.autopay_ix(&keeper.pubkey(), &other.pubkey(), &whirlpool, &nft, orca_accounts(&manifest, 0));
     expect_err(env.send(&[steal], &[&keeper]), pluribus::error::PluribusError::PositionNotFound);
+}
+
+#[test]
+fn autopay_pays_the_caller_the_compounding_bounty_and_books_the_rest() {
+    let Some((mut env, manifest)) = real_pool() else { return };
+    env.lender(1_000_000 * USDC);
+    let admin = env.admin.insecure_clone();
+    expect_ok(env.send(&[env.set_compound_bounty_ix(&admin.pubkey(), 200)], &[&admin]));
+    let (user, keeper) = (env.user(), env.harvester());
+    let (me, whirlpool, sol, usdc) = (user.pubkey(), env.whirlpool, env.sol, env.usdc);
+    let nft = deposit(&mut env, &manifest, 1, &user);
+    expect_ok(env.draw(&user, 1000 * USDC));
+    let (fee_sol, fee_usdc) = (num(&manifest["positions"][1]["uncollectedFeeA"]), num(&manifest["positions"][1]["uncollectedFeeB"]));
+    let bounty = (fee_sol * 200 / 10_000, fee_usdc * 200 / 10_000);
+    assert!(bounty.0 > 0 && bounty.1 > 0);
+
+    expect_ok(env.send(&[env.autopay_ix(&keeper.pubkey(), &me, &whirlpool, &nft, orca_accounts(&manifest, 1))], &[&keeper]));
+
+    // The caller got the same 2% of each fee a compound pays, and the rest went to the account as before
+    assert_eq!((env.balance(&sol, &keeper.pubkey()), env.balance(&usdc, &keeper.pubkey())), bounty);
+    assert_eq!(env.debt(&me), 1000 * USDC - (fee_usdc - bounty.1));
+    let credit = env.credit(&me);
+    assert_eq!(credit.positions[credit.find(KIND_TOKEN, &sol).unwrap()].amount, fee_sol - bounty.0);
+    assert!(credit.find(KIND_TOKEN, &usdc).is_err());
+    assert_books_match_vaults(&env);
+}
+
+#[test]
+fn autopay_pays_its_bounty_only_into_accounts_that_are_not_the_programs_vaults() {
+    let Some((mut env, manifest)) = real_pool() else { return };
+    let (user, keeper) = (env.user(), env.harvester());
+    let (me, whirlpool, sol, usdc) = (user.pubkey(), env.whirlpool, env.sol, env.usdc);
+    let nft = deposit(&mut env, &manifest, 0, &user);
+    let ix = env.autopay_ix(&keeper.pubkey(), &me, &whirlpool, &nft, orca_accounts(&manifest, 0));
+    let (mine_sol, mine_usdc) = (ata(&keeper.pubkey(), &sol, &TOKEN), ata(&keeper.pubkey(), &usdc, &TOKEN));
+    // The collateral vaults or the lending vault as recipients would only move the protocol's money around
+    for (mine, vault) in [(mine_sol, env.vault_pda(&sol)), (mine_usdc, env.vault_pda(&usdc)), (mine_usdc, env.usdc_vault)] {
+        let mut bad = ix.clone();
+        let at = bad.accounts.iter().position(|m| m.pubkey == mine).unwrap();
+        bad.accounts[at].pubkey = vault;
+        assert!(env.send(&[bad], &[&keeper]).is_err());
+    }
+    assert_eq!(env.balance(&sol, &keeper.pubkey()) + env.balance(&usdc, &keeper.pubkey()), 0);
+    // And the untouched instruction still works
+    expect_ok(env.send(&[ix], &[&keeper]));
+    assert_books_match_vaults(&env);
 }
 
 #[test]

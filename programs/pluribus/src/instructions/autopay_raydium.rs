@@ -7,7 +7,7 @@ use anchor_lang::{
 };
 use anchor_spl::{
     token::ID as TOKEN_PROGRAM_ID,
-    token_interface::{Mint, Token2022, TokenAccount, TokenInterface},
+    token_interface::{Mint, TokenAccount, TokenInterface},
 };
 
 use super::autopay::Harvest;
@@ -68,10 +68,21 @@ pub struct AutopayRaydium<'info> {
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(mut)]
     pub usdc_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in the base token, to any account it names, never one of the protocol's vaults
+    #[account(mut, token::mint = base_mint, constraint = bounty_base.key() != base_vault.key() @ PluribusError::AccountMismatch)]
+    pub bounty_base: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// The caller's bounty in USDC
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        constraint = bounty_usdc.key() != usdc_collateral_vault.key() && bounty_usdc.key() != usdc_vault.key() @ PluribusError::AccountMismatch,
+    )]
+    pub bounty_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// USDC is a classic token, and Raydium takes the classic program in this slot whatever the pool trades
     #[account(address = TOKEN_PROGRAM_ID)]
     pub token_program: Interface<'info, TokenInterface>,
-    pub token_program_2022: Program<'info, Token2022>,
+    #[account(address = anchor_spl::token_2022::ID)]
+    pub token_program_2022: Interface<'info, TokenInterface>,
     /// CHECK: Pinned to the memo program
     #[account(address = MEMO_PROGRAM_ID)]
     pub memo_program: UncheckedAccount<'info>,
@@ -80,8 +91,8 @@ pub struct AutopayRaydium<'info> {
     pub dex_program: UncheckedAccount<'info>,
 }
 
-/// Permissionless: collects a deposited position's trading fees from Raydium
-/// The USDC part repays debt and the rest stays in the account as collateral
+/// Permissionless: collects a deposited position's trading fees from Raydium and pays the caller's recipient the pool's
+/// bounty share of them; the USDC left repays debt and the rest stays in the account as collateral
 /// Remaining accounts are what Raydium wants besides the fees, as it takes them: the tick array bitmap extension when
 /// the position needs it, and a group of reward vault, recipient and reward mint for each reward the pool runs
 pub fn handle_autopay_raydium<'info>(ctx: Context<'info, AutopayRaydium<'info>>) -> Result<()> {
@@ -119,17 +130,24 @@ pub fn handle_autopay_raydium<'info>(ctx: Context<'info, AutopayRaydium<'info>>)
     let before = (a.base_vault.amount, a.usdc_collateral_vault.amount);
     collect_raydium_fees(&raydium, &a.pool, &a.credit.owner, rem)?;
 
+    // A stock Raydium trades through Token-2022 pays its bounty through that program, and USDC through the classic one
+    let base_token_program = if *a.base_mint.to_account_info().owner == anchor_spl::token_2022::ID { &a.token_program_2022 } else { &a.token_program };
     Harvest {
         caller: a.caller.key(),
+        position: mint,
         pool: &mut a.pool,
         credit: &mut a.credit,
         base_asset: &mut a.base_asset,
+        base_mint: &a.base_mint,
         base_vault: &mut a.base_vault,
         usdc_asset: &mut a.usdc_asset,
         usdc_collateral_vault: &mut a.usdc_collateral_vault,
         usdc_mint: &a.usdc_mint,
         usdc_vault: &a.usdc_vault,
+        bounty_base: &a.bounty_base,
+        bounty_usdc: &a.bounty_usdc,
         token_program: &a.token_program,
+        base_token_program,
     }
     .book(before)
 }
