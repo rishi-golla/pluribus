@@ -37,7 +37,7 @@ const tokens: Record<string, number> = {};
 for (const [mint, a] of Object.entries(d.assets)) if (STASH[a.symbol] && (await empty(mint))) tokens[mint] = STASH[a.symbol];
 await faucet(d, to, { sol, tokens, lp: 0 });
 const held = (await listOrcaPositions(connection, d, to)).length;
-for (let i = held; i < want.positions; i++) await faucet(d, to, { lp: want.lp, range: [120, 180] });
+for (let i = held; i < want.positions; i++) await faucet(d, to, { lp: want.lp });
 
 console.log(`Faucet wallet ${to.toBase58()} holds ${want.sol} SOL or more and ${Math.max(held, want.positions)} Orca positions worth $${want.lp} each`);
 console.log(`The web app hands tokens out once FAUCET_SECRET holds the contents of scripts/.keys/${cluster}/faucet.json`);
