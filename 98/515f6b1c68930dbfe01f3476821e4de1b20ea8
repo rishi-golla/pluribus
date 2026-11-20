@@ -1,0 +1,25 @@
+web/src/components/docs/BranchedMenu.css
+  s_584445a80b9080::t_6f9a25909ab1b9 1-206
+web/src/components/docs/BranchedMenu.tsx
+  s_584445a80b9080::t_ad4fcbf77816d4 1-218
+web/src/components/docs/Guide.tsx
+  s_584445a80b9080::t_977e62ea80bb30 6-7,12-18,20,35-37
+web/src/components/docs/SectionsMenu.tsx
+  s_584445a80b9080::t_b273c1ba1ad7db 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98515f6b1c68930dbfe01f3476821e4de1b20ea8",
+  "prompts": {},
+  "sessions": {
+    "s_584445a80b9080": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_584445a80b9080",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}

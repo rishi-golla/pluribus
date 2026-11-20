@@ -1,0 +1,21 @@
+web/src/app/globals.css
+  s_2aef06b77f42d1::t_7c333c3da99961 101-102,104-111,113-114,116-119,121-122,124-137,141-142,145-147
+web/src/components/landing/PortfolioGrid.tsx
+  s_2aef06b77f42d1::t_c25ba78db886aa 4,6-7,10,60-75,91-107,177,187,189,199-201,205,212,219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2d2a6cec91a0c217a2eb88827db6cb1a96d66a8",
+  "prompts": {},
+  "sessions": {
+    "s_2aef06b77f42d1": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_2aef06b77f42d1",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
