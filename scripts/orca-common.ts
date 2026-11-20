@@ -27,6 +27,8 @@ export const { values: args } = parseArgs({
     usd: { type: "string", default: "10000" },
     // Parsed here because every script imports this module, and each one applies its own defaults
     ledger: { type: "string" },
+    // npm run localnet: keep the ledger and the accounts on it instead of starting a fresh chain
+    keep: { type: "boolean" },
     to: { type: "string" },
     sol: { type: "string" },
     stock: { type: "string" },

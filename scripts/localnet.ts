@@ -32,17 +32,20 @@ if (!fs.existsSync(path.join(root, "target/deploy/pluribus.so"))) {
   // The program keypair is not in the repo, and the validator loads the binary at the declared id anyway
   execFileSync("anchor", ["build", "--ignore-keys"], { cwd: root, env, stdio: "inherit" });
 }
+const ledger = args.ledger ?? path.join(root, "test-ledger");
+// A server keeps its chain across restarts, so users and addresses survive, and only sets it up the first time
+const keep = Boolean(args.keep) && fs.existsSync(ledger) && fs.existsSync(path.join(root, "deployments/localnet.json"));
 // Orca's devnet upgrade authority, kept so the program account matches the snapshot
 const orcaAuthority = "8rHQUMS8qg4qrQriPpTbrZqk2yjLrUHSLpA6MzgMSiM";
 
 const validator = spawn(
   "solana-test-validator",
   [
-    "--reset",
+    ...(keep ? [] : ["--reset"]),
     "--quiet",
     // Hours of history instead of about a minute, for the indexer and anything else that reads past transactions
     ...["--limit-ledger-size", "2000000"],
-    ...["--ledger", args.ledger ?? path.join(root, "test-ledger")],
+    ...["--ledger", ledger],
     ...["--rpc-port", String(port), "--faucet-port", String(base + 1900)],
     ...["--gossip-port", String(base), "--dynamic-port-range", `${base}-${base + 2000}`],
     ...["--upgradeable-program", WHIRLPOOL_PROGRAM_ID.toBase58(), path.join(orca, "whirlpool.so"), orcaAuthority],
@@ -80,12 +83,15 @@ try {
   // A fresh validator silently drops versioned transactions for its first seconds, and the Orca SDK sends those
   // So the chain counts as up once one has landed
   while (!(await landed().catch(() => false))) await sleep(500);
-  await import("./orca-fixture.ts");
-  await import("./setup.ts");
-  await import("./faucet-stock.ts");
+  if (keep) console.log(`Kept the chain in ${ledger}, so setup is skipped`);
+  else {
+    await import("./orca-fixture.ts");
+    await import("./setup.ts");
+    await import("./faucet-stock.ts");
+  }
   execFileSync("npm", ["run", "--silent", "sdk:sync"], { cwd: root, stdio: "inherit" });
   const secret = JSON.stringify([...key("faucet").secretKey]);
-  fs.writeFileSync(webEnv, `# Written by npm run localnet and removed when it stops\nNEXT_PUBLIC_CLUSTER=localnet\nFAUCET_SECRET=${secret}\n`);
+  fs.writeFileSync(webEnv, `# Written by npm run localnet and removed when it stops\nNEXT_PUBLIC_LOCAL=1\nFAUCET_SECRET=${secret}\n`);
   console.log(`Ready: Pluribus localnet at ${url}, stop it with ctrl-c`);
 } catch (e) {
   validator.kill();
