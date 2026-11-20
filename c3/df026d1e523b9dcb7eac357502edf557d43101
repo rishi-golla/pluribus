@@ -1,0 +1,22 @@
+web/src/components/earn/EarnDashboard.tsx
+  s_964e5e9ee8ed30::t_825c8a64de7c96 4
+  s_964e5e9ee8ed30::t_2da5a3bffc6284 452
+web/src/components/borrow/BorrowDashboard.tsx
+  s_964e5e9ee8ed30::t_aac8d111e546a5 4,342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3df026d1e523b9dcb7eac357502edf557d43101",
+  "prompts": {},
+  "sessions": {
+    "s_964e5e9ee8ed30": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_964e5e9ee8ed30",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
