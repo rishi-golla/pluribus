@@ -11,19 +11,19 @@ import { LineChart, axisDates, dateLabel, type ChartLine } from "@/components/ch
 import { useAccount, useToast, type Live, type Sample } from "@/components/app/providers";
 import { displayAmount, money, usd } from "@/lib/account";
 import { axisTimes, inRange, niceMax, series, smoothPath, timeLabel, type Point } from "@/lib/chart";
-import { compactUsd } from "@/lib/markets";
+import { JUNIOR_EXAMPLE_SHARE, compactUsd, juniorMultipleAt } from "@/lib/markets";
 
 type Tranche = "senior" | "junior";
-// preview rates are what the deployed rate curve pays at 90% utilization with juniors at 10% of the pool, the state the landing page's 14.9% is for
+// preview rates are what the deployed rate curve pays at 90% utilization with juniors at 8% of the pool, the state the landing page's figure is for
 const TRANCHES = {
   senior: {
     name: "Senior",
     token: "sUSDC",
-    apy: 0.0634,
+    apy: 0.0633,
     color: "#c6f432",
     stance: "Paid first, loses last",
     blurb: "Weekly yield from borrower interest",
-    deposits: "$9.00M",
+    deposits: "$9.20M",
     exit: "Instant",
     lossOrder: "3rd",
     option: "Instant exit",
@@ -31,11 +31,12 @@ const TRANCHES = {
   junior: {
     name: "Junior",
     token: "jUSDC",
-    apy: 0.149,
+    apy: 0.1724,
     color: "#f59a3d",
     stance: "Takes losses first",
-    blurb: "Up to 15.9× the senior rate, 2.35× at 10% of pool",
-    deposits: "$1.00M",
+    // the deployed junior premium is 15% of senior yield per senior dollar covered
+    blurb: `Up to 15.9× the senior rate, ${juniorMultipleAt(JUNIOR_EXAMPLE_SHARE, 0.15).toFixed(2)}× at ${JUNIOR_EXAMPLE_SHARE * 100}% of pool`,
+    deposits: "$0.80M",
     exit: "6-day queue",
     lossOrder: "2nd",
     option: "6-day queue",
@@ -50,11 +51,11 @@ const when = (unix: number) => new Date(unix * 1000).toLocaleString("en-US", { m
 
 /* 365 days. each rate starts and ends where the curve puts it for the utilization below: 58% a year ago, 71% 90 days ago, 90% now */
 const extend = (last90: number[], start: number, vol: number, seed: number) => [...series(276, start, last90[0], vol, seed).slice(0, -1), ...last90];
-const SENIOR_APY = extend(series(90, 4.16, 6.34, 0.14, 11), 2.93, 0.16, 21);
-const JUNIOR_APY = extend(series(90, 9.77, 14.9, 0.33, 5), 6.87, 0.38, 22);
+const SENIOR_APY = extend(series(90, 4.15, 6.33, 0.14, 11), 2.92, 0.16, 21);
+const JUNIOR_APY = extend(series(90, 11.3, 17.24, 0.4, 5), 7.95, 0.45, 22);
 const UTIL = extend(series(90, 71, 90, 2.2, 9), 58, 2.4, 23);
-const SENIOR_DEP = extend(series(90, 7.6, 9.0, 0.12, 31), 4.2, 0.15, 24);
-const JUNIOR_DEP = extend(series(90, 0.82, 1.0, 0.03, 32), 0.4, 0.03, 25);
+const SENIOR_DEP = extend(series(90, 7.76, 9.2, 0.12, 31), 4.28, 0.15, 24);
+const JUNIOR_DEP = extend(series(90, 0.66, 0.8, 0.03, 32), 0.32, 0.03, 25);
 
 const METRICS = ["APY", "Utilization", "Deposits"] as const;
 type Metric = (typeof METRICS)[number];
@@ -100,12 +101,15 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
   const soon = !!pool && !stat;
   const apy = pool ? (stat?.apy ?? null) : t.apy;
   const apyHistory = live ? inRange(live.samples, 90).map((s) => s.apy[id]) : (id === "senior" ? SENIOR_APY : JUNIOR_APY).slice(-90);
-  const target = pool ? whole(pool.juniorTarget) : 10;
+  // the multiple at the example share, from the pool's own premium: its multiple at the target share, taken back to the rate
+  const cover = (share: number) => (1 - share) / share;
+  const premium = pool && pool.juniorTarget > 0 ? (pool.juniorMultipleAtTarget - 1) / cover(pool.juniorTarget) : 0;
+  const atShare = Math.min(juniorMultipleAt(JUNIOR_EXAMPLE_SHARE, premium), pool?.juniorMultipleMax ?? Infinity);
   const queue = live ? `${span(live.juniorRules.waitSecs)} queue` : t.exit;
   const blurb = !stat
     ? t.blurb
     : id === "junior"
-      ? `Up to ${times(pool?.juniorMultipleMax ?? 1)} the senior rate, ${times(pool?.juniorMultipleAtTarget ?? 1)} at ${target}% of pool`
+      ? `Up to ${times(pool?.juniorMultipleMax ?? 1)} the senior rate, ${times(atShare)} at ${whole(JUNIOR_EXAMPLE_SHARE)}% of pool`
       : pool?.epoch
         ? "Weekly yield from borrower interest"
         : "Yield from borrower interest";
@@ -222,8 +226,8 @@ function YieldHistory() {
         { key: "jun", label: "Junior", color: "#f59a3d", data: s(JUNIOR_APY), fill: 0.2 },
         { key: "sen", label: "Senior", color: "#c6f432", data: s(SENIOR_APY), fill: 0.12 },
       ],
-      yMax: 16,
-      yTicks: [0, 4, 8, 12, 16],
+      yMax: 20,
+      yTicks: [0, 5, 10, 15, 20],
       fmtY: (v: number) => `${v}%`,
       fmtValue: (v: number) => `${v.toFixed(2)}%`,
       stats: [
@@ -691,8 +695,8 @@ export function EarnDashboard() {
       ]
     : [
         { n: 1, name: "Insurance fund", width: "1%", color: "var(--color-t2)", value: "$100K", share: "1% of pool" },
-        { n: 2, name: "Junior tranche", width: "10%", color: "var(--color-orange)", value: "$1.00M", share: "10% of pool" },
-        { n: 3, name: "Senior lenders", width: "90%", color: "var(--color-green)", value: "$9.00M", share: "90% of pool" },
+        { n: 2, name: "Junior tranche", width: "8%", color: "var(--color-orange)", value: "$800K", share: "8% of pool" },
+        { n: 3, name: "Senior lenders", width: "92%", color: "var(--color-green)", value: "$9.20M", share: "92% of pool" },
       ];
   const split: Split[] = pool
     ? [
