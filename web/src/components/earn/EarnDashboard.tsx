@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ChevronDown, Flame, Shield, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { Chip, KV, Label, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
@@ -20,9 +20,7 @@ const TRANCHES = {
     token: "sUSDC",
     apy: 0.069,
     color: "#c6f432",
-    tone: "green" as const,
-    badge: Shield,
-    tag: { icon: ShieldCheck, text: "Protected" },
+    stance: "Paid first, loses last",
     blurb: "Weekly yield from borrower interest",
     deposits: "$9.00M",
     exit: "Instant",
@@ -34,9 +32,7 @@ const TRANCHES = {
     token: "jUSDC",
     apy: 0.242,
     color: "#f59a3d",
-    tone: "orange" as const,
-    badge: Zap,
-    tag: { icon: Flame, text: "First loss" },
+    stance: "Takes losses first",
     blurb: "Up to 15.9× the senior rate, 2.35× at 10% of pool",
     deposits: "$1.00M",
     exit: "6-day queue",
@@ -97,8 +93,6 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolean; onSelect: () => void }) {
   const { live } = useAccount();
   const t = TRANCHES[id];
-  const Badge: LucideIcon = t.badge;
-  const TagIcon = t.tag.icon;
   const pool = live?.pool;
   const stat = pool?.[id];
   // A deployment whose admin has not opened the junior tranche yet
@@ -133,25 +127,15 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
       <div className="pointer-events-none absolute -right-20 -top-[120px] h-[300px] w-[360px] rounded-full opacity-[0.22] blur-[60px]" style={{ background: t.color }} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="relative grid size-10 place-items-center rounded-[10px] border border-line-2 bg-s2">
+          <div className="grid size-10 place-items-center rounded-[10px] border border-line-2 bg-s2">
             <Token src="/tokens/usdc.webp" size={24} />
-            <span className="absolute -bottom-[5px] -right-[5px] grid size-[18px] place-items-center rounded shadow-[0_0_0_2px_var(--color-s1)]" style={{ background: t.color }}>
-              <Badge size={11} strokeWidth={2.5} className="text-[#09090b]" />
-            </span>
           </div>
           <div>
             <div className="text-[17px] font-medium tracking-[-0.02em]">{t.name}</div>
             <div className="text-[13px] text-t3">{t.token}</div>
           </div>
         </div>
-        {soon ? (
-          <Tag>Coming soon</Tag>
-        ) : (
-          <Tag tone={t.tone}>
-            <TagIcon />
-            {t.tag.text}
-          </Tag>
-        )}
+        {soon ? <Tag>Coming soon</Tag> : <span className="text-[13px] text-t2">{t.stance}</span>}
       </div>
       <div className="mt-[26px] flex items-end justify-between">
         <div>
