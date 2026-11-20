@@ -28,6 +28,7 @@ import {
   deploymentFile,
   ensureFeedIds,
   ensureLookupTable,
+  ensureLiqBonuses,
   ensurePremiums,
   ensureShockColumn,
   exists,
@@ -284,6 +285,7 @@ addFeeds(d);
 // every price anyway, so a demo pool applies them at once
 await ensureFeedIds(d);
 await ensurePremiums(d);
+await ensureLiqBonuses(d);
 await demoActivateNow(d);
 
 for (const junior of [false, true]) {

@@ -114,6 +114,8 @@ export const LIVE_SYMBOLS = ["JitoSOL", "JupSOL", "AAPLx", "BONK"];
 // Yearly rate in bps charged on debt each asset backs, and the share of it each loyalty tier pays
 export const PREMIUM_BPS: Record<string, number> = { BONK: 1500, NVDAx: 300, AAPLx: 300 };
 export const PREMIUM_TIERS = [10_000, 6_000, 3_000];
+// The liquidator's bonus in bps on a token and on liquidity positions in it; an asset not named here pays the pool's
+export const LIQ_BONUS_BPS: Record<string, [number, number]> = { SOL: [100, 200] };
 
 // A mock memecoin in a shock column of its own: scenarios are crypto crash, equity crash and broad selloff
 export const MEME = {
@@ -223,6 +225,21 @@ export async function ensurePremiums(d: Deployment) {
   if (!PREMIUM_TIERS.every((v, i) => tiers[i] === v)) {
     await send(await ix.setPremiumTiers(program, me, PREMIUM_TIERS));
     console.log(`Premium tiers set to ${PREMIUM_TIERS.join("/")} bps`);
+  }
+}
+
+// Sets each asset's own liquidation bonus
+export async function ensureLiqBonuses(d: Deployment) {
+  for (const [mint, a] of Object.entries(d.assets)) {
+    const asset = await program.account.asset.fetch(pda.asset(new PublicKey(mint)));
+    const [token, lp] = LIQ_BONUS_BPS[a.symbol] ?? [0, 0];
+    if (asset.liqBonusBps === token && asset.lpLiqBonusBps === lp) continue;
+    // a program from before the upgrade has no such instruction, and the rest of setup must still run against it
+    const sent = await send(await ix.setAssetLiqBonus(program, me, new PublicKey(mint), token, lp)).then(
+      () => true,
+      () => false,
+    );
+    console.log(sent ? `${a.symbol} liquidation bonus set to ${token} bps, ${lp} bps on its positions` : `${a.symbol} liquidation bonus not set: the program refused it`);
   }
 }
 
