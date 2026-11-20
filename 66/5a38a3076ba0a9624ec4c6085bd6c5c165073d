@@ -1,0 +1,19 @@
+web/src/components/earn/EarnDashboard.tsx
+  s_964e5e9ee8ed30::t_825c8a64de7c96 4,23,35,130,138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "665a38a3076ba0a9624ec4c6085bd6c5c165073d",
+  "prompts": {},
+  "sessions": {
+    "s_964e5e9ee8ed30": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_964e5e9ee8ed30",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
