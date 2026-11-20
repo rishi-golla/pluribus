@@ -1,0 +1,19 @@
+web/src/components/earn/LendingHistory.tsx
+  s_162184ca7568e9::t_6682e3c2977c30 3,86,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd28ecac1cb1f81e6d2450710ddc01f4d9ab0694",
+  "prompts": {},
+  "sessions": {
+    "s_162184ca7568e9": {
+      "agent_id": {
+        "tool": "devin",
+        "id": "s_162184ca7568e9",
+        "model": "unknown"
+      },
+      "human_author": "rishi-golla <rishigolla.123@gmail.com>"
+    }
+  }
+}
