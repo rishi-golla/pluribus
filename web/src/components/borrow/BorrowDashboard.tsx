@@ -2,12 +2,12 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Activity, ArrowRight, Award, ChevronDown, ChevronRight, Info, Plus, ShieldCheck, TrendingUp, TriangleAlert } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Chip, KV, Label, StatusDot, Swatch, Tag, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Fold } from "@/components/Fold";
 import { Segmented } from "@/components/Segmented";
-import { LineChart } from "@/components/charts/LineChart";
+import { LineChart, useWidth } from "@/components/charts/LineChart";
 import { useAccount, useToast, type Live } from "@/components/app/providers";
 import { displayAmount, healthOf, healthPos, healthTone, money, shortKey, usd } from "@/lib/account";
 import { series } from "@/lib/chart";
@@ -58,12 +58,12 @@ function CreditHero({ p }: { p: Projection }) {
       ];
 
   return (
-    <section className="panel grid grid-cols-[1.5fr_1px_1fr_1px_1fr]">
-      <div className="px-[26px] py-6">
+    <section className="panel grid grid-cols-1 lg:grid-cols-[1.5fr_1px_1fr_1px_1fr]">
+      <div className="min-w-0 px-5 py-6 sm:px-[26px]">
         <Label>
           Available to borrow <Info />
         </Label>
-        <div className="mt-2.5 flex items-baseline gap-2.5">
+        <div className="mt-2.5 flex flex-wrap items-baseline gap-2.5">
           <Num value={available} decimals={2} prefix="$" countUp className="text-[40px] font-medium leading-[1.05] tracking-[-0.04em] tabular-nums" />
           {!live && (
             <Tag tone="green" className="ml-1.5">
@@ -94,7 +94,7 @@ function CreditHero({ p }: { p: Projection }) {
           />
           <i className="stripes block h-full flex-1 rounded-[3px]" />
         </div>
-        <div className="mt-3.5 flex gap-5 whitespace-nowrap text-[13px] text-t2 [&_b]:ml-1 [&_b]:font-medium [&_b]:text-t1">
+        <div className="mt-3.5 flex flex-wrap gap-x-5 gap-y-1.5 whitespace-nowrap text-[13px] text-t2 [&_b]:ml-1 [&_b]:font-medium [&_b]:text-t1">
           <span className="inline-flex items-center">
             <Swatch color="var(--color-brand)" className="mr-[7px]" />
             Borrowed
@@ -114,8 +114,8 @@ function CreditHero({ p }: { p: Projection }) {
           </span>
         </div>
       </div>
-      <div className="self-stretch bg-line" />
-      <div className="px-[26px] py-6">
+      <div className="h-px self-stretch bg-line lg:h-auto" />
+      <div className="min-w-0 px-5 py-6 sm:px-[26px]">
         <div className="flex items-center justify-between">
           <Label>
             Health factor <Info />
@@ -154,8 +154,8 @@ function CreditHero({ p }: { p: Projection }) {
           <span>3.00+</span>
         </div>
       </div>
-      <div className="self-stretch bg-line" />
-      <div className="px-[26px] py-6">
+      <div className="h-px self-stretch bg-line lg:h-auto" />
+      <div className="min-w-0 px-5 py-6 sm:px-[26px]">
         <div className="flex items-center justify-between">
           <Label>
             Your borrow rate <Info />
@@ -197,15 +197,15 @@ function PortfolioPanel() {
   ] as const;
   return (
     <div className="panel">
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] pt-[18px]">
         <h3 className="text-[15px] font-medium tracking-[-0.01em]">Portfolio</h3>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Segmented small label="Highlight series" items={SERIES} value={focus} onChange={setFocus} />
           <Segmented small label="Time range" items={RANGES} value={range} onChange={setRange} />
         </div>
       </div>
       <div className="px-[22px] pb-[22px] pt-3.5">
-        <div className="flex items-center gap-7">
+        <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
           {stats.map((s) => (
             <button
               key={s.label}
@@ -558,7 +558,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
     <section className="panel mt-4">
       {live && <CollateralDialog live={live} open={dialog} onClose={() => setDialog(null)} />}
       <CompoundDialog live={live} target={feesNow} onClose={() => setFees(null)} />
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Collateral <span className="font-normal text-t3">{all.length === 1 ? "1 position" : `${all.length} positions`}</span>
         </h3>
@@ -577,7 +577,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
           </button>
         </div>
       </div>
-      <div className="flex gap-2 border-b border-line px-[22px] pb-3.5 pt-4">
+      <div className="no-scrollbar flex gap-2 overflow-x-auto border-b border-line px-[22px] pb-3.5 pt-4">
         {FILTERS.map((f) => (
           <button
             key={f.label}
@@ -598,7 +598,9 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
           </button>
         ))}
       </div>
-      <table className="mt-2 w-full border-collapse">
+      {/* on a narrow screen the table scrolls sideways inside the panel */}
+      <div className="overflow-x-auto">
+      <table className="mt-2 w-full min-w-[900px] border-collapse xl:min-w-0">
         <thead>
           <tr className="text-[12.5px] text-t3 [&_th]:whitespace-nowrap [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
             <th className="pl-[22px] text-left">Asset</th>
@@ -684,6 +686,7 @@ function CollateralPanel({ onStressTest }: { onStressTest: () => void }) {
             ))}
         </tbody>
       </table>
+      </div>
       {!rows.length && (
         <div className="px-[22px] py-10 text-center text-t3">
           {all.length ? `No ${filter} deposited` : "No collateral yet"}
@@ -739,7 +742,7 @@ function PriceControl({ live }: { live: Live }) {
   };
   const chip = "cursor-pointer rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
-    <div className="mb-4 flex items-center gap-1.5">
+    <div className="mb-4 flex flex-wrap items-center gap-1.5">
       <Label className="mr-1.5">Demo price</Label>
       <Segmented small label="Demo price asset" items={["SOL", "NVDAx"] as const} value={asset} onChange={setAsset} />
       {CRASHES.map((c) => (
@@ -803,7 +806,13 @@ function StressPanel({ highlight }: { highlight: boolean }) {
       </div>
       <div className="px-[22px] pb-[22px] pt-[18px]">
         {live?.canSetPrice && <PriceControl live={live} />}
-        <div role="group" aria-label="Crash scenario" className="grid gap-px overflow-hidden rounded-[10px] border border-line bg-line" style={{ gridTemplateColumns: `repeat(${scenarios.length}, minmax(0, 1fr))` }}>
+        {/* stacked on a phone, side by side from tablet width up */}
+        <div
+          role="group"
+          aria-label="Crash scenario"
+          className="grid gap-px overflow-hidden rounded-[10px] border border-line bg-line sm:[grid-template-columns:var(--cols)]"
+          style={{ "--cols": `repeat(${scenarios.length}, minmax(0, 1fr))` } as CSSProperties}
+        >
           {scenarios.map((s, i) => (
             <button
               key={s.name}
@@ -903,8 +912,11 @@ function AutopayPanel() {
   const lps = live ? live.collateral.filter((c) => c.lp || c.dlmm) : [];
   const on = live ? lps.some((c) => !c.compoundBps) : enabled;
   const toast = useToast();
-  const AW = 458;
-  const bw = (AW - 29 * 4) / 30;
+  const chart = useRef<HTMLDivElement>(null);
+  // drawn at the width it is shown at, so the dates keep their size on a phone
+  const AW = useWidth(chart, 458);
+  const gap = AW < 400 ? 2 : 4;
+  const bw = (AW - 29 * gap) / 30;
   const toggle = () => {
     setOn(!on);
     toast(on ? { title: "Autopay paused", detail: "LP fees stay in positions", tone: "info" } : { title: "Autopay resumed", detail: "LP fees repay debt again" });
@@ -915,7 +927,7 @@ function AutopayPanel() {
   const top = Math.max(14, ...fees);
   return (
     <div className="panel">
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Autopay
           <Tag tone={on ? "green" : "neutral"}>
@@ -958,11 +970,12 @@ function AutopayPanel() {
             Avg <b className="font-medium text-t1">{live ? usd(fees.reduce((s, v) => s + v, 0) / 30) : "$7.08"}</b> / day
           </span>
         </div>
+        <div ref={chart} className="mt-2.5">
         <motion.svg
           viewBox={`0 0 ${AW} 150`}
           width="100%"
           height={150}
-          className="mt-2.5 [&_text]:fill-t3"
+          className="[&_text]:fill-t3"
           initial="hidden"
           whileInView="shown"
           viewport={{ once: true, amount: 0.5 }}
@@ -976,7 +989,7 @@ function AutopayPanel() {
             return (
               <motion.rect
                 key={i}
-                x={i * (bw + 4)}
+                x={i * (bw + gap)}
                 y={130 - h}
                 width={bw}
                 height={h}
@@ -996,6 +1009,7 @@ function AutopayPanel() {
             Today
           </text>
         </motion.svg>
+        </div>
         <div className="mt-3.5 grid grid-cols-3 gap-px overflow-hidden rounded-[10px] border border-line bg-line">
           {[
             ["This month", <Num key="m" value={autopayPerMonth} decimals={2} prefix="$" countUp className="text-green" />],
@@ -1039,13 +1053,13 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
   };
 
   return (
-    <main className="rise mx-auto max-w-[1280px] px-10 pb-16 pt-9">
-      <div className="mb-7 flex items-end justify-between">
+    <main className="rise mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Credit Line</h1>
           <p className="mt-2 text-[14.5px] text-t2">Borrow USDC against your Solana portfolio</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Chip>
             Pool liquidity <b>{usd(poolCash, 0)}</b>
           </Chip>
@@ -1054,7 +1068,7 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
           </Chip>
         </div>
       </div>
-      <section className="grid grid-cols-[minmax(0,1fr)_384px] gap-4">
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_384px]">
         <PortfolioPanel />
         <DrawPanel form={form} onApply={onApply} />
       </section>
@@ -1064,7 +1078,7 @@ export function BorrowDashboard({ full = true }: { full?: boolean }) {
       {full && (
         <>
           <CollateralPanel onStressTest={runStressTest} />
-          <section className="mt-4 grid grid-cols-[1.35fr_1fr] items-start gap-4">
+          <section className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.35fr_1fr]">
             <div ref={stressRef}>
               <Fold title="Stress test" summary="How far prices can fall before liquidation" open={stressOpen} onToggle={() => setStressOpen(!stressOpen)}>
                 <StressPanel highlight={highlightStress} />

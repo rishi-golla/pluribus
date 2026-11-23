@@ -150,7 +150,7 @@ function MonthPicker({ months, value, onChange }: { months: { key: string; label
             <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
             <motion.ul
               role="listbox"
-              className="glass-tip absolute right-0 z-30 mt-2 w-56 rounded-[10px] border border-line-2 p-1.5"
+              className="glass-tip absolute left-0 z-30 mt-2 w-56 rounded-[10px] border border-line-2 p-1.5"
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98 }}
@@ -248,13 +248,13 @@ export function StatementsDashboard() {
   };
 
   return (
-    <main className="rise mx-auto max-w-[1280px] px-10 pb-16 pt-9">
-      <div className="mb-7 flex items-end justify-between">
+    <main className="rise mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Statements</h1>
           <p className="mt-2 text-[14.5px] text-t2">Monthly account statements</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <MonthPicker months={months} value={monthKey} onChange={setMonthKey} />
           <button type="button" onClick={exportCsv} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-line-2 bg-s2 px-3.5 text-[13.5px] font-medium transition-colors hover:bg-s3">
             <FileSpreadsheet size={16} strokeWidth={1.75} />
@@ -267,8 +267,8 @@ export function StatementsDashboard() {
         </div>
       </div>
 
-      <section className="panel grid grid-cols-[340px_1px_minmax(0,1fr)]">
-        <div className="p-[26px]">
+      <section className="panel grid grid-cols-1 lg:grid-cols-[340px_1px_minmax(0,1fr)]">
+        <div className="p-5 sm:p-[26px]">
           <Label>{month.inProgress ? `Balance so far, ${short} ${lastDay}` : `Closing balance, ${short} ${lastDay}`}</Label>
           <Num value={s.closing} decimals={2} prefix="$" className="mt-2.5 block text-[40px] font-medium leading-[1.05] tracking-[-0.04em] tabular-nums" />
           {prev && (
@@ -292,11 +292,11 @@ export function StatementsDashboard() {
             <Tag tone="brand">{month.tier}</Tag>
           </KV>
         </div>
-        <div className="self-stretch bg-line" />
-        <div className="p-[26px]">
-          <div className="flex items-center justify-between">
+        <div className="h-px self-stretch bg-line lg:h-auto" />
+        <div className="min-w-0 p-5 sm:p-[26px]">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <h3 className="text-[15px] font-medium">Balance movement</h3>
-            <div className="flex gap-4 text-[12.5px] text-t3">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-t3">
               <span className="flex items-center gap-1.5">
                 <Swatch color="#a98bff" />
                 Increases debt
@@ -307,26 +307,31 @@ export function StatementsDashboard() {
               </span>
             </div>
           </div>
-          <div className="mt-2.5">
-            <Waterfall key={monthKey} s={s} step={live ? niceMax(peakOf(s)) / 4 : undefined} />
+          {/* six labelled bars need about 600px, so a phone scrolls the chart sideways rather than squeezing it */}
+          <div className="no-scrollbar mt-2.5 overflow-x-auto">
+            <div className="min-w-[600px]">
+              <Waterfall key={monthKey} s={s} step={live ? niceMax(peakOf(s)) / 4 : undefined} />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="mt-4 grid grid-cols-[minmax(0,1fr)_372px] gap-4">
-        {/* collapsed, the list is taken out of the flow, so the row is as tall as the column beside it. print gets every row */}
+      <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_372px]">
+        {/* collapsed, the list is taken out of the flow, so the row is as tall as the column beside it. with that column below it
+            on a narrow screen the list stays in the flow and stops at a set height instead. print gets every row */}
         <div className={`panel ${expanded ? "" : "relative print:static"}`}>
-          <div className={expanded ? "" : "absolute inset-0 flex flex-col overflow-hidden print:static print:block"}>
-          <div className="flex items-center justify-between px-[22px] pt-[18px]">
+          <div className={expanded ? "" : "absolute inset-0 flex flex-col overflow-hidden max-lg:static print:static print:block"}>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] pt-[18px]">
             <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
               Activity <span className="font-normal text-t3">{listed.length} events</span>
             </h3>
             <Segmented small label="Filter activity" items={FILTERS} value={filter} onChange={setFilter} />
           </div>
-          <div ref={list} className={expanded ? "" : "relative min-h-0 flex-1 overflow-hidden print:overflow-visible"}>
-          <table className="mt-3.5 w-full border-collapse">
+          <div ref={list} className={expanded ? "" : "relative min-h-0 flex-1 overflow-hidden max-lg:max-h-[440px] print:max-h-none print:overflow-visible"}>
+          <div className="overflow-x-auto">
+          <table className="mt-3.5 w-full min-w-[620px] border-collapse md:min-w-0">
             <thead>
-              <tr className="text-[12.5px] text-t3 [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
+              <tr className="text-[12.5px] text-t3 [&_th]:whitespace-nowrap [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
                 <th className="pl-[22px] text-left">Activity</th>
                 <th className="text-left">Date</th>
                 <th className="text-right">Amount</th>
@@ -361,8 +366,8 @@ export function StatementsDashboard() {
                           </div>
                         </div>
                       </td>
-                      <td className="text-t2">{shortDate(r.date)}</td>
-                      <td className={`text-right font-medium ${r.kind === "repay" || r.kind === "autopay" ? "text-green" : r.kind === "tier" || r.kind === "closed" ? "text-t3" : ""}`}>{signed(r.kind, r.amount)}</td>
+                      <td className="whitespace-nowrap text-t2">{shortDate(r.date)}</td>
+                      <td className={`whitespace-nowrap text-right font-medium ${r.kind === "repay" || r.kind === "autopay" ? "text-green" : r.kind === "tier" || r.kind === "closed" ? "text-t3" : ""}`}>{signed(r.kind, r.amount)}</td>
                       <td className="text-right text-t2">{usd(r.balance)}</td>
                       <td className="pr-[22px] text-right">
                         <a
@@ -379,6 +384,7 @@ export function StatementsDashboard() {
                 })}
             </tbody>
           </table>
+          </div>
           {!rows.length && <div className="px-[22px] py-10 text-center text-t3">{filter === "All" ? "No activity this month" : `No ${filter.toLowerCase()} this month`}</div>}
           {clipped && !expanded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t from-s1 to-transparent print:hidden" />}
           </div>

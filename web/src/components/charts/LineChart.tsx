@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useInView } from "motion/react";
-import { useId, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { smoothPath, type Point } from "@/lib/chart";
 import { Swatch } from "@/components/ui";
 import { EASE } from "@/components/motion";
@@ -39,9 +39,27 @@ type Props = {
 
 const SPRING = { type: "spring", stiffness: 520, damping: 42 } as const;
 
+/** Whether axis labels of about 11px type would run into each other across `room` pixels, so only every other one is drawn */
+export const crowded = (labels: string[], room: number) => labels.length > 3 && labels.reduce((sum, l) => sum + l.length * 6.5 + 12, 0) > room;
+
+/** The element's width in css pixels, `fallback` until it has been measured, so a chart can draw at the size it is shown at */
+export function useWidth<T extends HTMLElement>(ref: RefObject<T | null>, fallback: number) {
+  const [width, setWidth] = useState(fallback);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => el.clientWidth > 0 && setWidth(el.clientWidth);
+    read();
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [ref]);
+  return width;
+}
+
 export function LineChart({
-  width: W,
-  height: H,
+  width,
+  height,
   pad = { top: 10, right: 52, bottom: 26, left: 8 },
   lines,
   yMin = 0,
@@ -59,6 +77,11 @@ export function LineChart({
   ariaLabel,
   overlay,
 }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Drawn at the width it is shown at, so the labels keep their size; `width` is the layout's own and stands in until measured.
+  // A narrow chart gets shorter too, never taller than `height`
+  const W = useWidth(ref, width);
+  const H = Math.min(height, Math.max(220, Math.round(W * 0.62)));
   const n = lines[0].data.length;
   const iw = W - pad.left - pad.right;
   const ih = H - pad.top - pad.bottom;
@@ -69,7 +92,8 @@ export function LineChart({
   const [hover, setHover] = useState<number | null>(null);
   const idx = Math.min(hover ?? restIndex ?? n - 1, n - 1);
   const cx = x(idx);
-  const ref = useRef<HTMLDivElement>(null);
+  // The tip sits beside the marker, on whichever side has room, and never past the chart's edges
+  const tipLeft = Math.max(0, Math.min(W - 176, cx > Math.min(230, W / 2) ? cx - 196 : cx + 16));
   const inView = useInView(ref, { once: true, amount: 0.4 });
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
@@ -84,7 +108,7 @@ export function LineChart({
         viewBox={`0 0 ${W} ${H}`}
         width="100%"
         height={H}
-        className="cursor-crosshair touch-none text-[11px] [&_text]:fill-t3"
+        className="cursor-crosshair touch-pan-y text-[11px] [&_text]:fill-t3"
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
         role="img"
@@ -106,11 +130,14 @@ export function LineChart({
             </text>
           </g>
         ))}
-        {xLabels.map((lab, i) => (
-          <text key={`${lab}-${i}`} x={pad.left + (i / (xLabels.length - 1)) * iw} y={xTitle ? H - 24 : H - 6} textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>
-            {lab}
-          </text>
-        ))}
+        {xLabels.map((lab, i) =>
+          // a narrow chart has room for every other label
+          i % 2 && crowded(xLabels, iw) ? null : (
+            <text key={`${lab}-${i}`} x={pad.left + (i / (xLabels.length - 1)) * iw} y={xTitle ? H - 24 : H - 6} textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>
+              {lab}
+            </text>
+          ),
+        )}
         {xTitle && (
           <text x={pad.left + iw / 2} y={H - 4} textAnchor="middle" className="font-medium">
             {xTitle}
@@ -174,8 +201,8 @@ export function LineChart({
       </svg>
       <motion.div
         className="glass-tip pointer-events-none absolute top-[18px] min-w-[170px] rounded-lg border border-line-2 px-3 py-2.5 text-xs"
-        initial={{ opacity: 0, left: cx > 230 ? cx - 196 : cx + 16 }}
-        animate={{ opacity: inView ? 1 : 0, left: cx > 230 ? cx - 196 : cx + 16 }}
+        initial={{ opacity: 0, left: tipLeft }}
+        animate={{ opacity: inView ? 1 : 0, left: tipLeft }}
         transition={{ left: SPRING, opacity: { duration: 0.4, delay: 1.2 } }}
       >
         <div className="mb-1.5 text-t3">{titleAt(idx)}</div>

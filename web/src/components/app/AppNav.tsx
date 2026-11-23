@@ -46,7 +46,7 @@ function MarketSearch() {
   };
 
   return (
-    <div className="relative">
+    <div className="relative hidden xl:block">
       <label className={`${bar} cursor-text transition-colors focus-within:border-line-2`}>
         <Search {...ic} className="shrink-0" />
         <input
@@ -107,7 +107,7 @@ export function AppNav({ active }: { active?: string }) {
         // always in view on the app pages: nothing here is worth money
         !active && (
           <div className="bg-bg">
-            <div role="note" className="flex h-7 items-center justify-center border-b border-line bg-orange-dim px-7 text-[12px] font-medium text-orange">
+            <div role="note" className="flex min-h-7 items-center justify-center border-b border-line bg-orange-dim px-4 py-1 text-center text-[12px] font-medium text-orange sm:px-7">
               You are currently on {CLUSTER === "localnet" ? "Localnet" : "Devnet"} mode. Tokens are mocks with no real value.
             </div>
           </div>
@@ -116,21 +116,23 @@ export function AppNav({ active }: { active?: string }) {
     >
       {/* The landing frame shows its demo price, and the app shows the chain's once a wallet's account is read */}
       {(active || (live && deployment)) && (
-        <div className="flex items-center gap-1.5 px-2 text-[13px] text-t2">
+        <div className="hidden items-center gap-1.5 px-2 text-[13px] text-t2 lg:flex">
           <Token src="/tokens/sol.webp" size={16} />
           {live && deployment ? usd(live.prices[deployment.solMint]) : "$150.12"}
         </div>
       )}
       {active ? (
-        <div className={bar}>
-          <Search {...ic} />
-          Search markets
-          {slash}
+        <div className="hidden xl:block">
+          <div className={bar}>
+              <Search {...ic} />
+              Search markets
+              {slash}
+            </div>
         </div>
       ) : (
         <MarketSearch />
       )}
-      <div className="grid size-9 place-items-center rounded-lg border border-line bg-s1 text-t2">
+      <div className="hidden size-9 place-items-center rounded-lg border border-line bg-s1 text-t2 lg:grid">
         <Bell {...ic} />
       </div>
       {active ? (

@@ -61,15 +61,16 @@ export function LendingHistory({ live }: { live: Live | null }) {
   const rows = showAll ? matching : matching.slice(0, LENDING_SHOWN);
   return (
     <div className="panel">
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Lending activity {loaded && <span className="font-normal text-t3">{listed.length} events</span>}
         </h3>
         <Segmented small label="Filter lending activity" items={LENDING_FILTERS} value={filter} onChange={setFilter} />
       </div>
-      <table className="mt-3.5 w-full border-collapse">
+      <div className="overflow-x-auto">
+      <table className="mt-3.5 w-full min-w-[680px] border-collapse md:min-w-0">
         <thead>
-          <tr className="text-[12.5px] text-t3 [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
+          <tr className="text-[12.5px] text-t3 [&_th]:whitespace-nowrap [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
             <th className="pl-[22px] text-left">Activity</th>
             <th className="text-left">Date</th>
             <th className="text-right">Amount</th>
@@ -98,9 +99,9 @@ export function LendingHistory({ live }: { live: Live | null }) {
                     </div>
                   </div>
                 </td>
-                <td className="text-t2">{lendingDate(r.date)}</td>
+                <td className="whitespace-nowrap text-t2">{lendingDate(r.date)}</td>
                 <td className={`text-right font-medium ${k.sign ? "" : "text-t2"}`}>{r.amount > 0 ? `${k.sign}${usd(r.amount)}` : "-"}</td>
-                <td className="text-right text-t2">
+                <td className="whitespace-nowrap text-right text-t2">
                   {money(r.shares)} {t.token}
                 </td>
                 <td className="pr-[22px] text-right">
@@ -118,6 +119,7 @@ export function LendingHistory({ live }: { live: Live | null }) {
           })}
         </tbody>
       </table>
+      </div>
       {!rows.length && (
         <div className="px-[22px] py-10 text-center text-t3">
           {loaded === undefined ? "Loading lending activity" : loaded === null ? "Shown once an indexer is connected" : filter === "All" ? "No lending activity yet" : `No ${filter.toLowerCase()} yet`}

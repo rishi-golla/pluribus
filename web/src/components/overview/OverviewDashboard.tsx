@@ -3,15 +3,15 @@
 import { motion } from "motion/react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chip, Label, Swatch, Token } from "@/components/ui";
 import { EASE, Num } from "@/components/motion";
 import { Segmented } from "@/components/Segmented";
-import { LineChart, axisDates, dateLabel } from "@/components/charts/LineChart";
+import { LineChart, axisDates, crowded, dateLabel, useWidth } from "@/components/charts/LineChart";
 import { useAccount, type Live } from "@/components/app/providers";
 import { CompoundButton } from "@/components/compound/CompoundButton";
 import { niceMax } from "@/lib/chart";
-import { deployment } from "@/lib/cluster";
+import { TARGET, deployment } from "@/lib/cluster";
 import { fetchStats, type DayStats } from "@/lib/live";
 import { CLASS_COLORS, FEES, MARKETS, POOL, TOTALS, VOLUME, compactUsd, fees30d, powerUsed, type AssetClass, type Market, focusMarket, listed, useFocusedMarket } from "@/lib/markets";
 import { iconSrc } from "@/lib/tokens";
@@ -69,9 +69,11 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
         { label: "Bad debt", value: 0, sub: `${compactUsd(POOL.insurance)} insurance fund` },
       ];
   return (
-    <section className="panel grid grid-cols-6">
-      {kpis.map((k, i) => (
-        <div key={k.label} className={`px-[22px] py-5 ${i ? "border-l border-line" : ""}`}>
+    // each cell rules its left and top edge, and the panel clips the ones on its own edges, so the rules follow however many columns fit
+    <section className="panel overflow-hidden">
+      <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
+      {kpis.map((k) => (
+        <div key={k.label} className="min-w-0 border-l border-t border-line px-4 py-5 sm:px-[22px]">
           <Label>{k.label}</Label>
           <div className="mt-2 text-[26px] font-medium leading-none tracking-[-0.035em]">
             {live && k.value < 1e3 ? (
@@ -83,6 +85,7 @@ function KpiStrip({ markets, stats }: { markets: Market[]; stats: DayStats[] }) 
           <div className="mt-2 text-[12.5px] text-t3">{k.sub}</div>
         </div>
       ))}
+      </div>
     </section>
   );
 }
@@ -97,6 +100,9 @@ const VOL_KEYS = [
 
 function VolumePanel({ stats }: { stats: DayStats[] }) {
   const { live } = useAccount();
+  const box = useRef<HTMLDivElement>(null);
+  // drawn at the width it is shown at, so a phone gets readable labels instead of a shrunken picture
+  const W = useWidth(box, VOL_W);
   const [range, setRange] = useState<Range>("30D");
   const [hover, setHover] = useState<number | null>(null);
   const end = live && stats.length ? Date.parse(stats[stats.length - 1].date) : undefined;
@@ -105,9 +111,9 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
   const total = dayTotal;
   const yMax = live ? niceMax(Math.max(...data.map(total))) : Math.ceil(Math.max(...VOLUME.map(total)) / 250_000) * 250_000;
   const pad = { top: 10, right: 48, bottom: 26, left: 4 };
-  const iw = VOL_W - pad.left - pad.right;
+  const iw = W - pad.left - pad.right;
   const ih = VOL_H - pad.top - pad.bottom;
-  const gap = n > 60 ? 1 : n > 20 ? 3 : 8;
+  const gap = n > 60 ? 1 : n > 20 ? (W < 420 ? 2 : 3) : 8;
   const bw = (iw - gap * (n - 1)) / n;
   const y = (v: number) => (v / yMax) * ih;
   const idx = hover ?? n - 1;
@@ -121,12 +127,12 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
         <Segmented small label="Volume range" items={RANGES} value={range} onChange={setRange} />
       </div>
       <div className="px-[22px] pb-[22px] pt-3.5">
-        <div className="flex items-end justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div>
             <Label>Total, {range}</Label>
             <div className="mt-1 text-2xl font-medium tracking-[-0.03em]">{compactUsd(volume)}</div>
           </div>
-          <div className="flex gap-4 text-[12.5px] text-t2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-t2">
             {VOL_KEYS.map((k) => (
               <span key={k.key} className="flex items-center gap-1.5">
                 <Swatch color={k.color} />
@@ -135,6 +141,7 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
             ))}
           </div>
         </div>
+        <div ref={box}>
         {!n && (
           <div className="mt-3 grid place-items-center text-t3" style={{ height: VOL_H }}>
             No volume yet
@@ -142,20 +149,23 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
         )}
         {!!n && (
         <div className="relative mt-3">
-          <svg viewBox={`0 0 ${VOL_W} ${VOL_H}`} width="100%" height={VOL_H} className="text-[11px] [&_text]:fill-t3" onPointerLeave={() => setHover(null)} role="img" aria-label={`Daily lending volume over ${range}`}>
+          <svg viewBox={`0 0 ${W} ${VOL_H}`} width="100%" height={VOL_H} className="touch-pan-y text-[11px] [&_text]:fill-t3" onPointerLeave={() => setHover(null)} role="img" aria-label={`Daily lending volume over ${range}`}>
             {[0, 0.5, 1].map((f) => (
               <g key={f}>
                 <line x1={pad.left} x2={pad.left + iw} y1={pad.top + ih - f * ih} y2={pad.top + ih - f * ih} stroke="rgba(255,255,255,0.05)" />
-                <text x={VOL_W - 2} y={pad.top + ih - f * ih + 4} textAnchor="end">
+                <text x={W - 2} y={pad.top + ih - f * ih + 4} textAnchor="end">
                   {compactUsd(yMax * f)}
                 </text>
               </g>
             ))}
-            {labels.map((lab, i) => (
-              <text key={`${lab}-${i}`} x={pad.left + (i / 6) * iw} y={VOL_H - 6} textAnchor={i === 0 ? "start" : i === 6 ? "end" : "middle"}>
-                {lab}
-              </text>
-            ))}
+            {labels.map((lab, i) =>
+              // a narrow chart has room for every other date
+              i % 2 && crowded(labels, iw) ? null : (
+                <text key={`${lab}-${i}`} x={pad.left + (i / 6) * iw} y={VOL_H - 6} textAnchor={i === 0 ? "start" : i === 6 ? "end" : "middle"}>
+                  {lab}
+                </text>
+              ),
+            )}
             {data.map((d, i) => {
               const x = pad.left + i * (bw + gap);
               let base = pad.top + ih;
@@ -185,7 +195,7 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
           </svg>
           <div
             className="glass-tip pointer-events-none absolute top-1 min-w-[170px] rounded-lg border border-line-2 px-3 py-2.5 text-xs transition-[left] duration-150"
-            style={{ left: Math.min(VOL_W - 190, Math.max(0, pad.left + idx * (bw + gap) - 85)) }}
+            style={{ left: Math.max(0, Math.min(W - 176, pad.left + idx * (bw + gap) - 85)) }}
           >
             <div className="mb-1.5 text-t3">{dateLabel(n - 1 - idx, true, end)}</div>
             {VOL_KEYS.map((k) => (
@@ -200,6 +210,7 @@ function VolumePanel({ stats }: { stats: DayStats[] }) {
           </div>
         </div>
         )}
+        </div>
       </div>
     </div>
   );
@@ -230,12 +241,12 @@ function FeesPanel() {
         <Segmented small label="Fees range" items={RANGES} value={range} onChange={setRange} />
       </div>
       <div className="px-[22px] pb-[22px] pt-3.5">
-        <div className="flex items-end justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div>
             <Label>Borrower interest, {live ? "all time" : range}</Label>
             <div className="mt-1 text-2xl font-medium tracking-[-0.03em]">{compactUsd(total)}</div>
           </div>
-          <div className="flex gap-4 text-[12.5px] text-t2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-t2">
             {split.map(([name, share]) => (
               <span key={name}>
                 {name} <b className="font-medium text-t1">{compactUsd(total * share)}</b>
@@ -303,10 +314,10 @@ function MixBar({ title, markets, field }: { title: string; markets: Market[]; f
 function MixPanel({ markets }: { markets: Market[] }) {
   const collateral = sum(markets, "collateral");
   return (
-    <section className="panel mt-4 grid grid-cols-[1fr_1fr_1.1fr] items-center gap-10 px-[22px] py-5">
+    <section className="panel mt-4 grid grid-cols-1 items-center gap-6 px-[22px] py-5 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.1fr] xl:gap-10">
       <MixBar title="Collateral by asset class" markets={markets} field="collateral" />
       <MixBar title="Borrowed by asset class" markets={markets} field="borrowed" />
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-6 md:col-span-2 xl:col-span-1">
         {CLASSES.map((c) => {
           const share = collateral > 0 ? sum(markets.filter((m) => m.cls === c), "collateral") / collateral : 0;
           return (
@@ -333,6 +344,8 @@ const SORTERS: Record<SortKey, (m: Market) => number> = {
   fees: fees30d,
   volume: (m) => m.volume24h,
 };
+/** Columns left out under laptop width, where the table already scrolls sideways */
+const WIDE_ONLY = new Set<SortKey>(["fees", "volume"]);
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "collateral", label: "Collateral" },
   { key: "borrowed", label: "Borrowed" },
@@ -401,13 +414,14 @@ function MarketsTable({ markets }: { markets: Market[] }) {
 
   return (
     <section className="panel mt-4">
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-[22px] pt-[18px]">
         <h3 className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em]">
           Collateral markets
         </h3>
-        <span className="text-[12.5px] text-t3">Priced by {live && deployment?.demoMode ? "demo feed" : "Pyth"}</span>
+        {/* the hosted demo's chain has no Pyth, so a script copies mainnet's prices onto it; devnet's demo prices are set by hand */}
+        <span className="text-[12.5px] text-t3">{!live || !deployment?.demoMode ? "Priced by Pyth" : TARGET === "macmini" ? "Mainnet prices" : "Priced by demo feed"}</span>
       </div>
-      <div className="flex gap-2 border-b border-line px-[22px] pb-3.5 pt-4">
+      <div className="no-scrollbar flex gap-2 overflow-x-auto border-b border-line px-[22px] pb-3.5 pt-4">
         {(["All", ...classes] as const).map((f) => (
           <button
             key={f}
@@ -428,7 +442,9 @@ function MarketsTable({ markets }: { markets: Market[] }) {
           </button>
         ))}
       </div>
-      <table className="mt-2 w-full border-collapse">
+      {/* on a narrow screen the table scrolls sideways inside the panel, and the 30D fee and 24H volume columns wait for a wider one */}
+      <div className="overflow-x-auto">
+      <table className="mt-2 w-full min-w-[720px] border-collapse lg:min-w-0">
         <thead>
           <tr className="text-[12.5px] text-t3 [&_th]:whitespace-nowrap [&_th]:px-4 [&_th]:pb-3 [&_th]:font-normal">
             <th className="pl-[22px] text-left">Market</th>
@@ -436,7 +452,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
               const on = sort.key === c.key;
               const Icon = on ? (sort.dir === -1 ? ArrowDown : ArrowUp) : ArrowUpDown;
               return (
-                <th key={c.key} className="text-right" aria-sort={on ? (sort.dir === -1 ? "descending" : "ascending") : "none"}>
+                <th key={c.key} className={`text-right ${WIDE_ONLY.has(c.key) ? "max-lg:hidden" : ""}`} aria-sort={on ? (sort.dir === -1 ? "descending" : "ascending") : "none"}>
                   <button type="button" onClick={() => toggleSort(c.key)} className={`inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-t1 ${on ? "text-t1" : ""}`}>
                     {c.label}
                     <Icon size={12} strokeWidth={1.75} className={on ? "" : "opacity-50"} />
@@ -467,10 +483,10 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                   <div className="flex items-center gap-3">
                     <MarketIcon m={m} />
                     <div>
-                      <div className="flex items-center gap-2 font-medium">
+                      <div className="flex items-center gap-2 whitespace-nowrap font-medium">
                         {m.name}
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-t3">
+                      <div className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-t3">
                         <Swatch color={CLASS_COLORS[m.cls]} />
                         {m.sub}
                       </div>
@@ -479,7 +495,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                 </td>
                 {unread ? (
                   COLUMNS.map((c) => (
-                    <td key={c.key} className="text-right">
+                    <td key={c.key} className={`text-right ${WIDE_ONLY.has(c.key) ? "max-lg:hidden" : ""}`}>
                       {dash}
                     </td>
                   ))
@@ -505,8 +521,8 @@ function MarketsTable({ markets }: { markets: Market[] }) {
                       <div className="mt-0.5 text-[12.5px] text-t3">{live && !m.collateral ? "No deposits yet" : `Crash LTV ${pct(m.crashLtv)}`}</div>
                     </td>
                     <td className="text-right font-medium">{pct(m.borrowApr, 2)}</td>
-                    <td className="text-right font-medium text-green">{live ? dash : compactUsd(fees30d(m))}</td>
-                    <td className="text-right font-medium">{live ? dash : compactUsd(m.volume24h)}</td>
+                    <td className="text-right font-medium text-green max-lg:hidden">{live ? dash : compactUsd(fees30d(m))}</td>
+                    <td className="text-right font-medium max-lg:hidden">{live ? dash : compactUsd(m.volume24h)}</td>
                   </>
                 )}
                 <td>
@@ -522,6 +538,7 @@ function MarketsTable({ markets }: { markets: Market[] }) {
           })}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }
@@ -541,13 +558,13 @@ export function OverviewDashboard() {
   }, [readAt]);
   const markets = useMemo(() => (live ? liveMarkets(live) : MARKETS), [live]);
   return (
-    <main className="rise mx-auto max-w-[1280px] px-10 pb-16 pt-9">
-      <div className="mb-7 flex items-end justify-between">
+    <main className="rise mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Overview</h1>
           <p className="mt-2 text-[14.5px] text-t2">Pluribus credit markets at a glance</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Chip>
             Utilization <b>{pct(live ? live.pool.utilization : TOTALS.borrowed / POOL.supplied)}</b>
           </Chip>
@@ -555,7 +572,7 @@ export function OverviewDashboard() {
         </div>
       </div>
       <KpiStrip markets={markets} stats={stats} />
-      <section className="mt-4 grid grid-cols-2 gap-4">
+      <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <VolumePanel stats={stats} />
         <FeesPanel />
       </section>

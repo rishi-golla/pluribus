@@ -14,7 +14,7 @@ import { axisTimes, inRange, niceMax, series, smoothPath, timeLabel, type Point 
 import { JUNIOR_EXAMPLE_SHARE, compactUsd, juniorMultipleAt } from "@/lib/markets";
 
 type Tranche = "senior" | "junior";
-// preview rates are what the deployed rate curve pays at 90% utilization with juniors at 8% of the pool, the state the landing page's figure is for
+// preview rates, shown only without any wallet provider, are what the deployed rate curve pays at 90% utilization with juniors at 8% of the pool
 const TRANCHES = {
   senior: {
     name: "Senior",
@@ -78,7 +78,7 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
   const id = `spark-${color.slice(1)}`;
   const end = pts[pts.length - 1];
   return (
-    <svg width={w} height={h} aria-hidden>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className="h-auto min-w-0 max-w-full" aria-hidden>
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={color} stopOpacity={0.25} />
@@ -125,7 +125,7 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
       disabled={soon}
       aria-pressed={selected}
       whileHover={soon ? undefined : { y: -2 }}
-      className={`panel relative overflow-hidden px-[26px] pt-6 text-left transition-[border-color,box-shadow] duration-300 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
+      className={`panel relative overflow-hidden px-5 pt-6 text-left sm:px-[26px] transition-[border-color,box-shadow] duration-300 ${soon ? "cursor-not-allowed" : "cursor-pointer"} ${
         selected ? "border-brand/35 shadow-[inset_0_0_0_1px_rgba(198,244,50,0.12),0_0_0_4px_rgba(198,244,50,0.05)]" : soon ? "" : "hover:border-line-2"
       }`}
     >
@@ -142,20 +142,25 @@ function TrancheCard({ id, selected, onSelect }: { id: Tranche; selected: boolea
         </div>
         {soon ? <Tag>Coming soon</Tag> : <span className="text-[13px] text-t2">{t.stance}</span>}
       </div>
-      <div className="mt-[26px] flex items-end justify-between">
-        <div>
+      <div className="mt-[26px] flex items-end justify-between gap-4">
+        <div className="shrink-0">
           <Label>Net APY</Label>
-          <div className="mt-2 text-[56px] font-medium leading-none tracking-[-0.045em]" style={{ color: apy === null ? "var(--color-t3)" : t.color }}>
+          <div className="mt-2 text-[44px] font-medium leading-none tracking-[-0.045em] sm:text-[56px]" style={{ color: apy === null ? "var(--color-t3)" : t.color }}>
             {apy === null ? "-" : <Num value={apy * 100} decimals={2} suffix="%" countUp />}
             <span className="ml-2 text-base font-normal tracking-normal text-t3">APY</span>
           </div>
         </div>
-        {apy !== null && <Sparkline data={apyHistory} color={t.color} />}
+        {apy !== null && (
+          <div className="flex min-w-0 justify-end">
+            <Sparkline data={apyHistory} color={t.color} />
+          </div>
+        )}
       </div>
       <div className="mt-3 text-[13.5px] text-t2">{blurb}</div>
-      <div className="-mx-[26px] mt-[22px] grid grid-cols-4 border-t border-line pb-5">
+      {/* two by two on a phone, one row from tablet width up */}
+      <div className="-mx-5 mt-[22px] grid grid-cols-2 border-t border-line sm:-mx-[26px] sm:grid-cols-4 sm:pb-5">
         {["Deposits", "Share price", "Withdrawals", "Loss order"].map((k, i) => (
-          <div key={k} className={`px-[26px] pt-3.5 ${i ? "border-l border-line" : ""}`}>
+          <div key={k} className={`border-line px-5 py-3.5 sm:px-[26px] sm:pb-0 ${i % 2 ? "border-l" : i ? "sm:border-l" : ""} ${i > 1 ? "max-sm:border-t" : ""}`}>
             <Label>{k}</Label>
             <div className="mt-1 text-[15px] font-medium">{stats[i]}</div>
           </div>
@@ -267,15 +272,15 @@ function YieldHistory() {
 
   return (
     <div className="panel">
-      <div className="flex items-center justify-between px-[22px] pt-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] pt-[18px]">
         <h3 className="text-[15px] font-medium tracking-[-0.01em]">Yield history</h3>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Segmented small label="Metric" items={METRICS} value={metric} onChange={setMetric} />
           <Segmented small label="Time range" items={EARN_RANGES} value={range} onChange={setRange} />
         </div>
       </div>
       <div className="px-[22px] pb-[22px] pt-3.5">
-        <div className="flex items-center gap-7">
+        <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
           {config.stats.map((st) => (
             <div key={st.label}>
               <Label>
@@ -518,7 +523,7 @@ function SeniorQueue({ live }: { live: Live }) {
   const chip = "h-9 flex-1 cursor-pointer rounded-md border border-line px-3 text-[13px] font-medium text-t2 transition-colors hover:border-line-2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <div className="mt-4 rounded-[10px] border border-line bg-bg px-3.5 py-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-3">
         <Label>Withdrawal queue</Label>
         <span className="text-[12px] text-t3">{money(seniorQueue.reserved)} USDC held for the queue</span>
       </div>
@@ -707,13 +712,13 @@ export function EarnDashboard() {
       ]
     : SPLIT;
   return (
-    <main className="rise mx-auto max-w-[1280px] px-10 pb-16 pt-9">
-      <div className="mb-7 flex items-end justify-between">
+    <main className="rise mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-medium leading-[1.1] tracking-[-0.035em]">Earn</h1>
           <p className="mt-2 text-[14.5px] text-t2">Earn borrower interest on USDC</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Chip>
             Total supplied <b>{usd(pool ? pool.supplied : 10_000_000, 0)}</b>
           </Chip>
@@ -726,12 +731,12 @@ export function EarnDashboard() {
         </div>
       </div>
 
-      <section className="grid grid-cols-2 gap-4">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <TrancheCard id="senior" selected={tranche === "senior"} onSelect={() => setTranche("senior")} />
         <TrancheCard id="junior" selected={tranche === "junior"} onSelect={() => setTranche("junior")} />
       </section>
 
-      <section className="mt-4 grid grid-cols-[minmax(0,1fr)_384px] gap-4">
+      <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_384px]">
         <YieldHistory />
         {signedOut ? (
           <ConnectPanel detail="Supply USDC to either tranche, and see your own positions, once a wallet is connected." />
@@ -742,7 +747,7 @@ export function EarnDashboard() {
 
       <section className="mt-4">
         <Fold title="How lending works" summary="Who takes losses first, and where interest goes">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="panel">
           <div className="flex items-center justify-between px-[22px] pt-[18px]">
             <h3 className="text-[15px] font-medium tracking-[-0.01em]">Loss waterfall</h3>
@@ -777,9 +782,9 @@ export function EarnDashboard() {
           <div className="px-[22px] pt-[18px]">
             <h3 className="text-[15px] font-medium tracking-[-0.01em]">Where interest goes</h3>
           </div>
-          <div className="flex items-center gap-5 px-[22px] pb-[22px] pt-[18px]">
+          <div className="flex flex-wrap items-center gap-5 px-[22px] pb-[22px] pt-[18px]">
             <Donut split={split} apr={pool ? pool.avgApr : 0.12} />
-            <div className="flex-1">
+            <div className="min-w-[180px] flex-1">
               {split.map((s) => (
                 <KV key={s.label} k={<span className="flex items-center gap-2"><Swatch color={s.color} />{s.label}</span>}>{whole(s.share)}%</KV>
               ))}

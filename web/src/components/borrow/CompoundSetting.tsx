@@ -173,7 +173,7 @@ export function CompoundDialog({ live, target, onClose }: { live: Live | null; t
             role="dialog"
             aria-modal="true"
             aria-label="Position fees"
-            className="panel w-[420px]"
+            className="panel thin-scroll max-h-[calc(100dvh-32px)] w-[420px] max-w-[calc(100vw-32px)] overflow-y-auto"
             initial={{ y: 12, scale: 0.98 }}
             animate={{ y: 0, scale: 1 }}
             exit={{ y: 8, scale: 0.98 }}

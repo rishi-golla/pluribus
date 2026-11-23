@@ -68,6 +68,14 @@
     border-radius: 999px;
   }
 
+  /* A row that scrolls sideways on a phone, such as a strip of tabs or filters, without a bar under it */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .panel {
     background: linear-gradient(180deg, rgb(255 255 255 / 0.022), rgb(255 255 255 / 0) 160px), var(--color-s1);
     border: 1px solid var(--color-line);
@@ -269,6 +277,8 @@
     font-size: 15px;
     line-height: 1.7;
     color: var(--color-t2);
+    /* a long address or command breaks rather than pushing the page sideways on a phone */
+    overflow-wrap: break-word;
   }
   .docs :is(h1, h2, h3, h4) {
     color: var(--color-t1);
@@ -351,6 +361,29 @@
     overflow-x: auto;
     border: 1px solid var(--color-line);
     border-radius: 10px;
+  }
+  /* Under tablet width the header has a second row of tabs, and the type steps down */
+  @media (max-width: 47.99rem) {
+    .docs {
+      font-size: 14.5px;
+    }
+    .docs :is(h1, h2, h3, h4) {
+      scroll-margin-top: 128px;
+    }
+    .docs h1 {
+      font-size: 32px;
+    }
+    .docs h2 {
+      font-size: 22px;
+      margin-top: 44px;
+      padding-top: 22px;
+    }
+    .docs table {
+      font-size: 13px;
+    }
+    .docs :is(th, td) {
+      padding: 8px 10px;
+    }
   }
   .docs table {
     width: 100%;

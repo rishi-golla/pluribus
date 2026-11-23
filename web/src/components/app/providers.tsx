@@ -580,7 +580,7 @@ export function ConnectPanel({ detail, className = "" }: { detail: string; class
 /** Asks for a wallet in place of a personal page, since every figure on it comes from the connected wallet's account */
 function ConnectWallet() {
   return (
-    <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+    <main className="mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
       <ConnectPanel className="min-h-[320px]" detail="Your collateral, credit line and lending positions are read from the chain once a wallet is connected." />
     </main>
   );
@@ -596,7 +596,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   if (signedOut && PERSONAL.some((p) => path.startsWith(p))) return <ConnectWallet />;
   if (error) {
     return (
-      <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+      <main className="mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
         <div className="panel flex h-[320px] flex-col items-center justify-center gap-2 text-center" role="alert">
           <span className="grid size-10 place-items-center rounded-[10px] bg-red/12 text-red">
             <TriangleAlert size={18} strokeWidth={2} />
@@ -618,7 +618,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   }
   if (!loading) return children;
   return (
-    <main className="mx-auto max-w-[1280px] px-10 pb-16 pt-9">
+    <main className="mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-6 sm:pt-9 lg:px-10">
       <div className="panel flex h-[320px] items-center justify-center gap-3 text-t2" role="status">
         <span className="inline-block size-4 animate-spin rounded-full border-2 border-white/15 border-t-t2" aria-hidden />
         Loading your account

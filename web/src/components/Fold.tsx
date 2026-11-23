@@ -36,8 +36,8 @@ export function Fold({ title, summary, open: controlled, onToggle, children }: F
           </>
         ) : (
           <>
-            <span className="text-[15px] font-medium tracking-[-0.01em]">{title}</span>
-            <span className="ml-auto truncate text-[13px] text-t2">{summary}</span>
+            <span className="shrink-0 whitespace-nowrap text-[15px] font-medium tracking-[-0.01em]">{title}</span>
+            <span className="ml-auto min-w-0 truncate text-[13px] text-t2">{summary}</span>
             <ChevronDown size={16} strokeWidth={1.75} className="shrink-0 text-t3" />
           </>
         )}

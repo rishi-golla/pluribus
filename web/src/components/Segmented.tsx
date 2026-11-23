@@ -14,7 +14,7 @@ type SegmentedProps<T extends string> = {
 export function Segmented<T extends string>({ items, value, onChange, small = false, label }: SegmentedProps<T>) {
   const thumb = useId();
   return (
-    <div className="flex rounded-lg border border-line bg-bg p-[3px]" role="tablist" aria-label={label}>
+    <div className="no-scrollbar flex max-w-full overflow-x-auto rounded-lg border border-line bg-bg p-[3px]" role="tablist" aria-label={label}>
       {items.map((it) => {
         const on = it === value;
         return (
