@@ -1,14 +1,14 @@
 # Liquidating on Pluribus
 
-Anyone can liquidate. No registration or allow-list exists. The only deployment is on Solana devnet, with mock tokens. Prices are written by the admin key, except for JitoSOL and JupSOL, which read live Pyth feeds.
+Anyone can liquidate. The program runs on Solana devnet and on the hosted demo's test chain (`deployments/macmini.json`), both with mock tokens. On devnet the admin sets prices, except JitoSOL and JupSOL, which read live Pyth feeds. On the demo chain a script copies real mainnet prices onto the chain every 10 seconds.
 
-Every figure below is a setting. The values in force are in [Numbers on devnet](#numbers-on-devnet).
+The settings in force are in [Numbers on devnet](#numbers-on-devnet).
 
 ## When an account can be liquidated
 
-An account can be liquidated when its debt is above its liquidation limit. The limit is the account's value in its worst crash scenario, after each asset's liquidation shock and liquidation cost.
+When its debt is above its liquidation limit: the account's value in its worst crash scenario, after liquidation shocks and liquidation costs.
 
-The program's `health` view returns both numbers. The SDK simulates it, so nothing is sent or signed:
+The program's `health` view returns both. The SDK simulates it, so nothing is signed:
 
 ```ts
 const health = await fetchHealth(program, d, owner);
@@ -17,12 +17,12 @@ const liquidatable = health.debt.gt(health.liquidationLimit);
 
 | Field | Meaning |
 |---|---|
-| `debt` | what the account owes, with interest to now |
+| `debt` | owed, with interest to now |
 | `liquidationLimit` | debt above this can be liquidated |
 | `creditLimit` | the most the owner may draw to |
-| `collateralValue` | sum of the positions at the oracle price, no shock |
-| `positionValue[5]`, `positionPrice[5]` | per slot, in the order of `credit.positions` |
-| `positionUnclear[5]` | true while that position cannot be taken |
+| `collateralValue` | the positions at the oracle price, unshocked |
+| `positionValue[16]`, `positionPrice[16]` | per slot of `credit.positions` |
+| `positionUnclear[16]` | true while that position can't be taken |
 
 Amounts are USDC with 6 decimals. `fetchAllCredits(program)` lists every credit account.
 
@@ -31,101 +31,93 @@ Amounts are USDC with 6 decimals. `fetchAllCredits(program)` lists every credit 
 | Collateral | Instruction | You pay | You receive |
 |---|---|---|---|
 | A token other than USDC | `liquidate(repay_amount)` | USDC, up to the close factor × debt | tokens worth your payment × (1 + bonus) |
-| An Orca or Raydium liquidity position | `liquidate_lp()` | its value ÷ (1 + bonus), in one payment | the position NFT |
-| A Meteora DLMM position | `dlmm_liquidate(repay_amount)` | USDC, up to the close factor × debt | that share of every bin, worth your payment × (1 + bonus) |
+| An Orca or Raydium position | `liquidate_lp()` | its value ÷ (1 + bonus) | the position NFT |
+| A Meteora DLMM position | `dlmm_liquidate(repay_amount, bin_arrays)` | USDC, up to the close factor × debt | that share of every bin, worth your payment × (1 + bonus) |
 | USDC in the account | `repay_from_collateral(amount)` | nothing | nothing |
 
-The bonus is the collateral's own: `liq_bonus_bps` on a token's asset account, and `lp_liq_bonus_bps` on the base token's asset account for a liquidity position. Where that is 0, and wherever it is above the pool's `liq_bonus_bps`, the pool's applies.
+The bonus is the asset's `liq_bonus_bps`, or `lp_liq_bonus_bps` on the base token for a liquidity position. Where it is 0 or above the pool's `liq_bonus_bps`, the pool's applies.
 
 ## The order
 
-The program takes an account's positions in its own order. An instruction for a position that is not first fails with `NotFirstInOrder`, so simulate, and try the account's other positions when you get it.
+The program sets the order. An instruction for a position that isn't first fails with `NotFirstInOrder`, so simulate and try the next one.
 
-- Each position has a key: its value in the scenario that sets the account's liquidation limit ÷ its market value × (1 + its bonus). The lowest key goes first, since that sale costs the limit least per dollar of debt repaid.
-- Keys within 0.0001 of each other count as level, and either position can go.
-- USDC is outside the order: `repay_from_collateral` works at any point.
-- A position that cannot be handed over is stepped over: a tokenized stock around a split, a paused mint, a frozen or short vault. So is one worth nothing.
-- With the debt more than 10% above the liquidation limit there is no order, and any position can be taken.
+- Each position's key is its value in the scenario that sets the liquidation limit ÷ its market value × (1 + its bonus). The lowest goes first.
+- Keys within 0.0001 count as level.
+- USDC is outside the order.
+- Positions that can't be handed over (a stock around a split, a paused mint, a frozen or short vault) or are worth nothing are skipped.
+- With the debt more than 10% above the limit, any position can be taken.
 
 ### liquidate
 
-- `repay_amount` is in USDC base units. Anything above the close factor × debt is cut down to it, so `u64::MAX` is valid.
-- You receive `repay × (1 + bonus) ÷ price` tokens, rounded down. The price is the one the health check used: the low end of the oracle's band.
-- When the position holds fewer tokens than that, you receive all of it and pay its value ÷ (1 + bonus), rounded up.
-- A position priced at 0 is handed over whole for no payment. This happens when a Token-2022 issuer has emptied the vault.
-- When a Token-2022 vault holds fewer tokens than the program's books, you receive your share: `seized × vault ÷ booked`. The price already reflects that.
-- SOL arrives as wSOL.
-- The USDC mint is refused with `InvalidParams`. Use `repay_from_collateral`.
+- `repay_amount` is in USDC base units and is capped at the close factor × debt, so `u64::MAX` works.
+- You receive `repay × (1 + bonus) ÷ price` tokens, rounded down, at the low end of the oracle's band.
+- If the position holds less, you get all of it and pay its value ÷ (1 + bonus), rounded up.
+- A position priced at 0 is handed over free.
+- A short Token-2022 vault pays its share: `seized × vault ÷ booked`.
+- SOL arrives as wSOL. The USDC mint is refused with `InvalidParams`.
 
 ### liquidate_lp
 
-- It takes no amount. A position NFT cannot be split.
-- The payment is the position's value at the oracle price ÷ (1 + bonus), rounded up.
-- Up to the close factor × debt of it repays debt. The rest is deposited into the borrower's account as USDC collateral. You pay both parts.
-- You receive the NFT. Closing the position on Orca or Raydium is up to you.
-- The rent of the NFT's vault account goes to the borrower.
-- Raydium's admin can turn off `decrease_liquidity` for a pool, which would leave you holding an NFT you cannot redeem.
+- The payment is the position's oracle value ÷ (1 + bonus), rounded up.
+- Up to the close factor × debt repays debt. The rest goes into the borrower's account as USDC. You pay both.
+- You receive the NFT. The vault account's rent goes to the borrower.
+- Raydium's admin can disable `decrease_liquidity` on a pool, which would leave the NFT unredeemable.
 
 ### dlmm_liquidate
 
-A Meteora position has no NFT and is sold in part, like a token.
-
-- `repay_amount` is in USDC base units and is cut down to the close factor × debt, so `u64::MAX` is valid.
+- `repay_amount` is capped at the close factor × debt, so `u64::MAX` works.
+- `bin_arrays` is the number of bin arrays leading the remaining accounts, 0 for a position that never held liquidity.
 - The share taken is `repay × (1 + bonus) ÷ value`, at most 100%. You pay value × share ÷ (1 + bonus), rounded up.
-- The pool removes that share of every bin straight into your two token accounts. You receive the pair's real mix of tokens, which at the oracle price is worth at least what the position was valued at.
-- Sold whole, the position's unclaimed fees go with it, the position is closed and its rent returns to the borrower.
-- A position valued at nothing is handed over whole for no payment, so an empty one cannot keep bad debt from being written off.
-- A pair Meteora has disabled still lets liquidity out.
-- It needs a raised compute limit. The SDK builder sets one.
+- That share of every bin goes straight to your two token accounts.
+- Taken whole, the position is closed with its fees, and its rent returns to the borrower.
+- A position valued at nothing is handed over free.
+- It works on a pair Meteora has disabled.
 
 ### repay_from_collateral
 
-- It moves the account's own USDC collateral onto its debt, one for one.
-- Anyone can call it while the account is liquidatable, up to the close factor × debt per call.
-- It pays no bonus and costs only the transaction fee.
+Moves the account's own USDC onto its debt, one for one, up to the close factor × debt per call. Anyone can call it while the account is liquidatable. No bonus.
 
 ## The health rule
 
-Every liquidation must leave the margin between limit and debt no smaller:
+A liquidation can't shrink the margin between limit and debt:
 
 ```
 debt_after + limit_before <= debt_before + limit_after
 ```
 
-A liquidation that breaks it fails with `HealthNotImproved`.
+Otherwise it fails with `HealthNotImproved`.
 
 ## What stops a liquidation
 
 | Error | Cause |
 |---|---|
 | `NotLiquidatable` | the debt is not above the liquidation limit |
-| `StalePrice` | a price on any position of the account is older than that asset's `liq_price_age_secs`. One stale price blocks the whole account |
-| `PriceTooUncertain` | an oracle band is wider than the asset's `max_conf_bps` |
-| `PriceUnclear` | the position is a tokenized stock around a split. The account's other positions can still be taken |
-| `NotFirstInOrder` | another position of the account comes first, see [The order](#the-order) |
+| `StalePrice` | any position's price is older than its `liq_price_age_secs`, which blocks the whole account |
+| `PriceTooUncertain` | an oracle band is wider than `max_conf_bps` |
+| `PriceUnclear` | the position is a stock around a split |
+| `NotFirstInOrder` | another position comes first, see [The order](#the-order) |
 | `HealthNotImproved` | the health rule above |
-| `ZeroAmount` | the repayment or the seized amount rounds to nothing |
+| `ZeroAmount` | the repayment or seized amount rounds to nothing |
 | `MissingAccount`, `AccountMismatch` | the health-check accounts are incomplete or out of order |
-| a token program error | the collateral mint is paused or its vault frozen by the issuer |
+| a token program error | the issuer paused the mint or froze the vault |
 
 ## After a liquidation
 
 - The account returns to the base rate tier.
-- A `Liquidated` event carries `account`, `liquidator`, `mint`, `kind` (1 token, 2 liquidity position, 3 Meteora position), `repaid`, `seized` and the remaining `debt`. For a Meteora position `seized` is the share taken, in basis points of the position.
-- When no collateral is left and debt remains, the debt is written off at once. A `BadDebt` event shows how much the yield buffer, the reserve, the protocol fees and the junior tranche each absorbed.
-- An account whose debt is above the value of its collateral stays liquidatable after every step, until the collateral is gone.
+- A `Liquidated` event carries `account`, `liquidator`, `mint`, `kind` (1 token, 2 liquidity position, 3 Meteora), `repaid`, `seized` and the remaining `debt`. For Meteora, `seized` is the share in basis points.
+- Debt left with no collateral is written off at once. A `BadDebt` event shows what the yield buffer, the reserve, protocol fees and juniors each absorbed.
 
 ## Building the transaction
 
-Each instruction takes the health-check accounts as remaining accounts, in the order of the account's position slots:
+Each instruction takes the health-check accounts as remaining accounts, in slot order:
 
-- **Token:** its asset account. For a Token-2022 token, its mint and vault next. Then its price account, unless the asset is fixed at $1. For staked SOL, the SOL price account, and for a stake-pool backing the stake pool account.
-- **Orca or Raydium liquidity position:** the LP market, the position account on Orca or Raydium, the base asset, the base price account.
-- **Meteora position:** the LP market, the pair, the position account, the base asset, the base price account. The bin arrays the position covers come first, before all the health-check accounts.
+- **Token:** its asset account; for Token-2022, its mint and vault; its price account unless fixed at $1; for staked SOL, the SOL price account, then the stake pool account if it has one.
+- **Orca or Raydium position:** the LP market, the dex position account, the base asset, the base price account.
+- **Meteora position:** the LP market, the pair, the position account, the base asset, the base price account. Its bin arrays go first, before all health-check accounts.
 
-The SDK builders `ix.liquidate`, `ix.liquidateLp`, `ix.dlmmLiquidate` and `ix.repayFromCollateral` add them, set a compute budget and create your token accounts. An account holds up to 16 positions, and the check walks every one: with all 16 full, a liquidation takes about 550k compute units, or about 1.06M for a Meteora position, so the builders ask for 1.4M.
+`ix.liquidate`, `ix.liquidateLp`, `ix.dlmmLiquidate` and `ix.repayFromCollateral` add these, create your token accounts and request 1.4M compute units. A full 16-position account takes about 550k, or about 1.06M for a Meteora liquidation.
 
-Send a v0 transaction through the deployment's lookup table with `buildTransaction`. A legacy transaction for an account with several Token-2022, staking or liquidity positions passes the 1232-byte limit.
+Send it as a v0 transaction through the deployment's lookup table with `buildTransaction`. A legacy transaction can pass the 1232-byte limit.
 
 ## Example
 
@@ -178,7 +170,7 @@ for (const { account: credit } of await fetchAllCredits(program)) {
 CLUSTER=localnet KEYPAIR=~/.config/solana/id.json npx tsx liquidate.ts
 ```
 
-Run twice on a local chain on 18 Nov 2026, against a borrower holding 50 NVDAx with $5,000 drawn, after the stock price was set from $180 to $100:
+Two runs on a local chain against a borrower with 50 NVDAx and $5,000 drawn, after the stock fell from $180 to $100:
 
 | | Debt | Liquidation limit | Borrower's NVDAx | Liquidator's USDC | Liquidator's NVDAx |
 |---|---|---|---|---|---|
@@ -192,36 +184,31 @@ Run twice on a local chain on 18 Nov 2026, against a borrower holding 50 NVDAx w
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CLUSTER` | read from `RPC_URL`, else `localnet` | which `deployments/<cluster>.json` to load |
+| `CLUSTER` | from `RPC_URL`, else `localnet` | which `deployments/<cluster>.json` to load |
 | `RPC_URL` | the deployment's `rpcUrl` | RPC endpoint |
 | `KEEPER_KEYPAIR` | `~/.config/solana/id.json` | signer, and the wallet whose USDC pays |
 | `INTERVAL_MS` | 5000 | time between passes |
-| `PREMIUM_INTERVAL_MS` | 600000 | time between refreshes of an account that pays a risk premium |
-| `DRY_RUN` | unset | `1` logs each action and sends nothing |
+| `PREMIUM_INTERVAL_MS` | 600000 | time between refreshes of accounts paying a risk premium |
+| `PYTH_INTERVAL_MS` | 30000 | time between Pyth feed posts |
+| `PYTH_PUSH` | on, except on `localnet` | `0` stops posting Pyth feeds |
+| `DRY_RUN` | unset | `1` logs actions without sending |
 
-On each pass, for every account past its limit, it takes one step at a time:
-
-1. It nets the account's own USDC against the debt.
-2. It tries the token positions, largest first, then Orca and Raydium positions whole and part of a Meteora position. When the program answers `NotFirstInOrder` it moves on to the next one.
-
-It skips a step when its USDC balance is short of the payment, and logs that. It also refreshes rate tiers, records volatility samples and pays the head of the senior withdrawal queue once the pool's cash covers it. It leaves LP fees to whoever collects them for the bounty. On a demo deployment it re-sends prices when it holds the admin key.
+For each account past its limit it first nets the account's own USDC against the debt, then tries token positions largest first, then liquidity positions, moving on after `NotFirstInOrder`. It skips a step it can't afford. It also refreshes tiers, samples volatility, pays the senior withdrawal queue, posts Pyth feeds and, on a demo deployment where it holds the admin key, re-sends prices. It doesn't collect LP fees.
 
 ## Numbers on devnet
 
-As read from devnet on 20 Nov 2026. `doc_and_refs/TUNES.md` lists every setting with its allowed range. If this page and that file disagree, the file is right.
+As read on 23 Nov 2026. `doc_and_refs/TUNES.md` lists every setting and wins where it disagrees with this page.
 
 | Setting | Value |
 |---|---|
-| Liquidation bonus (`liq_bonus_bps`) | SOL 1%, SOL liquidity positions 2%, NVDAx and AAPLx 5%, everything else the pool's 5%, which an asset's own bonus can only lower |
+| Liquidation bonus (`liq_bonus_bps`) | SOL 1%, SOL liquidity positions 2%, NVDAx and AAPLx 5%, the rest the pool's 5% |
 | Close factor (`close_factor_bps`) | 50% of the debt per transaction |
 | Liquidation cost (`liq_cost_bps`) | SOL 5%, staked SOL 6%, stocks 10%, BONK 15%, USDC 0%, liquidity positions 5% |
-| Oldest price for a liquidation (`liq_price_age_secs`) | 1 day for JitoSOL and JupSOL; the demo prices of SOL, NVDAx, AAPLx and BONK do not expire |
+| Oldest price (`liq_price_age_secs`) | 1 day for JitoSOL and JupSOL; the other prices don't expire |
 | Widest oracle band (`max_conf_bps`) | 2% |
-| Liquidation shocks | see the shock table in [users.md](users.md#shocks) |
+| Liquidation shocks | see [users.md](users.md#shocks) |
 
-The liquidation cost is the haircut the program takes for the cost of selling an asset. For stocks it is twice the bonus.
-
-Mock USDC on devnet comes only from the team's faucet wallet.
+The demo chain has the same bonuses, costs and band, prices that expire after 1 day (4 days for AAPLx), and no Raydium pool.
 
 | Account | Address |
 |---|---|
@@ -232,19 +219,19 @@ Mock USDC on devnet comes only from the team's faucet wallet.
 | AAPLx (mock, Token-2022) | `HDgRzeChz6fKBY1P5Ytdie3JigAteiq2eqphD5xeMEcm` |
 | JitoSOL (mock) | `2FpbByvzXNwxQrq5cqDoGLf2bx8nHdMWx3dcugayk4er` |
 | JupSOL (mock) | `F1FZjjvG7DRRvF3tnUVp9N8y6a46i7rH2qfYLhnA1dK6` |
-| BONK (mock, priced per million tokens) | `CSAKKN1szfgwzr8KohREVtTB7GGdc9NdG4YCMU6KYZPM` |
+| BONK (mock, priced per million) | `CSAKKN1szfgwzr8KohREVtTB7GGdc9NdG4YCMU6KYZPM` |
 | Orca SOL/USDC pool | `EHXKciegvkuBAm2P2TUChpkTvRNm4ewwaBa6JmfN8357` |
 | Raydium SOL/USDC pool | `5ZnKViaNwjT2iCZsgAchihmUurnaKTau4MWPUj1MQSnP` |
 | Meteora SOL/USDC pair | `Em4nQAHyFnCpm4FoofwqUX7KLcFvaZac42HXybVmnNHi` |
 
-`deployments/devnet.json` holds the full list, including each price account.
+The full list, price accounts included, is in `deployments/devnet.json`. Mock USDC on devnet comes only from the team's faucet.
 
 ## Test on a local chain
 
 ```sh
 npm run localnet                                          # keep it running
-npm run faucet -- --to <your address> --usdc 6000 --lp 0  # sends 20 SOL, 50 NVDAx and 6,000 mock USDC
+npm run faucet -- --to <your address> --usdc 6000 --lp 0  # 20 SOL, 50 NVDAx, 6,000 USDC
 npm run price -- --asset stock --price 100                # or --asset sol
 ```
 
-`npm run price` moves the demo price of SOL or NVDAx. Lower it until a borrower's debt is above the liquidation limit, then run the example or the keeper with `CLUSTER=localnet`.
+Lower the price until a borrower is past the liquidation limit, then run the example or the keeper with `CLUSTER=localnet`.
