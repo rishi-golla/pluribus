@@ -328,7 +328,7 @@ function EarnCard() {
               {TRANCHES[k].name}
             </span>
             <span className="relative mt-1.5 block text-[22px] font-medium tracking-[-0.03em]" style={{ color: TRANCHES[k].color }}>
-              {facts ? `${apy[k].toFixed(1)}%` : "—"} <span className="text-[12px] font-normal text-t3">APY</span>
+              {facts ? `${apy[k].toFixed(2)}%` : "—"} <span className="text-[12px] font-normal text-t3">APY</span>
             </span>
           </motion.button>
         ))}

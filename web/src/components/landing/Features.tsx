@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { EASE } from "@/components/motion";
 import FadeContent from "@/components/reactbits/FadeContent";
-import { ExampleApy, ExampleNote } from "./PoolFacts";
+import { ExampleApy, ExampleNote, LP_RANGES, usePoolFacts } from "./PoolFacts";
 
 /** One difference: what it is on the left, the figures that show it on the right, a rule above. It resolves out of pixel blocks as it scrolls in */
 function Card({ title, body, children }: { title: string; body: string; children: ReactNode }) {
@@ -21,15 +21,11 @@ function Card({ title, body, children }: { title: string; body: string; children
   );
 }
 
-// what a SOL-USDC position lets you borrow, as a share of its value: priced as it stands, and priced after a drop
-const RANGES: [string, number, number][] = [
-  ["+/-3% range", 80.8, 67.0],
-  ["120 to 180 range", 82.1, 70.8],
-  ["Full range", 80.7, 79.4],
-];
-
 /** What sets the pool apart, one ruled row each */
 export function Features() {
+  // what a SOL-USDC position lets you borrow, as a share of its value: priced as it stands, and priced after a drop,
+  // both read from the pool's own crash tables at today's SOL price, and dashes until they are
+  const ranges = usePoolFacts()?.example?.ranges;
   return (
     <div className="mt-14 border-b border-line">
       <Card
@@ -42,14 +38,18 @@ export function Features() {
             Today <span className="mx-1.5">→</span> <span className="text-t1">After a drop</span>
           </span>
         </div>
-        {RANGES.map(([range, today, crash]) => (
-          <div key={range} className="border-t border-line py-5">
+        {LP_RANGES.map(({ label }, i) => {
+          const figures = ranges?.[i];
+          const [today, crash] = figures ? [figures.today * 100, figures.crash * 100] : [0, 0];
+          return (
+          // keyed on the figures arriving, so the bar plays from today's value to the one after a drop once they are known
+          <div key={`${label}-${!!figures}`} className="border-t border-line py-5">
             <div className="flex items-baseline justify-between text-[14px]">
-              <span className="font-medium">{range}</span>
+              <span className="font-medium">{label}</span>
               <span className="tabular-nums">
-                <span className="text-t3">{today.toFixed(1)}%</span>
+                <span className="text-t3">{figures ? `${today.toFixed(1)}%` : "—"}</span>
                 <span className="mx-2 text-t3">→</span>
-                <span className="text-brand">{crash.toFixed(1)}%</span>
+                <span className="text-brand">{figures ? `${crash.toFixed(1)}%` : "—"}</span>
               </span>
             </div>
             {/* the bar starts at today's figure and settles back to the one after a drop */}
@@ -64,7 +64,8 @@ export function Features() {
               />
             </div>
           </div>
-        ))}
+          );
+        })}
       </Card>
 
       <Card title="Lenders choose their risk" body="Senior lenders are paid first and lose money last. Junior lenders take losses first and earn a higher rate for it.">
